@@ -3,8 +3,26 @@ Last updated: 2026-06-12
 
 ## Phase
 Implementation — milestones 1–5 committed and passing. Plan-review fixes are
-folded into plan.md and the code follow-ups are done. Working tree is clean.
-Next up: milestone 6 (hot reload).
+folded into plan.md and the code follow-ups are done. gofmt + vet +
+staticcheck + golangci-lint are enforced by a pre-commit hook (.githooks/,
+installed via `make hooks` — already active in this clone). Working tree is
+clean. Next up: milestone 6 (hot reload).
+
+## Tooling pass (2026-06-12, commits 8814eff..11903db)
+- golangci-lint had NEVER run: not installed, v1-format config that v2
+  rejects, and `make check` silently omitted the lint step. Now: v2.12.2
+  installed, config migrated to v2 format, check includes lint, and the
+  pre-commit hook makes forgetting impossible. First real run found 38
+  issues, all fixed (package comments, noctx, errcheck, ST1023).
+- `make fmt` was broken (`gofmt -w ./...` — gofmt takes paths, not package
+  patterns). Fixed to `gofmt -l -w .`.
+- Latent bug exposed: json/v2 marshals map keys in RANDOM order by default;
+  the plan wrongly claimed sorted-by-default. luaMarshal now passes
+  json.Deterministic(true); TestLuaJSONRoundTrip had been passing by luck.
+- golangci-lint install script (install.sh) has a checksum-verification bug:
+  it greps the checksums file and matches the .sbom.json line. The release
+  tarball itself verified fine against the published sha256; installed from
+  the manually verified tarball. Re-check when bumping versions.
 
 ## Completed (commits on main)
 - `0740db9` scaffold — module, deps, Makefile, .golangci.yml, tools.go, benchmarks/
@@ -75,7 +93,7 @@ websocket lib is github.com/coder/websocket.
 - **Config**: production reads /data/options.json; development uses --config flag pointing to config.dev.yaml
 - **Lua sandbox**: SkipOpenLibs=true; open base/math/string/table/os/coroutine selectively; nil out load/loadfile/dofile/io/debug/package/os.execute/os.exit; replace require with restricted loader (scripts/lib/ only)
 - **Error handling**: every callback dispatch wrapped in pcall; on error build exception info table {script_id, error, traceback, callback, event, timestamp} and call registered on_exception handler; slog.Error fallback if no handler; ha.exceptions.email uses net/smtp, ha.exceptions.log_file uses os.OpenFile append
-- **JSON library**: github.com/go-json-experiment/json everywhere — deterministic key order, strict UTF-8; import path changes to encoding/json/v2 when stdlib proposal lands
+- **JSON library**: github.com/go-json-experiment/json everywhere — strict UTF-8; import path changes to encoding/json/v2 when stdlib proposal lands. Deterministic key order is NOT the default: every marshal site that needs stable output must pass json.Deterministic(true) (luaMarshal does)
 - **Lua stdlib modules**: strings, time, json (v2), re (kept — user explicitly disagreed with cutting it), http, crypto (md5/sha1/sha256/sha512/hmac_sha256/hmac_sha512/base64/hex/rand/equal); math augmentation (round/clamp/log2/sign)
 - **Tests**: real SQLite (:memory:) everywhere, no mocks; table-driven; helpers in internal/testutil/db.go
 - **Benchmark regression**: benchstat comparison is informational only — bench-compare target prints output but does not fail the build; no cmd/bench-check tool
@@ -88,7 +106,7 @@ websocket lib is github.com/coder/websocket.
 - **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited
 - **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC
 - **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
-- **golangci-lint**: v2 (config format version "2"); installed via release binary / official action, never go install
+- **golangci-lint**: v2.12.2 (config format version "2"); installed via release binary / official action, never go install; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow) — configure the tool, don't litter the code with `_ =`
 
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables
