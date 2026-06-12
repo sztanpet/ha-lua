@@ -75,10 +75,19 @@ func (r *Runner) SetFireEvent(fn func(ctx context.Context, eventType string, dat
 	r.fireEvent = fn
 }
 
-// eventHandlers returns the registered event handlers. Only valid after Start
-// has loaded the script.
-func (r *Runner) eventHandlers() []eventHandler {
-	return r.cachedEventHandlers
+// EventTypes returns the distinct custom event types this script handles.
+// Only valid once LoadedCh is closed.
+func (r *Runner) EventTypes() []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, h := range r.cachedEventHandlers {
+		if _, ok := seen[h.eventType]; ok {
+			continue
+		}
+		seen[h.eventType] = struct{}{}
+		out = append(out, h.eventType)
+	}
+	return out
 }
 
 // Send delivers an event to the script goroutine (non-blocking).
@@ -93,6 +102,13 @@ func (r *Runner) Send(ev Event) {
 // SendHAEvent is a convenience wrapper for HA events.
 func (r *Runner) SendHAEvent(ev ha.Event) {
 	r.Send(Event{HAEvent: &ev})
+}
+
+// Close closes the event channel: Start drains whatever is queued and
+// returns. The runner must be removed from the registry first — Send on
+// a closed channel panics. Call exactly once.
+func (r *Runner) Close() {
+	close(r.ch)
 }
 
 // Start loads the script and begins the event loop. Blocks until ctx is done.

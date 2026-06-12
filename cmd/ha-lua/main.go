@@ -6,9 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/go-json-experiment/json"
@@ -52,22 +49,6 @@ func main() {
 	tracker := state.New(writeDB, readDB)
 	globalStore := store.NewGlobal(writeDB, readDB)
 
-	reg := luapkg.NewRegistry()
-	scriptPaths := make(map[string]string)
-
-	entries, _ := os.ReadDir(cfg.ScriptsDir)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".lua") {
-			continue
-		}
-		scriptID := strings.TrimSuffix(e.Name(), ".lua")
-		path := filepath.Join(cfg.ScriptsDir, e.Name())
-		kv := store.New(writeDB, readDB, scriptID)
-		runner := luapkg.NewRunner(scriptID, cfg.ScriptsDir, tracker, kv, globalStore)
-		reg.Add(runner)
-		scriptPaths[scriptID] = path
-	}
-
 	client := ha.New(cfg.HomeAssistant.URL, cfg.HomeAssistant.Token)
 	client.Start(ctx)
 
@@ -95,71 +76,67 @@ func main() {
 		}
 	}()
 
-	// Wire call_service and fire_event through the HA client.
-	makeCallService := func() func(ctx context.Context, domain, service string, data jsontext.Value) error {
-		return func(ctx context.Context, domain, service string, data jsontext.Value) error {
-			msg := serviceCallMsg{
+	reg := luapkg.NewRegistry()
+	sup := luapkg.NewSupervisor(reg, cfg.ScriptsDir, luapkg.Deps{
+		Tracker: tracker,
+		Global:  globalStore,
+		NewKV: func(scriptID string) *store.Store {
+			return store.New(writeDB, readDB, scriptID)
+		},
+		CallService: func(ctx context.Context, domain, service string, data jsontext.Value) error {
+			raw, err := json.Marshal(serviceCallMsg{
 				ID:      client.NextID(),
 				Type:    "call_service",
 				Domain:  domain,
 				Service: service,
 				Data:    data,
-			}
-			raw, err := json.Marshal(msg)
+			})
 			if err != nil {
 				return err
 			}
 			return client.SendRaw(ctx, raw)
-		}
-	}
-
-	makeFireEvent := func() func(ctx context.Context, eventType string, data jsontext.Value) error {
-		return func(ctx context.Context, eventType string, data jsontext.Value) error {
-			msg := fireEventMsg{
+		},
+		FireEvent: func(ctx context.Context, eventType string, data jsontext.Value) error {
+			raw, err := json.Marshal(fireEventMsg{
 				ID:        client.NextID(),
 				Type:      "fire_event",
 				EventType: eventType,
 				EventData: data,
-			}
-			raw, err := json.Marshal(msg)
+			})
 			if err != nil {
 				return err
 			}
 			return client.SendRaw(ctx, raw)
-		}
-	}
-
-	for _, r := range reg.All() {
-		r.SetCallService(makeCallService())
-		r.SetFireEvent(makeFireEvent())
-	}
-
-	var wg sync.WaitGroup
-	for _, r := range reg.All() {
-		path := scriptPaths[r.ScriptID()]
-		if path == "" {
-			continue
-		}
-		wg.Add(1)
-		go func(runner *luapkg.Runner, p string) {
-			defer wg.Done()
-			runner.Start(ctx, p)
-		}(r, path)
-	}
-
-	// After all runners are loaded, subscribe to any custom event types.
-	go func() {
-		for _, r := range reg.All() {
-			select {
-			case <-r.LoadedCh:
-			case <-ctx.Done():
-				return
+		},
+		// AddEventType dedups and subscribes on the live connection, so
+		// scripts loaded or reloaded at any time get their events.
+		OnLoaded: func(r *luapkg.Runner) {
+			for _, et := range r.EventTypes() {
+				client.AddEventType(et)
 			}
-		}
-		for _, et := range reg.EventTypes() {
-			client.AddEventType(et)
-		}
-	}()
+		},
+	})
+
+	// First run in a fresh add-on install: the scripts dir does not exist
+	// yet, and both LoadAll and the watcher need it.
+	if err := os.MkdirAll(cfg.ScriptsDir, 0o755); err != nil {
+		slog.Error("scripts dir create failed", "dir", cfg.ScriptsDir, "err", err)
+		os.Exit(1)
+	}
+
+	// Watch before the initial load: a script created in between is then
+	// a queued event instead of a file nobody ever looks at.
+	watcher, err := luapkg.NewScriptWatcher(cfg.ScriptsDir)
+	if err != nil {
+		slog.Warn("script watcher failed, hot reload disabled", "err", err)
+	}
+	if err := sup.LoadAll(ctx); err != nil {
+		slog.Error("script load failed", "err", err)
+		os.Exit(1)
+	}
+	if watcher != nil {
+		go watcher.Run(ctx, sup)
+	}
 
 	// Route HA events to state tracker and all runners.
 	go func() {
@@ -173,7 +150,8 @@ func main() {
 		}
 	}()
 
-	wg.Wait()
+	<-ctx.Done()
+	sup.Wait()
 }
 
 type serviceCallMsg struct {

@@ -1,7 +1,6 @@
 package lua
 
 import (
-	"context"
 	"log/slog"
 	"sync"
 
@@ -62,57 +61,16 @@ func (reg *Registry) Dispatch(ev ha.Event) {
 }
 
 // DispatchToTimer sends a TimerFiredEvent to the runner for scriptID.
+// The Send happens under the read lock: a runner's channel is closed only
+// after Remove returns, and Remove blocks on this lock, so the channel
+// cannot be closed out from under us.
 func (reg *Registry) DispatchToTimer(scriptID, timerID string) {
 	reg.mu.RLock()
+	defer reg.mu.RUnlock()
 	r := reg.runners[scriptID]
-	reg.mu.RUnlock()
 	if r == nil {
 		slog.Warn("lua: timer fired for unknown script", "script", scriptID, "timer", timerID)
 		return
 	}
 	r.Send(Event{TimerFired: &TimerFiredEvent{TimerID: timerID}})
-}
-
-// EventTypes collects the distinct non-state_changed event types needed
-// by all registered scripts.
-func (reg *Registry) EventTypes() []string {
-	reg.mu.RLock()
-	defer reg.mu.RUnlock()
-	seen := make(map[string]struct{})
-	for _, r := range reg.runners {
-		for _, h := range r.eventHandlers() {
-			seen[h.eventType] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for t := range seen {
-		out = append(out, t)
-	}
-	return out
-}
-
-// RunAll spawns each runner in its own goroutine. Blocks until ctx is done
-// and all runners have stopped.
-func (reg *Registry) RunAll(ctx context.Context, scriptPaths map[string]string) {
-	reg.mu.RLock()
-	runners := make([]*Runner, 0, len(reg.runners))
-	for _, r := range reg.runners {
-		runners = append(runners, r)
-	}
-	reg.mu.RUnlock()
-
-	var wg sync.WaitGroup
-	for _, r := range runners {
-		path, ok := scriptPaths[r.scriptID]
-		if !ok {
-			slog.Warn("lua: no script path for runner", "script", r.scriptID)
-			continue
-		}
-		wg.Add(1)
-		go func(runner *Runner, p string) {
-			defer wg.Done()
-			runner.Start(ctx, p)
-		}(r, path)
-	}
-	wg.Wait()
 }
