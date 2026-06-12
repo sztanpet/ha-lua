@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     changed_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sh_entity_time ON state_history(entity_id, changed_at);
+CREATE INDEX IF NOT EXISTS idx_sh_time ON state_history(changed_at);
 
 CREATE TABLE IF NOT EXISTS script_kv (
     script_id TEXT NOT NULL,
