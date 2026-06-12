@@ -921,7 +921,7 @@ end
 
 All JSON work in the project — `store.state()` proxy, attribute parsing, and this Lua module — uses `github.com/go-json-experiment/json` throughout. Key v2 properties relied on:
 
-- **Deterministic map key order** — object keys sorted by default, making encoded output stable across runs (useful for hashing payloads).
+- **Deterministic map key order** — via the `json.Deterministic(true)` marshal option. v2 marshals map keys in **random** order by default; every marshal site must pass the option so encoded output is stable across runs (useful for hashing payloads).
 - **Strict UTF-8 and no duplicate keys** — fails fast on malformed input rather than silently ignoring it.
 - `json.Marshal(v, opts...)` / `json.Unmarshal(data, &v, opts...)` — same shape as v1, with variadic options appended.
 

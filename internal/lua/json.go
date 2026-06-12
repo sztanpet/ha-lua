@@ -101,13 +101,15 @@ func anyToLua(L *lua.LState, v any) lua.LValue {
 	}
 }
 
-// luaMarshal marshals a Lua value to a JSON byte slice.
+// luaMarshal marshals a Lua value to a JSON byte slice. Deterministic is
+// required for stable output: json/v2 marshals map keys in random order by
+// default, and scripts hash encoded payloads.
 func luaMarshal(L *lua.LState, v lua.LValue) ([]byte, error) {
 	goVal, err := luaToAny(L, v)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(goVal)
+	return json.Marshal(goVal, json.Deterministic(true))
 }
 
 // luaUnmarshal unmarshals JSON bytes into a Lua value.
