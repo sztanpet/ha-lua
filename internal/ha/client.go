@@ -27,6 +27,10 @@ type Client struct {
 
 	// subscriptions requested before/after connect; protected by Reconnect logic.
 	extraEventTypes []string
+
+	// conn holds the current WebSocket connection. nhooyr/websocket serializes
+	// concurrent writes internally, so callers may write from any goroutine.
+	conn atomic.Pointer[websocket.Conn]
 }
 
 // New creates a Client. Call Start to begin connecting.
@@ -43,6 +47,21 @@ func New(url, token string) *Client {
 // every connect/reconnect. Must be called before Start.
 func (c *Client) AddEventType(t string) {
 	c.extraEventTypes = append(c.extraEventTypes, t)
+}
+
+// NextID returns the next outbound message ID.
+func (c *Client) NextID() int {
+	return c.nextID()
+}
+
+// SendRaw writes raw JSON bytes as a WebSocket text message. Returns an error
+// if no connection is active. nhooyr/websocket serializes concurrent writes.
+func (c *Client) SendRaw(ctx context.Context, data []byte) error {
+	conn := c.conn.Load()
+	if conn == nil {
+		return fmt.Errorf("ha: not connected")
+	}
+	return conn.Write(ctx, websocket.MessageText, data)
 }
 
 // Start runs the connection loop in a background goroutine. Blocks until
@@ -77,6 +96,8 @@ func (c *Client) connect(ctx context.Context, seedDone *bool) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.CloseNow()
+	c.conn.Store(conn)
+	defer c.conn.Store(nil)
 
 	if err := c.auth(ctx, conn); err != nil {
 		return fmt.Errorf("auth: %w", err)

@@ -32,6 +32,11 @@ type Runner struct {
 	ch        chan Event
 	timerFns  map[string]*lua.LFunction
 
+	// LoadedCh is closed once the script has finished loading.
+	LoadedCh chan struct{}
+	// cachedEventHandlers is set after load; safe to read once LoadedCh is closed.
+	cachedEventHandlers []eventHandler
+
 	tracker *state.Tracker
 	kv      *store.Store
 	global  *store.GlobalStore
@@ -47,6 +52,7 @@ func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, kv *store.Sto
 		scriptID:  scriptID,
 		scriptDir: scriptDir,
 		ch:        make(chan Event, 64),
+		LoadedCh:  make(chan struct{}),
 		timerFns:  make(map[string]*lua.LFunction),
 		tracker:   tracker,
 		kv:        kv,
@@ -56,6 +62,22 @@ func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, kv *store.Sto
 
 // ScriptID returns the script ID.
 func (r *Runner) ScriptID() string { return r.scriptID }
+
+// SetCallService wires the call_service function. Must be called before Start.
+func (r *Runner) SetCallService(fn func(ctx context.Context, domain, service string, data jsontext.Value) error) {
+	r.callService = fn
+}
+
+// SetFireEvent wires the fire_event function. Must be called before Start.
+func (r *Runner) SetFireEvent(fn func(ctx context.Context, eventType string, data jsontext.Value) error) {
+	r.fireEvent = fn
+}
+
+// eventHandlers returns the registered event handlers. Only valid after Start
+// has loaded the script.
+func (r *Runner) eventHandlers() []eventHandler {
+	return r.cachedEventHandlers
+}
 
 // Send delivers an event to the script goroutine (non-blocking).
 func (r *Runner) Send(ev Event) {
@@ -88,6 +110,10 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	if err := L.DoFile(scriptPath); err != nil {
 		slog.Error("lua: script load error", "script", r.scriptID, "err", err)
 	}
+
+	// Cache event handlers for Registry.EventTypes() and close the loaded signal.
+	r.cachedEventHandlers = api.eventHandlers
+	close(r.LoadedCh)
 
 	// Deliver initial states for on_state_change with initial=true
 	r.deliverInitialStates(ctx, L, api)
