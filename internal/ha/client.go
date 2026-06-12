@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/go-json-experiment/json"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 )
 
 // Client connects to the HA WebSocket API. It handles auth, seeding, and
@@ -28,7 +28,7 @@ type Client struct {
 	// subscriptions requested before/after connect; protected by Reconnect logic.
 	extraEventTypes []string
 
-	// conn holds the current WebSocket connection. nhooyr/websocket serializes
+	// conn holds the current WebSocket connection. coder/websocket serializes
 	// concurrent writes internally, so callers may write from any goroutine.
 	conn atomic.Pointer[websocket.Conn]
 }
@@ -55,7 +55,7 @@ func (c *Client) NextID() int {
 }
 
 // SendRaw writes raw JSON bytes as a WebSocket text message. Returns an error
-// if no connection is active. nhooyr/websocket serializes concurrent writes.
+// if no connection is active. coder/websocket serializes concurrent writes.
 func (c *Client) SendRaw(ctx context.Context, data []byte) error {
 	conn := c.conn.Load()
 	if conn == nil {
