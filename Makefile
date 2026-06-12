@@ -6,7 +6,7 @@ BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
 BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 
-.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace
+.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps
 
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
@@ -47,6 +47,15 @@ hooks:
 
 tidy:
 	go mod tidy
+
+# Update all Go dependencies (including test and tool deps), then tidy.
+# Review the go.mod diff and run 'make check' before committing.
+# golangci-lint is NOT managed here — it is installed as a release binary,
+# never via go install (see AI.state).
+update-deps:
+	go get -u -t ./...
+	go mod tidy
+	@echo "Dependencies updated. Review 'git diff go.mod' and run 'make check'."
 
 profile-cpu:
 	go tool pprof -http=:8080 "http://localhost:6060/debug/pprof/profile?seconds=30"
