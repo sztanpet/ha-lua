@@ -151,6 +151,9 @@ websocket lib is github.com/coder/websocket.
 - **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
 - **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie)
 - **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect
+- **Lua VM stays gopher-lua**: arnodel/golua (Lua 5.4/5.5) evaluated 2026-06-13 and rejected — v0.x single-maintainer vs battle-tested v1.x; CPS binding API is more verbose than LState stack API across ~30 bindings; M6 stop semantics depend on SetContext; 5.3+ integers would split the number type through the whole JSON layer. Reasons documented in README. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real script-author problem
+- **No vendoring**: vendor/ measures 241MB (226MB = modernc.org); go.sum + module proxy pin and preserve everything; `go mod vendor` is one command away if hermetic offline builds are ever needed
+- **Dependency updates**: `make update-deps` (go get -u -t ./... + tidy); golangci-lint excluded — release binary only
 
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables
