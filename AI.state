@@ -2,8 +2,9 @@
 Last updated: 2026-06-12
 
 ## Phase
-Implementation — milestones 1–5 committed and passing. Working tree has an
-uncommitted CLAUDE.md edit (added Linus persona line to Working Process).
+Implementation — milestones 1–5 committed and passing. Plan-review fixes are
+folded into plan.md and the code follow-ups are done. Working tree is clean.
+Next up: milestone 6 (hot reload).
 
 ## Completed (commits on main)
 - `0740db9` scaffold — module, deps, Makefile, .golangci.yml, tools.go, benchmarks/
@@ -43,19 +44,21 @@ run.sh passes no flags (options.json is the single prod config channel);
 golangci-lint rationale corrected + .golangci.yml migrated to v2 format;
 websocket lib is github.com/coder/websocket.
 
-## Code follow-ups (committed code now diverging from the fixed plan)
-- **Swap nhooyr.io/websocket → github.com/coder/websocket** in internal/ha +
-  go.mod (same API, import-path change only).
-- **Add idx_sh_time(changed_at)** to the schema in internal/state/db.go (purge
-  DELETE filters by time alone).
-- **Seed dedup**: only append a state_history row on seed when state/attributes
-  differ from the mirror row (internal/state tracker / seed path).
-- **require caching + cycle detection** in internal/lua/stdlib.go — current
-  loader DoFiles on every call (re-executes modules, loops on mutual requires).
-- **Email cooldown** in internal/lua/exceptions.go — handler already landed
-  without rate limiting.
-- **Verify main.go/config.go** match the single-channel config story (no
-  --ha-url/--ha-token-style flag duplication) when M12 lands.
+## Code follow-ups — ALL DONE (commits 83a0617..d49ca17, 2026-06-12)
+- websocket import swapped to github.com/coder/websocket (83a0617)
+- idx_sh_time(changed_at) added to the schema (1a5ea29)
+- Seed appends history only when state/attributes differ from the mirror;
+  mirror still upserted unconditionally so last_changed stays current (e961255)
+- require caches module return values per LState (module returning nothing →
+  true, standard Lua convention); circular require raises a clear error;
+  tests in internal/lua/stdlib_test.go (46c0d81)
+- Email handler cooldown: default 15m, config.cooldown override, suppressed
+  count reported in next send, failed sends also start the window;
+  smtp.SendMail is behind the smtpSendMail package var for tests (b170fa0)
+- Flag overrides removed from main.go; add-on mode (no --config) forces
+  URL/token/paths from the Supervisor environment and ignores any connection
+  fields in options.json; tests in internal/config/config_test.go (677d96d)
+- Tree gofmt'ed — earlier milestones had misaligned fields (d49ca17)
 
 ## Key decisions (do not re-litigate without good reason)
 - **State scope**: full history log (append-only) + current-state mirror for fast get_state
