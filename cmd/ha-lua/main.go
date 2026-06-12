@@ -15,6 +15,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/debug"
 	"github.com/sztanpet/ha-lua/internal/ha"
 	luapkg "github.com/sztanpet/ha-lua/internal/lua"
+	"github.com/sztanpet/ha-lua/internal/purge"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 )
@@ -48,6 +49,13 @@ func main() {
 
 	tracker := state.New(writeDB, readDB)
 	globalStore := store.NewGlobal(writeDB, readDB)
+
+	purgeInterval, err := cfg.PurgeInterval()
+	if err != nil {
+		slog.Error("bad purge_interval", "err", err)
+		os.Exit(1)
+	}
+	purge.New(writeDB, cfg.StateHistory.RetentionDays, purgeInterval).Start(ctx)
 
 	client := ha.New(cfg.HomeAssistant.URL, cfg.HomeAssistant.Token)
 	client.Start(ctx)

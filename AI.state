@@ -2,12 +2,27 @@
 Last updated: 2026-06-13
 
 ## Phase
-Implementation — milestones 1–6 committed and passing. A code-review pass
+Implementation — milestones 1–7 committed and passing. A code-review pass
 (2026-06-13) found and fixed serious M1/M2-era bugs, most notably that WAL
 was never actually enabled. gofmt + vet + staticcheck + golangci-lint are
 enforced by a pre-commit hook (.githooks/, installed via `make hooks` —
-already active in this clone). Working tree is clean. Next up: milestone 7
-(purge).
+already active in this clone). Working tree is clean. Next up: milestone 8
+(scheduling).
+
+## Milestone 7 — purge (2026-06-13)
+- internal/purge/purge.go: Purger with New(db, retentionDays, interval) —
+  plain params, not the config struct (no reason to couple purge to
+  config). Start(ctx) spawns the ticker goroutine; RunOnce(ctx) is the
+  whole job: one DELETE with a Go-computed RFC3339 cutoff per plan.
+- Start runs one purge immediately before the first tick: with the
+  default 1h interval a frequently restarted daemon would never purge.
+- Uses the write DB handle (DELETE is a write). Logs rows deleted only
+  when > 0.
+- Tests: retention boundary table test, same-day RFC3339-cutoff
+  regression test (retention 0 + row 1h old), empty table. BenchmarkPurge
+  (10k expired rows) landed with the tests, not deferred to M11.
+- Dependencies also updated this session (e6651b2): go-isatty, x/mod,
+  x/tools, modernc.org/libc — all indirect.
 
 ## Code review pass (2026-06-13, commits fc14d45..4373da1)
 - **WAL was never on.** The DSN used mattn-style `_journal_mode=WAL`, which
@@ -79,7 +94,6 @@ already active in this clone). Working tree is clean. Next up: milestone 7
 - `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-7. Purge — internal/purge/ is an empty dir; ticker + retention DELETE + RunOnce()
 8. Scheduling — internal/scheduler/ is an empty dir; ha.every/at/after, timers table,
    min-heap, catch-up, orphan cleanup, ha.at timezone resolution (time/tzdata);
    wire TimerFiredEvent dispatch into runner.go (see runner.go:195 TODO comment)
