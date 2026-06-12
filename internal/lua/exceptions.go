@@ -10,6 +10,9 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+// smtpSendMail is swapped out in tests.
+var smtpSendMail = smtp.SendMail
+
 // registerExceptionHandlers installs ha.exceptions.email and ha.exceptions.log_file.
 func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 	L.SetField(t, "email", L.NewFunction(func(L *lua.LState) int {
@@ -42,6 +45,22 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 		if subjectPrefix == "" {
 			subjectPrefix = "[ha-lua]"
 		}
+		cooldown := 15 * time.Minute
+		if s := getString("cooldown"); s != "" {
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				L.RaiseError("ha.exceptions.email: bad cooldown %q: %v", s, err)
+				return 0
+			}
+			cooldown = d
+		}
+
+		// Cooldown state. The handler runs only on its script's goroutine,
+		// so no locking is needed. lastAttempt counts failed sends too —
+		// a broken SMTP config must not be retried on every event either.
+		var lastAttempt time.Time
+		var suppressed int
+		var suppressedSince string
 
 		handler := L.NewFunction(func(L *lua.LState) int {
 			info := L.CheckTable(1)
@@ -50,6 +69,14 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 			traceback := luaStrField(info, "traceback")
 			callback := luaStrField(info, "callback")
 			timestamp := luaStrField(info, "timestamp")
+
+			if !lastAttempt.IsZero() && time.Since(lastAttempt) < cooldown {
+				if suppressed == 0 {
+					suppressedSince = timestamp
+				}
+				suppressed++
+				return 0
+			}
 
 			var eventJSON string
 			if ev := info.RawGetString("event"); ev != lua.LNil {
@@ -60,10 +87,16 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 
 			subject := fmt.Sprintf("%s Error in script: %s", subjectPrefix, scriptID)
 			body := buildEmailBody(scriptID, timestamp, callback, errMsg, traceback, eventJSON)
+			if suppressed > 0 {
+				body += fmt.Sprintf("\n%d similar errors suppressed since %s\n",
+					suppressed, suppressedSince)
+			}
 			addr := fmt.Sprintf("%s:%d", smtpHost, smtpPort)
 			msg := buildSMTPMessage(from, toField, subject, body)
 			auth := smtp.PlainAuth("", username, password, smtpHost)
-			if err := smtp.SendMail(addr, auth, from, []string{toField}, []byte(msg)); err != nil {
+			lastAttempt = time.Now()
+			suppressed = 0
+			if err := smtpSendMail(addr, auth, from, []string{toField}, []byte(msg)); err != nil {
 				L.RaiseError("ha.exceptions.email: %v", err)
 			}
 			return 0

@@ -2,10 +2,12 @@ package lua
 
 import (
 	"context"
+	"net/smtp"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-json-experiment/json/jsontext"
 	lua "github.com/yuin/gopher-lua"
@@ -142,6 +144,68 @@ func TestLogFileException(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "lights") {
 		t.Errorf("log file does not contain script_id: %s", data)
+	}
+}
+
+func TestEmailExceptionCooldown(t *testing.T) {
+	L, _, _ := newHALState(t)
+
+	var sent []string
+	orig := smtpSendMail
+	smtpSendMail = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		sent = append(sent, string(msg))
+		return nil
+	}
+	t.Cleanup(func() { smtpSendMail = orig })
+
+	haTbl := L.GetGlobal("ha").(*lua.LTable)
+	excTbl := haTbl.RawGetString("exceptions").(*lua.LTable)
+	emailFn := excTbl.RawGetString("email").(*lua.LFunction)
+
+	cfg := L.NewTable()
+	cfg.RawSetString("to", lua.LString("user@example.com"))
+	cfg.RawSetString("smtp_host", lua.LString("localhost"))
+	cfg.RawSetString("smtp_port", lua.LNumber(25))
+	cfg.RawSetString("username", lua.LString("u"))
+	cfg.RawSetString("password", lua.LString("p"))
+	cfg.RawSetString("cooldown", lua.LString("100ms"))
+
+	if err := L.CallByParam(lua.P{Fn: emailFn, NRet: 1, Protect: true}, cfg); err != nil {
+		t.Fatal(err)
+	}
+	handler := L.Get(-1).(*lua.LFunction)
+	L.Pop(1)
+
+	fire := func(ts string) {
+		info := L.NewTable()
+		info.RawSetString("script_id", lua.LString("test"))
+		info.RawSetString("error", lua.LString("boom"))
+		info.RawSetString("callback", lua.LString("state_changed"))
+		info.RawSetString("timestamp", lua.LString(ts))
+		if err := L.CallByParam(lua.P{Fn: handler, NRet: 0, Protect: true}, info); err != nil {
+			t.Fatalf("email handler: %v", err)
+		}
+	}
+
+	// Three errors in quick succession: only the first is sent.
+	fire("2026-01-01T00:00:00Z")
+	fire("2026-01-01T00:00:01Z")
+	fire("2026-01-01T00:00:02Z")
+	if len(sent) != 1 {
+		t.Fatalf("sends inside cooldown: want 1, got %d", len(sent))
+	}
+
+	// After the window, the next error is sent and reports the suppressed two.
+	time.Sleep(150 * time.Millisecond)
+	fire("2026-01-01T00:05:00Z")
+	if len(sent) != 2 {
+		t.Fatalf("sends after cooldown: want 2, got %d", len(sent))
+	}
+	if !strings.Contains(sent[1], "2 similar errors suppressed since 2026-01-01T00:00:01Z") {
+		t.Errorf("second email missing suppression note:\n%s", sent[1])
+	}
+	if strings.Contains(sent[0], "suppressed") {
+		t.Errorf("first email must not have a suppression note:\n%s", sent[0])
 	}
 }
 
