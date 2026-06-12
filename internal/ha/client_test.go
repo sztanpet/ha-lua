@@ -2,7 +2,6 @@ package ha
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,29 +33,68 @@ func wsURL(srv *httptest.Server) string {
 	return "ws" + strings.TrimPrefix(srv.URL, "http")
 }
 
-func TestAuthFlow(t *testing.T) {
+// serveAuth performs the server side of the auth handshake.
+func serveAuth(ctx context.Context, conn *websocket.Conn) (token string, err error) {
+	if err := wsjson.Write(ctx, conn, map[string]string{"type": "auth_required"}); err != nil {
+		return "", err
+	}
+	var msg map[string]string
+	if err := wsjson.Read(ctx, conn, &msg); err != nil {
+		return "", err
+	}
+	if err := wsjson.Write(ctx, conn, map[string]string{"type": "auth_ok"}); err != nil {
+		return "", err
+	}
+	return msg["access_token"], nil
+}
+
+// serveCommands answers get_states with the given states (echoing the
+// command ID — the client's IDs increase across reconnects) and forwards
+// subscribe_events types on subs. Returns when the connection drops.
+func serveCommands(ctx context.Context, conn *websocket.Conn, states []map[string]any, subs chan<- string) {
+	for {
+		var cmd map[string]any
+		if err := wsjson.Read(ctx, conn, &cmd); err != nil {
+			return
+		}
+		switch cmd["type"] {
+		case "get_states":
+			_ = wsjson.Write(ctx, conn, map[string]any{
+				"id": cmd["id"], "type": "result", "result": states,
+			})
+		case "subscribe_events":
+			_ = wsjson.Write(ctx, conn, map[string]any{
+				"id": cmd["id"], "type": "result", "success": true,
+			})
+			if subs != nil {
+				et, _ := cmd["event_type"].(string)
+				select {
+				case subs <- et:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+}
+
+func testState(entityID, state string) map[string]any {
+	return map[string]any{
+		"entity_id": entityID, "state": state, "attributes": map[string]any{},
+		"last_changed": "2026-01-01T00:00:00Z", "last_updated": "2026-01-01T00:00:00Z",
+	}
+}
+
+func TestAuthFlowAndSeed(t *testing.T) {
 	srv := mockServer(t, func(ctx context.Context, conn *websocket.Conn) {
-		// Send auth_required
-		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_required"})
-		// Read auth
-		var msg map[string]string
-		_ = wsjson.Read(ctx, conn, &msg)
-		if msg["type"] != "auth" {
-			t.Errorf("expected auth msg, got %v", msg)
+		token, err := serveAuth(ctx, conn)
+		if err != nil {
+			return
 		}
-		if msg["access_token"] != "test-token" {
-			t.Errorf("wrong token: %v", msg["access_token"])
+		if token != "test-token" {
+			t.Errorf("wrong token: %v", token)
 		}
-		// Send auth_ok
-		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_ok"})
-		// Send get_states result
-		_ = wsjson.Write(ctx, conn, map[string]any{
-			"id":     1,
-			"type":   "result",
-			"result": []map[string]any{{"entity_id": "light.test", "state": "on", "attributes": "{}", "last_changed": "2026-01-01T00:00:00Z", "last_updated": "2026-01-01T00:00:00Z"}},
-		})
-		// Keep alive briefly
-		<-ctx.Done()
+		serveCommands(ctx, conn, []map[string]any{testState("light.test", "on")}, nil)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -65,14 +103,10 @@ func TestAuthFlow(t *testing.T) {
 	c := New(wsURL(srv), "test-token")
 	c.Start(ctx)
 
-	// Should receive seeded states
 	select {
 	case states := <-c.States:
-		if len(states) == 0 {
-			t.Error("expected at least one state from seed")
-		}
-		if states[0].EntityID != "light.test" {
-			t.Errorf("unexpected entity_id: %v", states[0].EntityID)
+		if len(states) != 1 || states[0].EntityID != "light.test" {
+			t.Errorf("unexpected seed batch: %+v", states)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for states")
@@ -94,42 +128,33 @@ func TestAuthInvalid(t *testing.T) {
 	c := New(wsURL(srv), "bad-token")
 	c.Start(ctx)
 
-	// States channel should close quickly (on error, seedDone never set)
-	// Just verify we don't hang
-	time.Sleep(200 * time.Millisecond)
-	cancel()
+	// No seed must arrive; just verify nothing blows up and no states flow.
+	select {
+	case states := <-c.States:
+		t.Errorf("unexpected seed batch on auth failure: %+v", states)
+	case <-time.After(300 * time.Millisecond):
+	}
 }
 
 func TestEventDelivery(t *testing.T) {
+	subs := make(chan string, 4)
 	srv := mockServer(t, func(ctx context.Context, conn *websocket.Conn) {
-		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_required"})
-		var msg map[string]string
-		_ = wsjson.Read(ctx, conn, &msg)
-		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_ok"})
-		// get_states result
-		_ = wsjson.Write(ctx, conn, map[string]any{
-			"id":     1,
-			"type":   "result",
-			"result": []any{},
-		})
-		// Wait for subscribe message(s)
-		for {
-			var sub map[string]any
-			if err := wsjson.Read(ctx, conn, &sub); err != nil {
-				return
-			}
-			if sub["type"] == "subscribe_events" {
-				break
-			}
+		if _, err := serveAuth(ctx, conn); err != nil {
+			return
 		}
-		// Send a state_changed event
+		go serveCommands(ctx, conn, nil, subs)
+		select {
+		case <-subs: // wait for state_changed subscription
+		case <-ctx.Done():
+			return
+		}
 		_ = wsjson.Write(ctx, conn, map[string]any{
 			"type": "event",
 			"id":   2,
 			"event": map[string]any{
 				"event_type": "state_changed",
 				"time_fired": "2026-01-01T00:00:00Z",
-				"data":       json.RawMessage(`{"entity_id":"light.bedroom"}`),
+				"data":       map[string]any{"entity_id": "light.bedroom"},
 			},
 		})
 		<-ctx.Done()
@@ -140,8 +165,6 @@ func TestEventDelivery(t *testing.T) {
 
 	c := New(wsURL(srv), "tok")
 	c.Start(ctx)
-
-	// Drain states
 	<-c.States
 
 	select {
@@ -157,16 +180,67 @@ func TestEventDelivery(t *testing.T) {
 	}
 }
 
-func TestReconnect(t *testing.T) {
+// Every reconnect must deliver a fresh seed batch — the state mirror goes
+// stale across the disconnect window otherwise.
+func TestReseedOnReconnect(t *testing.T) {
 	var connectCount atomic.Int32
 	srv := mockServer(t, func(ctx context.Context, conn *websocket.Conn) {
-		connectCount.Add(1)
-		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_required"})
-		var msg map[string]string
-		_ = wsjson.Read(ctx, conn, &msg)
-		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_ok"})
-		_ = wsjson.Write(ctx, conn, map[string]any{"id": 1, "type": "result", "result": []any{}})
-		_ = conn.Close(websocket.StatusGoingAway, "test disconnect")
+		n := connectCount.Add(1)
+		if _, err := serveAuth(ctx, conn); err != nil {
+			return
+		}
+		state := "on"
+		if n > 1 {
+			state = "off"
+		}
+		done := make(chan struct{})
+		go func() {
+			serveCommands(ctx, conn, []map[string]any{testState("light.test", state)}, nil)
+			close(done)
+		}()
+		// Drop the connection shortly after serving the first commands.
+		select {
+		case <-time.After(200 * time.Millisecond):
+			_ = conn.Close(websocket.StatusGoingAway, "test disconnect")
+		case <-ctx.Done():
+		}
+		<-done
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	c := New(wsURL(srv), "tok")
+	c.Start(ctx)
+
+	first := <-c.States
+	if len(first) != 1 || first[0].State != "on" {
+		t.Fatalf("unexpected first seed: %+v", first)
+	}
+
+	select {
+	case second := <-c.States:
+		if len(second) != 1 || second[0].State != "off" {
+			t.Fatalf("unexpected re-seed batch: %+v", second)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("no re-seed after reconnect")
+	}
+	if connectCount.Load() < 2 {
+		t.Errorf("expected at least 2 connects, got %d", connectCount.Load())
+	}
+}
+
+// AddEventType after the connection is up must subscribe immediately —
+// waiting for the next reconnect means handlers receive nothing, possibly
+// for days.
+func TestAddEventTypeLiveSubscribe(t *testing.T) {
+	subs := make(chan string, 8)
+	srv := mockServer(t, func(ctx context.Context, conn *websocket.Conn) {
+		if _, err := serveAuth(ctx, conn); err != nil {
+			return
+		}
+		serveCommands(ctx, conn, nil, subs)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -176,9 +250,25 @@ func TestReconnect(t *testing.T) {
 	c.Start(ctx)
 	<-c.States
 
-	// Wait for at least one reconnect
-	time.Sleep(1500 * time.Millisecond)
-	if n := connectCount.Load(); n < 2 {
-		t.Errorf("expected reconnect, got %d connects", n)
+	if et := <-subs; et != "state_changed" {
+		t.Fatalf("first subscription should be state_changed, got %q", et)
+	}
+
+	c.AddEventType("zha_event")
+	c.AddEventType("zha_event") // dedup: must not subscribe twice
+
+	select {
+	case et := <-subs:
+		if et != "zha_event" {
+			t.Errorf("expected zha_event subscription, got %q", et)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no live subscription after AddEventType")
+	}
+
+	select {
+	case et := <-subs:
+		t.Errorf("duplicate subscription sent: %q", et)
+	case <-time.After(300 * time.Millisecond):
 	}
 }

@@ -71,16 +71,29 @@ func main() {
 	client := ha.New(cfg.HomeAssistant.URL, cfg.HomeAssistant.Token)
 	client.Start(ctx)
 
+	// Block until the first seed so scripts start against a populated mirror.
 	select {
-	case states, ok := <-client.States:
-		if ok && len(states) > 0 {
-			if err := tracker.Seed(ctx, states); err != nil {
-				slog.Warn("state seed failed", "err", err)
-			}
+	case states := <-client.States:
+		if err := tracker.Seed(ctx, states); err != nil {
+			slog.Warn("state seed failed", "err", err)
 		}
 	case <-ctx.Done():
 		return
 	}
+
+	// Every reconnect delivers a fresh batch; Seed dedups history rows.
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case states := <-client.States:
+				if err := tracker.Seed(ctx, states); err != nil {
+					slog.Warn("state re-seed failed", "err", err)
+				}
+			}
+		}
+	}()
 
 	// Wire call_service and fire_event through the HA client.
 	makeCallService := func() func(ctx context.Context, domain, service string, data jsontext.Value) error {

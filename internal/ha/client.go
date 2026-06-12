@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,20 +21,25 @@ import (
 type Client struct {
 	url   string
 	token string
+
+	// msgID increases monotonically across reconnects. HA only requires
+	// IDs to increase within a connection, so never resetting it is both
+	// valid and immune to races with concurrent SendRaw callers.
 	msgID atomic.Int32
 
 	// Events is closed when the client shuts down.
 	Events chan Event
 
-	// States delivers the initial seed batch from get_states; closed after seed.
+	// States delivers one batch of get_states results per (re)connect —
+	// the plan requires re-seeding on every reconnect, the mirror goes
+	// stale across the disconnect window otherwise. Capacity 1, newest
+	// batch wins, never closed.
 	States chan []StateData
 
-	// subscriptions requested before/after connect; protected by Reconnect logic.
-	extraEventTypes []string
-
-	// conn holds the current WebSocket connection. coder/websocket serializes
-	// concurrent writes internally, so callers may write from any goroutine.
-	conn atomic.Pointer[websocket.Conn]
+	mu         sync.Mutex
+	conn       *websocket.Conn     // authed connection; nil while down
+	eventTypes []string            // extra types beyond state_changed
+	subscribed map[string]struct{} // types subscribed on the current conn
 }
 
 // New creates a Client. Call Start to begin connecting.
@@ -45,10 +52,37 @@ func New(url, token string) *Client {
 	}
 }
 
-// AddEventType registers an event type that should be subscribed to on
-// every connect/reconnect. Must be called before Start.
+// AddEventType registers an event type to subscribe to, in addition to
+// state_changed. Safe to call at any time from any goroutine: if a
+// connection is up the subscription is sent immediately, and every
+// reconnect re-subscribes the full set.
 func (c *Client) AddEventType(t string) {
-	c.extraEventTypes = append(c.extraEventTypes, t)
+	c.mu.Lock()
+	if slices.Contains(c.eventTypes, t) {
+		c.mu.Unlock()
+		return
+	}
+	c.eventTypes = append(c.eventTypes, t)
+	conn := c.conn
+	send := false
+	if conn != nil {
+		if _, ok := c.subscribed[t]; !ok {
+			// Mark before sending: if the send fails the connection is
+			// dead and the reconnect resets the subscribed set anyway.
+			c.subscribed[t] = struct{}{}
+			send = true
+		}
+	}
+	c.mu.Unlock()
+
+	if !send {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.subscribe(ctx, conn, t); err != nil {
+		slog.Warn("ha: live subscribe failed, retrying on reconnect", "type", t, "err", err)
+	}
 }
 
 // NextID returns the next outbound message ID.
@@ -57,17 +91,19 @@ func (c *Client) NextID() int {
 }
 
 // SendRaw writes raw JSON bytes as a WebSocket text message. Returns an error
-// if no connection is active. coder/websocket serializes concurrent writes.
+// if no authenticated connection is active. coder/websocket serializes
+// concurrent writes.
 func (c *Client) SendRaw(ctx context.Context, data []byte) error {
-	conn := c.conn.Load()
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
 	if conn == nil {
 		return fmt.Errorf("ha: not connected")
 	}
 	return conn.Write(ctx, websocket.MessageText, data)
 }
 
-// Start runs the connection loop in a background goroutine. Blocks until
-// ctx is cancelled.
+// Start runs the connection loop in a background goroutine.
 func (c *Client) Start(ctx context.Context) {
 	go c.loop(ctx)
 }
@@ -75,13 +111,18 @@ func (c *Client) Start(ctx context.Context) {
 func (c *Client) loop(ctx context.Context) {
 	defer close(c.Events)
 	backoff := time.Second
-	seedDone := false
 	for {
-		if err := c.connect(ctx, &seedDone); err != nil {
+		start := time.Now()
+		if err := c.connect(ctx); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			slog.Warn("ha: connection failed, retrying", "err", err, "backoff", backoff)
+			slog.Warn("ha: connection lost, reconnecting", "err", err, "backoff", backoff)
+		}
+		// A connection that lived for a while means the trouble is over;
+		// don't punish the next blip for failures from last week.
+		if time.Since(start) > time.Minute {
+			backoff = time.Second
 		}
 		select {
 		case <-ctx.Done():
@@ -92,45 +133,67 @@ func (c *Client) loop(ctx context.Context) {
 	}
 }
 
-func (c *Client) connect(ctx context.Context, seedDone *bool) error {
+func (c *Client) connect(ctx context.Context) error {
 	conn, _, err := websocket.Dial(ctx, c.url, nil)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.CloseNow()
-	c.conn.Store(conn)
-	defer c.conn.Store(nil)
 
 	if err := c.auth(ctx, conn); err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}
 
-	// Reset msgID on each connection
-	c.msgID.Store(0)
+	// Publish the connection only after auth: HA drops connections that
+	// receive commands before authenticating, so SendRaw must not be able
+	// to reach a half-open socket.
+	c.mu.Lock()
+	c.conn = conn
+	c.subscribed = make(map[string]struct{})
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.conn = nil
+		c.mu.Unlock()
+	}()
 
-	// Seed states on first connect only
-	if !*seedDone {
-		states, err := c.getStates(ctx, conn)
-		if err != nil {
-			return fmt.Errorf("get_states: %w", err)
-		}
-		select {
-		case c.States <- states:
-		default:
-		}
-		close(c.States)
-		*seedDone = true
+	// Re-seed on every connect; Tracker.Seed dedups history rows.
+	states, err := c.getStates(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("get_states: %w", err)
+	}
+	select {
+	case <-c.States: // drop a stale batch the consumer never picked up
+	default:
+	}
+	select {
+	case c.States <- states:
+	default:
 	}
 
-	// Subscribe to state_changed always, plus any registered extra types
-	eventTypes := append([]string{"state_changed"}, c.extraEventTypes...)
-	for _, et := range eventTypes {
+	// Subscribe to state_changed plus all registered extra types. Mark
+	// under the lock before sending so a concurrent AddEventType cannot
+	// double-subscribe the same type on this connection.
+	c.mu.Lock()
+	toSend := []string{"state_changed"}
+	toSend = append(toSend, c.eventTypes...)
+	n := 0
+	for _, et := range toSend {
+		if _, ok := c.subscribed[et]; ok {
+			continue
+		}
+		c.subscribed[et] = struct{}{}
+		toSend[n] = et
+		n++
+	}
+	toSend = toSend[:n]
+	c.mu.Unlock()
+	for _, et := range toSend {
 		if err := c.subscribe(ctx, conn, et); err != nil {
 			return fmt.Errorf("subscribe %q: %w", et, err)
 		}
 	}
 
-	// Read loop
 	return c.readLoop(ctx, conn)
 }
 
@@ -192,9 +255,8 @@ func (c *Client) getStates(ctx context.Context, conn *websocket.Conn) ([]StateDa
 }
 
 func (c *Client) subscribe(ctx context.Context, conn *websocket.Conn, eventType string) error {
-	id := c.nextID()
 	return wsjson.Write(ctx, conn, subscribeMsg{
-		ID:        id,
+		ID:        c.nextID(),
 		Type:      "subscribe_events",
 		EventType: eventType,
 	})
@@ -232,11 +294,4 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 func readRaw(ctx context.Context, conn *websocket.Conn) ([]byte, error) {
 	_, data, err := conn.Read(ctx)
 	return data, err
-}
-
-func min(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
-	}
-	return b
 }
