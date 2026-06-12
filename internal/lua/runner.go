@@ -211,9 +211,9 @@ func (r *Runner) newLState(ctx context.Context) *lua.LState {
 // for the opts.initial delivery (old_state is absent).
 func buildInitialEventData(s *ha.StateData) jsontext.Value {
 	type stateObj struct {
-		EntityID   string          `json:"entity_id"`
-		State      string          `json:"state"`
-		Attributes jsontext.Value  `json:"attributes"`
+		EntityID   string         `json:"entity_id"`
+		State      string         `json:"state"`
+		Attributes jsontext.Value `json:"attributes"`
 	}
 	type evData struct {
 		EntityID string   `json:"entity_id"`

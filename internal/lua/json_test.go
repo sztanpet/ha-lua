@@ -11,9 +11,9 @@ func TestLuaJSONRoundTrip(t *testing.T) {
 	defer L.Close()
 
 	cases := []struct {
-		name  string
-		lua   string      // Lua expression that produces the value
-		want  string      // expected JSON
+		name string
+		lua  string // Lua expression that produces the value
+		want string // expected JSON
 	}{
 		{"nil", "nil", "null"},
 		{"bool_true", "true", "true"},
@@ -47,8 +47,8 @@ func TestJSONToLua(t *testing.T) {
 	defer L.Close()
 
 	cases := []struct {
-		name string
-		json string
+		name  string
+		json  string
 		check func(*testing.T, lua.LValue)
 	}{
 		{"null", "null", func(t *testing.T, v lua.LValue) {

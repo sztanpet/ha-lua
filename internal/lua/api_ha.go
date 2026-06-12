@@ -293,11 +293,11 @@ func callProtected(L *lua.LState, api *haAPI, callbackName string, eventTbl lua.
 
 // serviceCallMsg is the outbound message shape for call_service.
 type serviceCallMsg struct {
-	ID      int             `json:"id"`
-	Type    string          `json:"type"`
-	Domain  string          `json:"domain"`
-	Service string          `json:"service"`
-	Data    jsontext.Value  `json:"service_data"`
+	ID      int            `json:"id"`
+	Type    string         `json:"type"`
+	Domain  string         `json:"domain"`
+	Service string         `json:"service"`
+	Data    jsontext.Value `json:"service_data"`
 }
 
 // fireEventMsg is the outbound message shape for fire_event.

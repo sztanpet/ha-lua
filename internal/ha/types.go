@@ -34,17 +34,17 @@ type getStatesResult struct {
 
 // StateData is the canonical state object returned by HA
 type StateData struct {
-	EntityID    string          `json:"entity_id"`
-	State       string          `json:"state"`
-	Attributes  jsontext.Value   `json:"attributes"`
-	LastChanged string          `json:"last_changed"`
-	LastUpdated string          `json:"last_updated"`
+	EntityID    string         `json:"entity_id"`
+	State       string         `json:"state"`
+	Attributes  jsontext.Value `json:"attributes"`
+	LastChanged string         `json:"last_changed"`
+	LastUpdated string         `json:"last_updated"`
 }
 
 // Event is the parsed event envelope delivered to consumers
 type Event struct {
-	Type      string `json:"event_type"`
-	TimeFired string `json:"time_fired"`
+	Type      string         `json:"event_type"`
+	TimeFired string         `json:"time_fired"`
 	Data      jsontext.Value `json:"data"`
 }
 

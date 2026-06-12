@@ -80,7 +80,7 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 
 // StateChangedData is the data portion of a state_changed event.
 type StateChangedData struct {
-	EntityID string    `json:"entity_id"`
+	EntityID string        `json:"entity_id"`
 	NewState *ha.StateData `json:"new_state"`
 	OldState *ha.StateData `json:"old_state"`
 }

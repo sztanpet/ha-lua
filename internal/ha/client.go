@@ -7,17 +7,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-json-experiment/json"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/go-json-experiment/json"
 )
 
 // Client connects to the HA WebSocket API. It handles auth, seeding, and
 // subscription management. Consumers receive events on the Events channel.
 type Client struct {
-	url    string
-	token  string
-	msgID  atomic.Int32
+	url   string
+	token string
+	msgID atomic.Int32
 
 	// Events is closed when the client shuts down.
 	Events chan Event
