@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 	lua "github.com/yuin/gopher-lua"
 
@@ -288,58 +287,5 @@ func callProtected(L *lua.LState, api *haAPI, callbackName string, eventTbl lua.
 	params := lua.P{Fn: fn, NRet: 0, Protect: true}
 	if err := L.CallByParam(params, args...); err != nil {
 		dispatchException(L, api, err.Error(), fmt.Sprintf("%v", err), callbackName, eventTbl)
-	}
-}
-
-// serviceCallMsg is the outbound message shape for call_service.
-type serviceCallMsg struct {
-	ID      int            `json:"id"`
-	Type    string         `json:"type"`
-	Domain  string         `json:"domain"`
-	Service string         `json:"service"`
-	Data    jsontext.Value `json:"service_data"`
-}
-
-// fireEventMsg is the outbound message shape for fire_event.
-type fireEventMsg struct {
-	ID        int            `json:"id"`
-	Type      string         `json:"type"`
-	EventType string         `json:"event_type"`
-	EventData jsontext.Value `json:"event_data"`
-}
-
-// MakeCallService returns a callService func that sends over conn using the
-// provided ID generator. Used by the runner to wire the function.
-func MakeCallService(send func(v any) error, nextID func() int) func(context.Context, string, string, jsontext.Value) error {
-	return func(_ context.Context, domain, service string, data jsontext.Value) error {
-		msg := serviceCallMsg{
-			ID:      nextID(),
-			Type:    "call_service",
-			Domain:  domain,
-			Service: service,
-			Data:    data,
-		}
-		b, err := json.Marshal(msg)
-		if err != nil {
-			return err
-		}
-		return send(jsontext.Value(b))
-	}
-}
-
-// MakeFireEvent returns a fireEvent func.
-func MakeFireEvent(send func(v any) error, nextID func() int) func(context.Context, string, jsontext.Value) error {
-	return func(_ context.Context, eventType string, data jsontext.Value) error {
-		msg := fireEventMsg{
-			ID:        nextID(),
-			Type:      "fire_event",
-			EventType: eventType,
-			EventData: data,
-		}
-		b, err := json.Marshal(msg)
-		if err != nil {
-			return err
-		}
-		return send(jsontext.Value(b))
 	}
 }
