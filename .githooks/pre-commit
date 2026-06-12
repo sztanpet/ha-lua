@@ -1,0 +1,27 @@
+#!/bin/sh
+# pre-commit: refuse to commit Go code that is not gofmt-clean or fails
+# the lints. Installed with 'make hooks' (sets core.hooksPath).
+# Emergency bypass: git commit --no-verify
+set -eu
+
+# Nothing Go-related staged? Nothing to check.
+if ! git diff --cached --name-only --diff-filter=ACMR |
+	grep -Eq '\.go$|^\.golangci\.yml$|^go\.(mod|sum)$|^Makefile$'; then
+	exit 0
+fi
+
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+	printf '%s\n' "$unformatted" >&2
+	printf "pre-commit: unformatted Go files; run 'make fmt'\n" >&2
+	exit 1
+fi
+
+# Tool paths live in the Makefile; don't duplicate them here.
+make --no-print-directory vet staticcheck lint
+
+# Everything above checked the working tree. Partially staged Go files
+# mean the commit content is not exactly what was checked — say so.
+if git diff --name-only | grep -q '\.go$'; then
+	printf 'pre-commit: warning: unstaged .go changes; checks ran against the working tree\n' >&2
+fi

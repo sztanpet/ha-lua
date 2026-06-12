@@ -488,12 +488,13 @@ In CI use the official `golangci/golangci-lint-action` GitHub Action, which cach
 ```makefile
 BIN     := ha-lua
 GOFLAGS := -trimpath -ldflags="-s -w"
+GOPATH  := $(shell go env GOPATH)
 
 BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
 BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 
-.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy profile-cpu trace
+.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace
 
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
@@ -522,12 +523,19 @@ vet:
 	go vet ./...
 
 staticcheck:
-	staticcheck ./...
+	$(GOPATH)/bin/staticcheck ./...
 
 lint:
-	golangci-lint run
+	$(GOPATH)/bin/golangci-lint run
+
+fmt:
+	gofmt -l -w .
 
 check: vet staticcheck lint test
+
+# Install the git pre-commit hook (gofmt + vet + staticcheck + lint)
+hooks:
+	git config core.hooksPath .githooks
 
 tidy:
 	go mod tidy

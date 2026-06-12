@@ -6,7 +6,7 @@ BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
 BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 
-.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt profile-cpu trace
+.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace
 
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
@@ -34,12 +34,16 @@ staticcheck:
 	$(GOPATH)/bin/staticcheck ./...
 
 lint:
-	golangci-lint run
+	$(GOPATH)/bin/golangci-lint run
 
 fmt:
-	gofmt -w ./...
+	gofmt -l -w .
 
-check: vet staticcheck test
+check: vet staticcheck lint test
+
+# Install the git pre-commit hook (gofmt + vet + staticcheck + lint)
+hooks:
+	git config core.hooksPath .githooks
 
 tidy:
 	go mod tidy

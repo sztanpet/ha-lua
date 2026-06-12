@@ -115,8 +115,9 @@ make check        # vet + staticcheck + lint + test (CI target)
 make test         # go test -race ./...
 make lint         # golangci-lint run
 make staticcheck  # staticcheck ./...
-make fmt          # gofmt -w ./... (all code must be gofmt-clean before commit)
+make fmt          # gofmt -l -w . (all code must be gofmt-clean before commit)
 make tidy         # go mod tidy
+make hooks        # install the git pre-commit hook (gofmt + vet + staticcheck + lint)
 make bench        # run benchmarks → benchmarks/current.txt
 make bench-compare # benchstat baseline vs current (informational)
 make bench-update  # promote current.txt → baseline.txt
