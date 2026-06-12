@@ -1,0 +1,7 @@
+/ha-lua
+benchmarks/current.txt
+*.db
+*.db-shm
+*.db-wal
+trace.out
+/config/
