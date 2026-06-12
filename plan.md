@@ -43,10 +43,8 @@ Key invariant: **one `LState` per script, owned exclusively by that script's gor
 ```
 ha-lua/
 ├── cmd/
-│   ├── ha-lua/
-│   │   └── main.go           # entry point, wires everything together
-│   └── bench-check/
-│       └── main.go           # benchmark regression checker (used by make bench-compare)
+│   └── ha-lua/
+│       └── main.go           # entry point, wires everything together
 ├── internal/
 │   ├── testutil/
 │   │   └── db.go             # NewTestDB, seed helpers shared across test packages
@@ -60,7 +58,7 @@ ha-lua/
 │   │   └── tracker.go        # upsert states, append history
 │   ├── lua/                  # Lua VM lifecycle + API bindings
 │   │   ├── runner.go         # per-script goroutine, LState ownership
-│   │   ├── api_ha.go         # ha.* API (get_state, call_service, etc.)
+│   │   ├── api_ha.go         # ha.* API (get_state, call_service, on_exception, exceptions.*)
 │   │   ├── api_store.go      # store.* and global.* API
 │   │   ├── registry.go       # event routing table
 │   │   ├── json.go           # luaToJSON / jsonToLua helpers (uses go-json-experiment/json)
@@ -74,7 +72,7 @@ ha-lua/
 │   │   └── stdlib_math.go    # math augmentation
 │   ├── store/                # per-script + global KV (thin wrapper over SQLite)
 │   │   └── kv.go
-│   ├── purge/                # periodic downsampling + retention purge
+│   ├── purge/                # retention purge goroutine
 │   │   └── purge.go
 │   ├── scheduler/            # SQLite-backed timer engine
 │   │   └── scheduler.go
@@ -114,12 +112,14 @@ ha-lua/
 After auth, send `get_states` and upsert all returned states into both `states` and `state_history` (with `seeded_at` marker to distinguish from real changes if needed).
 
 ### Subscriptions
-Subscribe to `state_changed` (routes to state tracker + event router) and optionally to `*` (all events) for scripts that register on arbitrary event types.
+Always subscribe to `state_changed`. For `ha.on_event` registrations, collect the distinct set of event types across all loaded scripts and subscribe to each one explicitly — never subscribe to `*`. Subscriptions are sent after re-auth on every connect/reconnect.
 
 ```json
 {"id": 1, "type": "subscribe_events", "event_type": "state_changed"}
-{"id": 2, "type": "subscribe_events"}
+{"id": 2, "type": "subscribe_events", "event_type": "custom_event_type"}
 ```
+
+On hot reload, subscribe to any newly required event types. Do not unsubscribe from types that are no longer referenced — the HA protocol does not support per-subscription cancel cleanly, and the overhead of receiving an event nobody handles is negligible compared to the complexity of tracking active subscription IDs.
 
 ### Reconnect with backoff
 - Exponential backoff: 1s → 2s → 4s → … → 60s cap
@@ -130,7 +130,12 @@ Subscribe to `state_changed` (routes to state tracker + event router) and option
 
 ## SQLite Schema
 
-WAL mode enabled on open. All writes go through a single write serializer (one `*sql.DB` with `SetMaxOpenConns(1)` for writes) to avoid SQLITE_BUSY under concurrent script writes.
+WAL mode enabled on open. Two `*sql.DB` handles are opened against the same file:
+
+- **Write handle** — `SetMaxOpenConns(1)`. All INSERT/UPDATE/DELETE go through this handle. The single connection serializes writes and eliminates SQLITE_BUSY entirely.
+- **Read handle** — default connection pool (no `SetMaxOpenConns` cap). Concurrent `SELECT` from multiple script goroutines go here. WAL guarantees readers never block the writer and the writer never blocks readers — the two handles exploit this properly.
+
+Using a single handle with `SetMaxOpenConns(1)` would serialise reads too, throwing away the only reason WAL exists.
 
 ```sql
 -- Current state mirror (for fast get_state lookups)
@@ -233,14 +238,25 @@ Any `require` path that resolves outside `scripts/lib/` raises a Lua error. The 
 
 | Function | Description |
 |----------|-------------|
-| `ha.on_state_change(pattern, fn)` | Register callback for `state_changed` events where `entity_id` matches glob pattern. Called at load time. |
-| `ha.on_event(event_type, fn)` | Register callback for any HA event type. |
+| `ha.on_state_change(pattern, fn [, opts])` | Register callback for `state_changed` events where `entity_id` matches glob pattern. `opts.initial = true` immediately calls `fn` for every currently-matching entity (with `old_state = nil`) so the script is in sync from the first moment. Load-time only. |
+| `ha.on_event(event_type, fn)` | Register callback for any HA event type. Load-time only. |
+| `ha.on_exception(handler)` | Register a single error-handler function for this script. Called whenever a callback raises an unhandled Lua error. Load-time only. See **Error Handling** section. |
 | `ha.get_state(entity_id)` | Returns `{state, attributes}` table from the `states` mirror. |
+| `ha.get_entities(pattern)` | Returns array of `{entity_id, state, attributes}` for all entities whose ID matches the glob. Queries the `states` mirror. |
+| `ha.get_entity_ids(pattern)` | Returns array of entity ID strings matching the glob. Cheaper than `get_entities` when attributes are not needed. |
 | `ha.get_history(entity_id, since, limit)` | Returns array of `{state, attributes, changed_at}` from `state_history`. `since` is ISO8601 string, `limit` is int. |
-| `ha.get_stats(entity_id, since, resolution)` | Returns downsampled stats. `resolution` is `"hourly"` or `"daily"`. Returns array of `{bucket, min, max, avg, last, count}`. |
 | `ha.call_service(domain, service, data)` | Calls a HA service. `data` is a Lua table, serialized to JSON. |
 | `ha.fire_event(event_type, data)` | Fires a HA event. |
 | `ha.log(level, message)` | Logs at level `"debug"`, `"info"`, `"warn"`, `"error"`. |
+
+### `ha.exceptions` built-in handlers
+
+| Factory | Description |
+|---------|-------------|
+| `ha.exceptions.email(config)` | Returns a handler that sends a plain-text email via `net/smtp`. `config`: `to` (string or array), `smtp_host`, `smtp_port`, `username`, `password`, optional `from` and `subject_prefix`. |
+| `ha.exceptions.log_file(path)` | Returns a handler that appends a timestamped plain-text error entry (error, traceback, triggering event JSON) to `path`. |
+
+Both factories are pure Go, backed by `net/smtp` and `os.OpenFile` respectively. Credentials in `ha.exceptions.email` should always come from `store.get(...)` rather than being hardcoded in the script.
 
 ### `store` module (scoped to script)
 
@@ -260,13 +276,12 @@ Any `require` path that resolves outside `scripts/lib/` raises a Lua error. The 
 | `global.set(key, value)` | Persists value to the global store. |
 | `global.delete(key)` | Removes key from the global store. |
 | `global.get_all()` | Returns table of all global key→value pairs. |
-| `global.state(defaults)` | Same proxy mechanic as `store.state()` but backed by `global_kv`. **Note:** the proxy snapshots values at call time; other scripts' writes are not reflected until the proxy is re-created. Use `global.get/set` directly when live cross-script access matters. |
 
-### Persistent-proxy table (`store.state` / `global.state`)
+### Persistent-proxy table (`store.state`)
 
-Returns a Lua table wired with `__index` / `__newindex` metamethods. The backing values are stored in an internal Go map (hidden from Lua). On creation, each key in `defaults` is resolved from the store; if absent, the default value is used. On any assignment, the value is JSON-encoded and written to SQLite immediately.
+`store.state(defaults)` returns a Lua table wired with `__index` / `__newindex` metamethods. At call time, all keys are loaded from the script's KV store (one `SELECT` for the script's rows) and decoded into an internal Go map hidden from Lua. Defaults fill in any missing keys. After that, **reads serve from the in-memory Go map — no SQLite on read**. On any assignment the value is JSON-encoded, written to SQLite immediately, and the in-memory map is updated. There is no round-trip to SQLite on read; the map is the cache.
 
-Values round-trip via JSON, so types are preserved: numbers stay numbers, booleans stay booleans, strings stay strings, and nested tables are supported.
+Types are preserved: numbers stay numbers, booleans stay booleans, strings stay strings, nested tables are supported. Only available for per-script state — the global module has no equivalent proxy, by design.
 
 ```lua
 local s = store.state({ counter = 0, label = "hello", active = true })
@@ -322,6 +337,58 @@ Per-call timeout via `LState.SetContext` prevents a blocked script from stalling
 
 ---
 
+## Error Handling
+
+Every callback dispatch is wrapped in `L.CallByParam` with deferred Go-level recovery. If the Lua call returns an error:
+
+1. Collect the error message and stack traceback from gopher-lua.
+2. Build an **exception info table** and pass it to the script's registered `on_exception` handler (if any).
+3. If no handler is registered, or if the handler itself errors, log the full details via `slog.Error` and continue — the goroutine keeps running.
+
+### Exception info table
+
+```lua
+{
+    script_id   = "lights",
+    error       = "attempt to index nil value (field 'state')",
+    traceback   = "stack traceback:\n\t[string \"lights.lua\"]:42: in function ...",
+    callback    = "state_changed",   -- "state_changed" | "event" | "timer_every"
+                                     -- | "timer_at" | "timer_after"
+    event       = { ... },           -- triggering event table; nil for ha.every / ha.at
+    timestamp   = "2026-01-01T12:00:00Z",
+}
+```
+
+`traceback` is produced by gopher-lua's internal traceback before the debug library is removed from the global environment (the removal only affects script-level access, not internal Go calls).
+
+### `ha.exceptions.email` — implementation notes
+
+Uses `net/smtp.SendMail`. The email body is a plain-text template:
+
+```
+Script:   lights
+Time:     2026-01-01T12:00:00Z
+Callback: state_changed
+
+Error:
+  attempt to index nil value (field 'state')
+
+Traceback:
+  [string "lights.lua"]:42: in function <lights.lua:38>
+  ...
+
+Triggering event:
+  {"event_type":"state_changed","data":{"entity_id":"light.bedroom", ...}}
+```
+
+Subject defaults to `[ha-lua] Error in script: lights`.
+
+### `ha.exceptions.log_file` — implementation notes
+
+Appends to the file using `os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)`. Each entry is separated by `---\n`. Format mirrors the email body above.
+
+---
+
 ## Hot Reload
 
 `fsnotify` watches `scripts_dir`. On `WRITE` or `CREATE` event for a `.lua` file:
@@ -356,11 +423,8 @@ database: "./ha-lua.db"
 log_level: "info"
 
 state_history:
-  retention_days: 30
-  downsample_after_days: 7
-  hourly_retention_days: 90
-  daily_retention_days: 365
-  purge_interval: "1h"
+  retention_days: 2    # raw history kept for this many days, then deleted
+  purge_interval: "1h" # how often the purge job runs
 
 debug:
   pprof_addr: ""
@@ -370,50 +434,18 @@ debug:
 
 ---
 
-## Purge & Downsampling Job
+## Purge Job
 
 `internal/purge/purge.go` — a `Purger` struct with `New(db, cfg)` and `Start(ctx)`. `Start` spawns a goroutine with a `time.Ticker` at `purge_interval`. Expose `RunOnce()` for tests.
 
-Each tick runs **four steps in a single transaction**:
+Each tick runs a single DELETE:
 
-**Step 1 — Raw numeric → hourly** (rows older than `downsample_after_days`, excluding the current incomplete hour):
 ```sql
-INSERT OR REPLACE INTO state_stats_hourly(entity_id, bucket, min, max, avg, last, count)
-SELECT
-    h.entity_id,
-    strftime('%Y-%m-%dT%H:00:00Z', h.changed_at) AS bucket,
-    MIN(CAST(h.state AS REAL)),
-    MAX(CAST(h.state AS REAL)),
-    AVG(CAST(h.state AS REAL)),
-    CAST((SELECT state FROM state_history
-          WHERE entity_id = h.entity_id
-            AND strftime('%Y-%m-%dT%H:00:00Z', changed_at) = bucket
-          ORDER BY changed_at DESC LIMIT 1) AS REAL),
-    COUNT(*)
-FROM state_history h
-WHERE h.is_numeric = 1
-  AND h.changed_at < datetime('now', '-' || ? || ' days')
-  AND bucket < strftime('%Y-%m-%dT%H:00:00Z', 'now')
-GROUP BY h.entity_id, bucket;
-
 DELETE FROM state_history
-WHERE is_numeric = 1
-  AND changed_at < datetime('now', '-' || ? || ' days')
-  AND strftime('%Y-%m-%dT%H:00:00Z', changed_at) < strftime('%Y-%m-%dT%H:00:00Z', 'now');
+WHERE changed_at < datetime('now', '-' || ? || ' days');
 ```
 
-**Step 2 — Hourly → daily** (rows older than `hourly_retention_days`, weighted average via `SUM(avg*count)/SUM(count)`):
-Same pattern against `state_stats_hourly` → `state_stats_daily`.
-
-**Step 3 — Purge old daily stats:**
-```sql
-DELETE FROM state_stats_daily WHERE bucket < datetime('now', '-' || ? || ' days');
-```
-
-**Step 4 — Purge non-numeric raw data:**
-```sql
-DELETE FROM state_history WHERE is_numeric = 0 AND changed_at < datetime('now', '-' || ? || ' days');
-```
+Parameter is `retention_days` (default 2). HA's own recorder/statistics handles any long-term history needs; `state_history` here is for short-window queries from scripts via `ha.get_history`.
 
 ---
 
@@ -421,7 +453,7 @@ DELETE FROM state_history WHERE is_numeric = 0 AND changed_at < datetime('now', 
 
 ### `tools.go`
 
-Pins tool versions in `go.sum` via the `//go:build tools` pattern:
+Pins pure-Go tool versions in `go.sum` via the `//go:build tools` pattern:
 
 ```go
 //go:build tools
@@ -430,10 +462,18 @@ package tools
 
 import (
     _ "honnef.co/go/tools/cmd/staticcheck"
-    _ "github.com/golangci/golangci-lint/cmd/golangci-lint"
     _ "golang.org/x/perf/cmd/benchstat"
 )
 ```
+
+`golangci-lint` is **not** pinned here. It has C dependencies (some of its analysers link against system libraries) and `go install` is unreliable across aarch64/amd64 with CGO disabled. Install it via the official script:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+    | sh -s -- -b $(go env GOPATH)/bin v1.64.0
+```
+
+In CI use the official `golangci/golangci-lint-action` GitHub Action, which caches the binary for the correct platform automatically. Pin the version in both places.
 
 ### `Makefile`
 
@@ -450,20 +490,18 @@ BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
 
-# Unit tests + benchmark regression check — the primary "does it still work and is it still fast" target
+# Unit tests — primary correctness target
 test:
 	go test -race ./...
-	@$(MAKE) bench-compare
 
 # Run benchmarks and save to current.txt
 bench:
 	go test $(BENCH_FLAGS) ./... | tee $(BENCH_CURRENT)
 
-# Compare current benchmarks against committed baseline; fails if any metric regressed >10%
+# Show benchmark delta vs committed baseline (informational, does not fail the build)
 bench-compare: bench
 	@if [ -f $(BENCH_BASELINE) ]; then \
 	    benchstat $(BENCH_BASELINE) $(BENCH_CURRENT); \
-	    go run ./cmd/bench-check $(BENCH_BASELINE) $(BENCH_CURRENT); \
 	else \
 	    echo "WARN: no benchmark baseline; run 'make bench-update' to create one."; \
 	fi
@@ -619,12 +657,12 @@ The `onFire` callback is provided by the runner — it sends a `TimerFiredEvent`
 
 ### `ha.after` persistence semantics
 
-- Row has `type = "after"` in the `timers` table.
-- After firing: **delete the row** (one-shot).
-- On startup, for each `"after"` row with `next_run <= now`:
-  - If the script has re-registered a callback for that timer ID (only possible for load-time calls): fire immediately, delete row.
-  - If no callback found (called from a runtime callback that hasn't re-run): log a warning, delete the orphaned row.
-- **Guarantee**: `ha.every` and `ha.at` timers always survive restart. `ha.after` timers set from within callbacks may be lost on restart — use `ha.every`/`ha.at` for reliability.
+`ha.after` does **not** survive process restarts. The timer ID is a UUID generated at call time; on restart the script generates a new UUID, so there is no way to match the old row to the new callback. On startup, every `"after"` row found in the `timers` table is treated as orphaned: log a warning and delete it.
+
+The row is still written to SQLite before the timer fires so that an unexpected crash mid-interval produces a visible log entry rather than silent loss.
+
+- `ha.every` and `ha.at` always survive restart (stable IDs, catch-up on startup).
+- `ha.after` never survives restart — design automations accordingly.
 
 ---
 
@@ -651,10 +689,7 @@ map:
 options:
   log_level: "info"
   state_history:
-    retention_days: 30
-    downsample_after_days: 7
-    hourly_retention_days: 90
-    daily_retention_days: 365
+    retention_days: 2
     purge_interval: "1h"
   debug:
     pprof_addr: ""
@@ -662,9 +697,6 @@ schema:
   log_level: "str"
   state_history:
     retention_days: "int"
-    downsample_after_days: "int"
-    hourly_retention_days: "int"
-    daily_retention_days: "int"
     purge_interval: "str"
   debug:
     pprof_addr: "str?"
@@ -745,7 +777,7 @@ The daemon is a single static Go binary (no CGO). It runs inside a Docker contai
 - **Table-driven tests** for all encoding, aggregation, and scheduling logic.
 - **`internal/testutil/db.go`** — shared helpers: `NewTestDB(t)` (opens `:memory:`, runs migrations), seed functions for `state_history`, `timers`, etc.
 - **Lua API tests** — spin up a real `*lua.LState`, register the API, run Lua snippets via `L.DoString()`, assert results from Go. Fast because SQLite is in-memory.
-- **Benchmarks on hot paths** — see table below. Baseline committed in `benchmarks/baseline.txt`; `make test` detects regressions automatically.
+- **Benchmarks on hot paths** — see table below. Baseline committed in `benchmarks/baseline.txt`; `make bench-compare` shows the delta (informational, does not block CI).
 
 ### Test files
 
@@ -753,11 +785,12 @@ The daemon is a single static Go binary (no CGO). It runs inside a Docker contai
 |---------|------|----------------|
 | `internal/db` | `db_test.go` | Schema migrations run cleanly; idempotent (apply twice = no error) |
 | `internal/store` | `kv_test.go` | Get/Set/Delete/GetAll; per-script isolation (script A can't read script B's keys); global namespace; JSON round-trip for all types via `store.state()` proxy |
-| `internal/state` | `tracker_test.go` | Upsert overwrites `states`; `state_history` appends; `is_numeric` set correctly for numeric/non-numeric/edge-case states (`""`, `"unavailable"`, `"1e3"`, `"-0.5"`) |
-| `internal/purge` | `purge_test.go` | Raw→hourly aggregation (min/max/avg/last/count correctness); hourly→daily weighted average; non-numeric rows deleted at threshold; daily stats purged; incomplete current-hour bucket excluded; `RunOnce()` test harness |
+| `internal/state` | `tracker_test.go` | Upsert overwrites `states`; `state_history` appends; both written atomically; `ha.get_entity_ids` and `ha.get_entities` return correct subsets |
+| `internal/purge` | `purge_test.go` | Rows older than `retention_days` are deleted; rows within window are kept; `RunOnce()` test harness |
 | `internal/scheduler` | `scheduler_test.go` | `ha.every` fires at interval; catch-up fires once when `next_run` is past; `ha.at` computes correct next daily time; `ha.after` fires once and row is deleted; orphaned `ha.after` rows cleaned up on start; min-heap ordering with many concurrent timers |
 | `internal/lua` | `json_test.go` | `luaToJSON`/`jsonToLua` round-trip: `nil`, `bool`, `number` (int and float), `string`, nested table, array table |
-| `internal/lua` | `api_store_test.go` | `store.state()` loads defaults on first use; persists on write; reloads values across LState re-creation; `global.state()` shares values across two LStates; snapshot-at-call-time documented |
+| `internal/lua` | `api_store_test.go` | `store.state()` loads defaults on first use; persists on write; reloads values across LState re-creation |
+| `internal/lua` | `api_ha_test.go` | `ha.on_exception` handler is called on callback error; exception info table has correct fields; `ha.exceptions.log_file` appends to file; `ha.exceptions.email` calls smtp (mocked); `ha.on_state_change` with `initial=true` delivers synthetic events on load |
 | `internal/ha` | `client_test.go` | Auth flow against mock WS server (`net/http/httptest`); reconnect loop fires after connection drop; `get_states` seed populates `states` table |
 
 ### Benchmarks
@@ -765,7 +798,7 @@ The daemon is a single static Go binary (no CGO). It runs inside a Docker contai
 | Name | File | What it measures |
 |------|------|-----------------|
 | `BenchmarkStateInsert` | `internal/state/tracker_test.go` | Throughput of inserting a `state_changed` event (atomic tx: upsert `states` + append `state_history`) |
-| `BenchmarkPurgeRawToHourly` | `internal/purge/purge_test.go` | Time to aggregate 10 000 raw numeric rows into hourly buckets in one transaction |
+| `BenchmarkPurge` | `internal/purge/purge_test.go` | Time to delete 10 000 expired rows in one tick |
 | `BenchmarkKVGet` | `internal/store/kv_test.go` | Single `store.Get` call |
 | `BenchmarkKVSet` | `internal/store/kv_test.go` | Single `store.Set` call (upsert) |
 | `BenchmarkStoreStateProxyWrite` | `internal/lua/api_store_test.go` | Single write through the `store.state()` proxy (Lua → JSON → SQLite) |
@@ -774,23 +807,9 @@ The daemon is a single static Go binary (no CGO). It runs inside a Docker contai
 | `BenchmarkEventDispatch` | `internal/lua/api_store_test.go` | Dispatch one `state_changed` event to 10 concurrently running scripts, each with a registered callback |
 | `BenchmarkSchedulerFire` | `internal/scheduler/scheduler_test.go` | Fire 100 timers from a loaded heap (measures heap-pop + SQLite update per fire) |
 
-### Regression detection (`cmd/bench-check`)
+### Regression detection
 
-`cmd/bench-check/main.go` is a small Go program that:
-
-1. Accepts two benchmark output files as arguments (`baseline.txt`, `current.txt`).
-2. Shells out to `benchstat -format=csv` to get machine-readable delta data.
-3. Parses each row; if `delta% > 10` **and** `p < 0.05` (statistically significant), records it as a regression.
-4. Prints a summary and exits 1 if any regression found, 0 otherwise.
-
-```
-$ go run ./cmd/bench-check benchmarks/baseline.txt benchmarks/current.txt
-BenchmarkStateInsert: +3.1% (p=0.041) — within threshold
-BenchmarkPurgeRawToHourly: +14.7% (p=0.002) — REGRESSION
-exit status 1
-```
-
-`make test` calls `make bench-compare` which runs this tool. If no baseline exists, `bench-compare` prints a warning and exits 0 (non-blocking for new contributors). Running `make bench-update` after verifying the numbers creates or updates the baseline.
+`make bench-compare` runs `benchstat baseline.txt current.txt` and prints the delta table. The output is informational — it does not fail the build. Regressions are caught by eyeballing the output or by reviewing the diff when `bench-update` is proposed. Running `make bench-update` after verifying the numbers creates or updates the committed baseline.
 
 ### `benchmarks/` layout
 
@@ -903,7 +922,7 @@ local data    = json.decode(res.body)
 
 #### `re` — backed by `regexp` package with per-LState compiled-regex cache
 
-Compile cost is paid once per unique pattern per LState. Patterns use Go RE2 syntax.
+Compile cost is paid once per unique pattern per LState. The cache is bounded at **256 entries** per LState; when full, the least-recently-used pattern is evicted. Scripts with dynamic patterns (patterns built from runtime values) still benefit from the cache for repeated patterns, and worst-case recompile cost is bounded. Patterns use Go RE2 syntax.
 
 | Function | Description |
 |----------|-------------|
@@ -1028,6 +1047,7 @@ Add to `internal/lua/stdlib_test.go`:
 - **`strings`**: table-driven tests for all 12 functions; edge cases for empty string, UTF-8 input, `split` with empty separator.
 - **`time`**: parse RFC3339 → format back → round-trip identical; `:sub` between two times; `:weekday` on known dates; `parse_duration` for all unit letters.
 - **`json`**: already covered by `json_test.go` — add `json.encode`/`json.decode` Lua-surface tests.
+- **exception handlers**: `ha.exceptions.log_file` — write known error, assert file contents match template; `ha.exceptions.email` — use `net/smtp` test server (or capture SMTP conversation) to verify subject, body fields.
 - **`re`**: match / no-match, `find_all` returns correct count, `replace` with group references, cached vs. first-compile performance.
 - **`http`**: use `net/http/httptest` test server; assert status, body, headers round-trip; assert context cancellation propagates (cancel context mid-flight, expect `nil, err`).
 - **`crypto`**: table-driven against RFC/NIST test vectors for md5, sha1, sha256, sha512, hmac_sha256, hmac_sha512; base64 round-trip (standard + URL-safe); hex round-trip; `random_bytes(n)` produces exactly `n` bytes and two calls differ; `crypto.equal` returns true for equal inputs, false for differing inputs.
@@ -1045,8 +1065,9 @@ Add benchmarks: `BenchmarkReMatchCached` (warm cache) vs `BenchmarkReMatchCold` 
 4. **Event dispatch** — per-script goroutines, `ha.on_state_change` routing, glob matching
 5. **Service calls** — `ha.call_service`, `ha.fire_event`
 6. **Hot reload** — fsnotify watcher, graceful script restart
-7. **History, stats & purge** — `ha.get_history`, `ha.get_stats`, purge goroutine, raw→hourly→daily downsampling, retention deletes
+7. **History & purge** — `ha.get_history`, `ha.get_entities`, `ha.get_entity_ids`, simple retention-delete purge job
 8. **Scheduling** — `ha.every`, `ha.at`, `ha.after` (one-shot), SQLite-backed timer persistence, catch-up on startup, orphaned `ha.after` cleanup
-9. **Lua stdlib** — sandboxing; `strings`, `time`, `json` (v2), `re`, `http`, `crypto` modules; `math` augmentation
-10. **Testing & benchmarks** — full test suite per package, all benchmarks passing, baseline committed, `make test` regression check working
-11. **Add-on packaging** — `config.yaml` manifest, `Dockerfile`, `run.sh`, `build.yaml`, `DOCS.md`, `CHANGELOG.md`, GitHub Actions CI/CD
+9. **Error handling** — `ha.on_exception`, `ha.exceptions.email` (`net/smtp`), `ha.exceptions.log_file`; per-callback `pcall` + slog fallback
+10. **Lua stdlib** — sandboxing + restricted `require`; `strings`, `time`, `json` (v2), `re`, `http`, `crypto` modules; `math` augmentation; `opts.initial` for `ha.on_state_change`
+11. **Testing & benchmarks** — full test suite per package, all benchmarks passing, baseline committed
+12. **Add-on packaging** — `config.yaml` manifest, `Dockerfile`, `run.sh`, `build.yaml`, `DOCS.md`, `CHANGELOG.md`, GitHub Actions CI/CD

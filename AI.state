@@ -5,16 +5,10 @@ Last updated: 2026-06-12
 Planning — no code written yet. All milestones are pending.
 
 ## Completed this session
-- Wrote full architecture plan in plan.md
-- Designed and documented:
-  - HA WebSocket lifecycle (auth, seed, reconnect with backoff)
-  - SQLite schema (states, state_history, script_kv, global_kv, state_stats_hourly, state_stats_daily, timers)
-  - Per-script LState goroutine model with buffered event channels
-  - store.* / global.* KV API with persistent-proxy store.state()/global.state()
-  - Purge & downsampling job (4-step transactional tick: raw→hourly→daily + non-numeric delete)
-  - Go tooling: golangci-lint + staticcheck, Makefile, pprof/trace via net/http/pprof
-  - Scheduler: SQLite-backed timers, min-heap, catch-up on startup
-- Created CLAUDE.md
+- Wrote full architecture plan in plan.md (all milestones, schema, Lua API, config)
+- Created CLAUDE.md (package map, conventions, add-on layout, AI.state pointer)
+- Review pass: cut overkill items, added missing features (see key decisions)
+- Updated CLAUDE.md: added Working Process, Git Commit Style, and Code Search (semble) sections; fixed stale references to removed features
 
 ## Pending (implementation order)
 1. HA client — auth flow, reconnect, raw event stream
@@ -23,34 +17,46 @@ Planning — no code written yet. All milestones are pending.
 4. Event dispatch — per-script goroutines, ha.on_state_change routing, glob matching
 5. Service calls — ha.call_service, ha.fire_event
 6. Hot reload — fsnotify watcher, graceful script restart
-7. History + stats + purge — ha.get_history, ha.get_stats, purge goroutine, downsampling
+7. History & purge — ha.get_history, ha.get_entities, ha.get_entity_ids, simple 2-day retention delete
 8. Scheduling — ha.every, ha.at, ha.after (one-shot), SQLite timer persistence, catch-up on startup
-9. Lua stdlib — sandboxing + 5 new modules (strings, time, json, re, http) + math augmentation
-10. Testing & benchmarks — full test suite, benchmarks, baseline committed, make test regression check
-11. Add-on packaging — config.yaml manifest, Dockerfile, run.sh, build.yaml, DOCS.md, CI/CD
+9. Error handling — ha.on_exception, ha.exceptions.email (net/smtp), ha.exceptions.log_file; pcall per callback
+10. Lua stdlib — sandboxing + restricted require (scripts/lib/ only); strings, time, json (v2), re, http, crypto modules; math augmentation; ha.on_state_change opts.initial
+11. Testing & benchmarks — full test suite, benchmarks, baseline committed
+12. Add-on packaging — config.yaml manifest, Dockerfile, run.sh, build.yaml, DOCS.md, CI/CD
 
 ## Key decisions (do not re-litigate without good reason)
 - **State scope**: full history log (append-only) + current-state mirror for fast get_state
 - **Lua concurrency**: one LState per script goroutine, never shared
 - **Script registration**: in-script (ha.on_state_change style), no external manifest
-- **KV encoding**: JSON round-trip inside store.state()/global.state() proxy
-- **Global KV**: separate global_kv table (not a reserved script_id in script_kv)
-- **is_numeric**: set at insert time via strconv.ParseFloat, not re-derived at purge time
+- **KV encoding**: JSON round-trip via github.com/go-json-experiment/json (json/v2)
+- **Global KV**: separate global_kv table (not a reserved script_id in script_kv); no proxy — use global.get/set directly
 - **Timer IDs (every/at)**: stable key = script_id|type|spec|N; INSERT OR IGNORE preserves last_run/next_run across reloads
 - **Timer IDs (after)**: UUID per call; row deleted after firing; orphaned rows cleaned up on startup
 - **ha.after persistence**: best-effort — survives restart only if called at load time; callback-registered timers are dropped and logged on restart
 - **Catch-up semantics**: fire at most once per missed timer (not replay all missed intervals)
 - **Scheduler coupling**: scheduler sends TimerFiredEvent via onFire callback → script channel; scheduler does not hold *lua.LFunction references
-- **HA add-on**: repo root = add-on directory (single-addon repo); no user-provided HA URL/token (supervisor injects SUPERVISOR_TOKEN + ws://supervisor/core/websocket); scripts at /addon_config/scripts/; DB at /data/ha-lua.db; user options from /data/options.json
+- **HA add-on**: repo root = add-on directory; supervisor injects SUPERVISOR_TOKEN + ws://supervisor/core/websocket; scripts at /addon_config/scripts/; DB at /data/ha-lua.db; user options from /data/options.json
 - **Config**: production reads /data/options.json; development uses --config flag pointing to config.dev.yaml
-- **Lua sandbox**: SkipOpenLibs=true; open base/math/string/table/os/coroutine selectively; nil out load/loadfile/dofile/require/os.execute/os.exit/io/debug/package
-- **JSON library**: use github.com/go-json-experiment/json (json/v2) everywhere — deterministic key order, strict UTF-8; import path changes to encoding/json/v2 when it lands in stdlib
-- **Lua stdlib modules**: strings (Go strings pkg), time (Go time pkg, userdata with methods), json (go-json-experiment/json v2), re (Go regexp + per-LState cache), http (net/http, uses L.Context() for timeout), crypto (md5/sha1/sha256/sha512/hmac_sha256/hmac_sha512/base64/hex/rand/equal via crypto/* + encoding/*)
-- **math augmentation**: add round/clamp/log2/sign to existing math table
-- **Tests**: real SQLite (:memory:) everywhere, no mocks; shared helpers in internal/testutil/db.go
-- **Benchmark regression**: cmd/bench-check parses benchstat -format=csv output, fails on >10% regression with p<0.05; make test runs this automatically; baseline in benchmarks/baseline.txt (committed)
+- **Lua sandbox**: SkipOpenLibs=true; open base/math/string/table/os/coroutine selectively; nil out load/loadfile/dofile/io/debug/package/os.execute/os.exit; replace require with restricted loader (scripts/lib/ only)
+- **Error handling**: every callback dispatch wrapped in pcall; on error build exception info table {script_id, error, traceback, callback, event, timestamp} and call registered on_exception handler; slog.Error fallback if no handler; ha.exceptions.email uses net/smtp, ha.exceptions.log_file uses os.OpenFile append
+- **New Lua API**: ha.on_exception(fn), ha.exceptions.email(cfg), ha.exceptions.log_file(path), ha.get_entities(pattern), ha.get_entity_ids(pattern), ha.on_state_change opts.initial=true for initial state delivery
+- **JSON library**: github.com/go-json-experiment/json everywhere — deterministic key order, strict UTF-8; import path changes to encoding/json/v2 when stdlib proposal lands
+- **Lua stdlib modules**: strings, time, json (v2), re (kept — user explicitly disagreed with cutting it), http, crypto (md5/sha1/sha256/sha512/hmac_sha256/hmac_sha512/base64/hex/rand/equal); math augmentation (round/clamp/log2/sign)
+- **Tests**: real SQLite (:memory:) everywhere, no mocks; table-driven; helpers in internal/testutil/db.go
+- **Benchmark regression**: benchstat comparison is informational only — bench-compare target prints output but does not fail the build; no cmd/bench-check tool
+- **Purge**: single DELETE for rows older than retention_days (default 2); no downsampling; no stats tables; Purger.RunOnce() for tests
+- **Retention config**: state_history.retention_days default 2; purge_interval default "1h"
+
+## Removed (do not add back without explicit user request)
+- state_stats_hourly / state_stats_daily tables
+- ha.get_stats
+- is_numeric column on state_history
+- 4-step transactional purge (aggregate → hourly → daily → delete)
+- global.state() persistent-proxy (cache coherency issue with concurrent scripts)
+- cmd/bench-check tool (over-engineered for a home project)
 
 ## User preferences observed
 - Studio Code Server is the editor; scripts live at /config/ha-lua/scripts/
 - Pure Go only — modernc.org/sqlite (no CGO), gopher-lua (no CGO)
-- Deployment target: HA add-on or sidecar (single static binary + /config volume)
+- Deployment target: HA add-on (single static binary + /data + /addon_config volumes)
+- Prefers planning to be done before any code is written
