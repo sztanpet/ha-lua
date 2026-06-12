@@ -54,16 +54,24 @@ CREATE INDEX IF NOT EXISTS idx_timers_next ON timers(next_run);
 
 // OpenDB opens two handles against path: a single-connection write handle
 // and a pooled read handle. WAL mode is enabled on open.
+//
+// modernc.org/sqlite takes pragmas as _pragma=name(value) — the mattn-style
+// _journal_mode=WAL is silently ignored and leaves the default rollback
+// journal. TestOpenDBEnablesWAL guards against regressing this.
 func OpenDB(path string) (writeDB, readDB *sql.DB, err error) {
-	dsn := "file:" + path + "?_journal_mode=WAL&_foreign_keys=on"
+	pragmas := "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)"
 
-	writeDB, err = sql.Open("sqlite", dsn)
+	// _txlock=immediate: write transactions take the write lock up front
+	// instead of upgrading from a read lock mid-transaction, which is the
+	// one place WAL can still return SQLITE_BUSY without honoring
+	// busy_timeout.
+	writeDB, err = sql.Open("sqlite", "file:"+path+"?"+pragmas+"&_txlock=immediate")
 	if err != nil {
 		return nil, nil, fmt.Errorf("open write db: %w", err)
 	}
 	writeDB.SetMaxOpenConns(1)
 
-	readDB, err = sql.Open("sqlite", dsn)
+	readDB, err = sql.Open("sqlite", "file:"+path+"?"+pragmas)
 	if err != nil {
 		writeDB.Close()
 		return nil, nil, fmt.Errorf("open read db: %w", err)
