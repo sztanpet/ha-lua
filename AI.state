@@ -1,12 +1,53 @@
 # AI Working State
-Last updated: 2026-06-12
+Last updated: 2026-06-13
 
 ## Phase
-Implementation — milestones 1–5 committed and passing. Plan-review fixes are
-folded into plan.md and the code follow-ups are done. gofmt + vet +
-staticcheck + golangci-lint are enforced by a pre-commit hook (.githooks/,
-installed via `make hooks` — already active in this clone). Working tree is
-clean. Next up: milestone 6 (hot reload).
+Implementation — milestones 1–6 committed and passing. A code-review pass
+(2026-06-13) found and fixed serious M1/M2-era bugs, most notably that WAL
+was never actually enabled. gofmt + vet + staticcheck + golangci-lint are
+enforced by a pre-commit hook (.githooks/, installed via `make hooks` —
+already active in this clone). Working tree is clean. Next up: milestone 7
+(purge).
+
+## Code review pass (2026-06-13, commits fc14d45..4373da1)
+- **WAL was never on.** The DSN used mattn-style `_journal_mode=WAL`, which
+  modernc.org/sqlite silently ignores (verified: journal_mode=delete).
+  Fixed to `_pragma=journal_mode(WAL)` + busy_timeout(5000) +
+  foreign_keys(on); write handle adds `_txlock=immediate`.
+  TestOpenDBEnablesWAL guards the syntax. testutil DSNs also fixed and made
+  unique per test (shared-cache memory DBs with a fixed name leak state
+  between parallel tests). (fc14d45)
+- **HA client lifecycle** (9f3dffe): re-seed on every reconnect per plan
+  (States channel: cap 1, newest wins, never closed; main consumes
+  forever); AddEventType is mutex-protected, dedups, and subscribes on the
+  live connection (was: race + dead until next reconnect); conn published
+  to SendRaw only after auth_ok; backoff resets after a connection that
+  lived >1min; per-connection msgID reset removed (raced concurrent
+  SendRaw; HA only needs increasing IDs per connection).
+- Dead MakeCallService/MakeFireEvent removed (d8ea14f).
+- on_exception traceback is now the real Lua stack trace via
+  *lua.ApiError.StackTrace (was: a second copy of the error message);
+  on_state_change rejects malformed glob patterns at load time (7a1451e).
+- fsnotify was NOT in go.mod despite earlier notes claiming it was — added
+  v1.10.1 with the M6 work.
+
+## Milestone 6 — hot reload (4373da1)
+- internal/lua/supervisor.go: Supervisor owns start/stop/reload; Deps
+  struct carries tracker/global/NewKV/CallService/FireEvent/OnLoaded.
+  Stop = registry.Remove → Runner.Close() (drain) → wait done, 5s timeout
+  then per-script ctx cancel (aborts the gopher-lua VM). Reload =
+  Stop + Start; also starts brand-new files.
+- internal/lua/watcher.go: ScriptWatcher; NewScriptWatcher registers the
+  inotify watch synchronously (no missed-file window vs LoadAll), Run
+  debounces 300ms per script and acts on the settled file state (present →
+  reload, absent → stop) — event types lie under atomic saves.
+- Runner gains Close() and EventTypes(); Registry lost EventTypes()/RunAll
+  (supervisor replaced their only caller); DispatchToTimer sends under the
+  read lock so a runner's channel can't be closed mid-Send.
+- OnLoaded hook → client.AddEventType for each script's event types on
+  every (re)load; never unsubscribes (plan §"On hot reload").
+- main.go: MkdirAll(scripts_dir) on startup (fresh add-on install), wires
+  supervisor + watcher, ends with sup.Wait().
 
 ## Tooling pass (2026-06-12, commits 8814eff..11903db)
 - golangci-lint had NEVER run: not installed, v1-format config that v2
@@ -38,7 +79,6 @@ clean. Next up: milestone 6 (hot reload).
 - `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-6. Hot reload — fsnotify watcher (dep already in go.mod), graceful script restart
 7. Purge — internal/purge/ is an empty dir; ticker + retention DELETE + RunOnce()
 8. Scheduling — internal/scheduler/ is an empty dir; ha.every/at/after, timers table,
    min-heap, catch-up, orphan cleanup, ha.at timezone resolution (time/tzdata);
@@ -106,7 +146,11 @@ websocket lib is github.com/coder/websocket.
 - **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited
 - **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC
 - **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
-- **golangci-lint**: v2.12.2 (config format version "2"); installed via release binary / official action, never go install; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow) — configure the tool, don't litter the code with `_ =`
+- **golangci-lint**: v2.12.2 (config format version "2"); installed via release binary / official action, never go install; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow, fsnotify Watcher.Close) — configure the tool, don't litter the code with `_ =`
+- **SQLite DSN**: modernc.org/sqlite pragmas use `_pragma=name(value)` — mattn-style params are silently ignored; any new DB open site must use the modernc form (TestOpenDBEnablesWAL is the canary)
+- **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
+- **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie)
+- **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect
 
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables
