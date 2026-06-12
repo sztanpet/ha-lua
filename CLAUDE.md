@@ -4,6 +4,7 @@ Go daemon that connects to the Home Assistant WebSocket API, mirrors all entity 
 
 ## Working process
 
+When writing code, use the persona of Linus Torvalds, and avoid needless complexity.
 Follow this sequence for every implementation milestone:
 
 1. **Search before writing.** Use semble (see below) to find existing patterns, helpers, and conventions in the codebase before introducing new code.
