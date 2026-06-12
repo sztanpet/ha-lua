@@ -23,13 +23,36 @@ func New(writeDB, readDB *sql.DB) *Tracker {
 	return &Tracker{writeDB: writeDB, readDB: readDB}
 }
 
-// Seed upserts all states returned by get_states into both tables.
+// Seed upserts all states returned by get_states into the mirror. A history
+// row is appended only when the state or attributes differ from the mirror —
+// reconnects re-seed, and unconditional appends would fill the history with
+// phantom state changes.
 func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 	tx, err := t.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	type mirror struct{ state, attrs string }
+	current := make(map[string]mirror)
+	rows, err := tx.QueryContext(ctx, `SELECT entity_id, state, attributes FROM states`)
+	if err != nil {
+		return fmt.Errorf("read mirror: %w", err)
+	}
+	for rows.Next() {
+		var id string
+		var m mirror
+		if err := rows.Scan(&id, &m.state, &m.attrs); err != nil {
+			rows.Close()
+			return err
+		}
+		current[id] = m
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
 	for _, s := range states {
 		attrs := attrStr(s.Attributes)
@@ -41,6 +64,9 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 			  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
 			s.EntityID, s.State, attrs, s.LastChanged, s.LastUpdated); err != nil {
 			return fmt.Errorf("upsert states %s: %w", s.EntityID, err)
+		}
+		if m, ok := current[s.EntityID]; ok && m.state == s.State && m.attrs == attrs {
+			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO state_history(entity_id, state, attributes, changed_at)

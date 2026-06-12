@@ -42,6 +42,63 @@ func TestSeedAndGetState(t *testing.T) {
 	}
 }
 
+func TestSeedSkipsUnchangedHistory(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	states := []ha.StateData{
+		{EntityID: "light.test", State: "on", Attributes: jsontext.Value(`{"brightness":200}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+		{EntityID: "sensor.temp", State: "21", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	}
+	if err := tr.Seed(ctx, states); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+
+	historyCount := func(entity string) int {
+		h, err := tr.GetHistory(ctx, entity, "2020-01-01T00:00:00Z", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(h)
+	}
+
+	if n := historyCount("light.test"); n != 1 {
+		t.Fatalf("history after first seed: want 1, got %d", n)
+	}
+
+	// Re-seed with identical states: no new history rows (reconnect case).
+	if err := tr.Seed(ctx, states); err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	if n := historyCount("light.test"); n != 1 {
+		t.Errorf("history after identical re-seed: want 1, got %d", n)
+	}
+
+	// Re-seed with a changed state: exactly one new history row.
+	states[0].State = "off"
+	states[0].LastChanged = "2026-01-01T02:00:00Z"
+	if err := tr.Seed(ctx, states); err != nil {
+		t.Fatalf("third seed: %v", err)
+	}
+	if n := historyCount("light.test"); n != 2 {
+		t.Errorf("history after changed re-seed: want 2, got %d", n)
+	}
+	if n := historyCount("sensor.temp"); n != 1 {
+		t.Errorf("history for unchanged entity: want 1, got %d", n)
+	}
+
+	// The mirror still reflects the latest seed.
+	s, err := tr.GetState(ctx, "light.test")
+	if err != nil || s == nil {
+		t.Fatalf("get_state: %v, %v", s, err)
+	}
+	if s.State != "off" {
+		t.Errorf("mirror state: want off, got %q", s.State)
+	}
+}
+
 func TestHandleStateChanged(t *testing.T) {
 	tr := newTracker(t)
 	ctx := context.Background()
