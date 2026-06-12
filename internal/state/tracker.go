@@ -1,0 +1,181 @@
+package state
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+
+	"github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
+	"github.com/sztanpet/ha-lua/internal/ha"
+)
+
+// Tracker writes state changes to SQLite and serves read queries from
+// the read handle.
+type Tracker struct {
+	writeDB *sql.DB
+	readDB  *sql.DB
+}
+
+// New creates a Tracker. Both handles must already have the schema applied.
+func New(writeDB, readDB *sql.DB) *Tracker {
+	return &Tracker{writeDB: writeDB, readDB: readDB}
+}
+
+// Seed upserts all states returned by get_states into both tables.
+func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
+	tx, err := t.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, s := range states {
+		attrs := attrStr(s.Attributes)
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
+			VALUES(?,?,?,?,?)
+			ON CONFLICT(entity_id) DO UPDATE SET
+			  state=excluded.state, attributes=excluded.attributes,
+			  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
+			s.EntityID, s.State, attrs, s.LastChanged, s.LastUpdated); err != nil {
+			return fmt.Errorf("upsert states %s: %w", s.EntityID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO state_history(entity_id, state, attributes, changed_at)
+			VALUES(?,?,?,?)`,
+			s.EntityID, s.State, attrs, s.LastChanged); err != nil {
+			return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// StateChangedData is the data portion of a state_changed event.
+type StateChangedData struct {
+	EntityID string    `json:"entity_id"`
+	NewState *ha.StateData `json:"new_state"`
+	OldState *ha.StateData `json:"old_state"`
+}
+
+// HandleStateChanged upserts the new state and appends a history row.
+func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) error {
+	var data StateChangedData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return fmt.Errorf("decode state_changed data: %w", err)
+	}
+	if data.NewState == nil {
+		slog.Warn("state: state_changed with nil new_state", "entity", data.EntityID)
+		return nil
+	}
+
+	ns := data.NewState
+	attrs := attrStr(ns.Attributes)
+	tx, err := t.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
+		VALUES(?,?,?,?,?)
+		ON CONFLICT(entity_id) DO UPDATE SET
+		  state=excluded.state, attributes=excluded.attributes,
+		  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
+		ns.EntityID, ns.State, attrs, ns.LastChanged, ns.LastUpdated); err != nil {
+		return fmt.Errorf("upsert states %s: %w", ns.EntityID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO state_history(entity_id, state, attributes, changed_at)
+		VALUES(?,?,?,?)`,
+		ns.EntityID, ns.State, attrs, ns.LastChanged); err != nil {
+		return fmt.Errorf("insert state_history %s: %w", ns.EntityID, err)
+	}
+	return tx.Commit()
+}
+
+// GetState returns the current state for an entity.
+func (t *Tracker) GetState(ctx context.Context, entityID string) (*ha.StateData, error) {
+	row := t.readDB.QueryRowContext(ctx,
+		`SELECT entity_id, state, attributes, last_changed, last_updated
+		 FROM states WHERE entity_id = ?`, entityID)
+	var s ha.StateData
+	var attrs string
+	if err := row.Scan(&s.EntityID, &s.State, &attrs, &s.LastChanged, &s.LastUpdated); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	s.Attributes = jsontext.Value(attrs)
+	return &s, nil
+}
+
+// GetEntities returns all states whose entity_id matches the SQL GLOB pattern.
+func (t *Tracker) GetEntities(ctx context.Context, pattern string) ([]ha.StateData, error) {
+	rows, err := t.readDB.QueryContext(ctx,
+		`SELECT entity_id, state, attributes, last_changed, last_updated
+		 FROM states WHERE entity_id GLOB ?`, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanStates(rows)
+}
+
+// GetEntityIDs returns entity IDs matching the glob pattern.
+func (t *Tracker) GetEntityIDs(ctx context.Context, pattern string) ([]string, error) {
+	rows, err := t.readDB.QueryContext(ctx,
+		`SELECT entity_id FROM states WHERE entity_id GLOB ?`, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetHistory returns state history for an entity since a given timestamp.
+func (t *Tracker) GetHistory(ctx context.Context, entityID, since string, limit int) ([]ha.StateData, error) {
+	rows, err := t.readDB.QueryContext(ctx,
+		`SELECT entity_id, state, attributes, changed_at, changed_at
+		 FROM state_history
+		 WHERE entity_id = ? AND changed_at >= ?
+		 ORDER BY changed_at
+		 LIMIT ?`, entityID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanStates(rows)
+}
+
+func scanStates(rows *sql.Rows) ([]ha.StateData, error) {
+	var result []ha.StateData
+	for rows.Next() {
+		var s ha.StateData
+		var attrs string
+		if err := rows.Scan(&s.EntityID, &s.State, &attrs, &s.LastChanged, &s.LastUpdated); err != nil {
+			return nil, err
+		}
+		s.Attributes = jsontext.Value(attrs)
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
+
+func attrStr(v jsontext.Value) string {
+	if len(v) == 0 {
+		return "{}"
+	}
+	return string(v)
+}
