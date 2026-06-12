@@ -29,7 +29,7 @@ Key invariant: **one `LState` per script, owned exclusively by that script's gor
 
 | Purpose | Library |
 |---------|---------|
-| WebSocket | `nhooyr.io/websocket` |
+| WebSocket | `github.com/coder/websocket` (the maintained home of `nhooyr.io/websocket` — same API, new import path) |
 | Lua VM | `github.com/yuin/gopher-lua` (Lua 5.1, pure Go) |
 | SQLite | `modernc.org/sqlite` (pure Go, no cgo) |
 | File watching | `github.com/fsnotify/fsnotify` |
@@ -109,7 +109,7 @@ ha-lua/
 3. Receive `{"type": "auth_ok"}` — proceed; `"auth_invalid"` — fatal
 
 ### Seed on connect
-After auth, send `get_states` and upsert all returned states into both `states` and `state_history` (with `seeded_at` marker to distinguish from real changes if needed).
+After auth, send `get_states` and upsert all returned states into the `states` mirror. A `state_history` row is appended **only when the seeded state or attributes differ from the current mirror row** (or the entity is new). Reconnects happen — a flaky network can produce dozens per night — and unconditionally appending every entity on every reconnect fills the history with duplicate rows that `ha.get_history` would return as phantom state changes.
 
 ### Subscriptions
 Always subscribe to `state_changed`. For `ha.on_event` registrations, collect the distinct set of event types across all loaded scripts and subscribe to each one explicitly — never subscribe to `*`. Subscriptions are sent after re-auth on every connect/reconnect.
@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS state_history (
     changed_at  TEXT NOT NULL                -- RFC3339
 );
 CREATE INDEX IF NOT EXISTS idx_sh_entity_time ON state_history(entity_id, changed_at);
+CREATE INDEX IF NOT EXISTS idx_sh_time ON state_history(changed_at);  -- purge filters by time alone
 
 -- Per-script key-value store
 CREATE TABLE IF NOT EXISTS script_kv (
@@ -230,6 +231,8 @@ notify.alert("hello")
 
 Any `require` path that resolves outside `scripts/lib/` raises a Lua error. The restricted loader is installed at LState creation time, replacing the default `require`.
 
+The loader implements real `require` semantics, not just sandboxed `dofile`: a per-LState loaded-modules table caches each module's return value, so requiring the same module from two places runs the file once and returns the cached value on every subsequent call. A sentinel is placed in the table before the module body executes, so a circular `require` chain raises a clear Lua error ("circular require: notify") instead of recursing until the stack dies.
+
 ---
 
 ## Lua API
@@ -253,7 +256,7 @@ Any `require` path that resolves outside `scripts/lib/` raises a Lua error. The 
 
 | Factory | Description |
 |---------|-------------|
-| `ha.exceptions.email(config)` | Returns a handler that sends a plain-text email via `net/smtp`. `config`: `to` (string or array), `smtp_host`, `smtp_port`, `username`, `password`, optional `from` and `subject_prefix`. |
+| `ha.exceptions.email(config)` | Returns a handler that sends a plain-text email via `net/smtp`. `config`: `to` (string or array), `smtp_host`, `smtp_port`, `username`, `password`, optional `from`, `subject_prefix`, and `cooldown` (duration string, default `"15m"` — see rate limiting below). |
 | `ha.exceptions.log_file(path)` | Returns a handler that appends a timestamped plain-text error entry (error, traceback, triggering event JSON) to `path`. |
 
 Both factories are pure Go, backed by `net/smtp` and `os.OpenFile` respectively. Credentials in `ha.exceptions.email` should always come from `store.get(...)` rather than being hardcoded in the script.
@@ -383,6 +386,8 @@ Triggering event:
 
 Subject defaults to `[ha-lua] Error in script: lights`.
 
+**Rate limiting.** A bug in a hot `state_changed` handler means an exception per event — without a limit that is hundreds of emails per minute and a locked SMTP account before the user sees the first one. The handler keeps a per-script cooldown window (`config.cooldown`, default `"15m"`): after a send, further exceptions inside the window are counted but not sent. The first email after the window expires includes a line like `12 similar errors suppressed since 2026-01-01T12:00:00Z`. `ha.exceptions.log_file` has no rate limit — appending to a local file is cheap and the full record is useful.
+
 ### `ha.exceptions.log_file` — implementation notes
 
 Appends to the file using `os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)`. Each entry is separated by `---\n`. Format mirrors the email body above.
@@ -407,7 +412,7 @@ Script KV data in SQLite persists across reloads automatically.
 
 ### Production (HA add-on)
 
-When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup. No separate config file is needed. The HA URL is always `ws://supervisor/core/websocket` and the token comes from `$SUPERVISOR_TOKEN`.
+When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup — this is the **only** production config channel; `run.sh` passes no flags. Connection details are not options: the URL is always `ws://supervisor/core/websocket`, the token comes from `$SUPERVISOR_TOKEN`, scripts are at `/addon_config/scripts`, and the DB is at `/data/ha-lua.db`.
 
 ### Development (`config.dev.yaml`)
 
@@ -421,6 +426,7 @@ homeassistant:
 scripts_dir: "./scripts"
 database: "./ha-lua.db"
 log_level: "info"
+timezone: ""           # IANA name for ha.at, e.g. "Europe/Budapest"; empty = $TZ, else UTC
 
 state_history:
   retention_days: 2    # raw history kept for this many days, then deleted
@@ -438,14 +444,16 @@ debug:
 
 `internal/purge/purge.go` — a `Purger` struct with `New(db, cfg)` and `Start(ctx)`. `Start` spawns a goroutine with a `time.Ticker` at `purge_interval`. Expose `RunOnce()` for tests.
 
-Each tick runs a single DELETE:
+Each tick runs a single DELETE. The cutoff is computed in Go and bound as an RFC3339 string:
 
-```sql
-DELETE FROM state_history
-WHERE changed_at < datetime('now', '-' || ? || ' days');
+```go
+cutoff := time.Now().UTC().AddDate(0, 0, -cfg.RetentionDays).Format(time.RFC3339)
+db.Exec(`DELETE FROM state_history WHERE changed_at < ?`, cutoff)
 ```
 
-Parameter is `retention_days` (default 2). HA's own recorder/statistics handles any long-term history needs; `state_history` here is for short-window queries from scripts via `ha.get_history`.
+Do **not** build the cutoff with `datetime('now', '-N days')` in SQL. SQLite renders that as `YYYY-MM-DD HH:MM:SS` — space separator, no zone — while `changed_at` is RFC3339 (`T` separator, `Z` suffix). TEXT comparison is plain string ordering, and since `'T' > ' '`, rows from the cutoff day never compare less-than: the purge silently lags by up to a day. Generating the cutoff in Go keeps both sides in the identical format. The DELETE is served by `idx_sh_time`.
+
+`retention_days` defaults to 2. HA's own recorder/statistics handles any long-term history needs; `state_history` here is for short-window queries from scripts via `ha.get_history`.
 
 ---
 
@@ -466,14 +474,14 @@ import (
 )
 ```
 
-`golangci-lint` is **not** pinned here. It has C dependencies (some of its analysers link against system libraries) and `go install` is unreliable across aarch64/amd64 with CGO disabled. Install it via the official script:
+`golangci-lint` is **not** pinned here. Not because of C dependencies — it is pure Go — but because upstream explicitly does not support `go install`/source builds: version metadata is baked in at release time, and source builds produce mismatched-version warnings and unreproducible analyzer behavior. Install the official release binary:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-    | sh -s -- -b $(go env GOPATH)/bin v1.64.0
+    | sh -s -- -b $(go env GOPATH)/bin v2.6.0   # pin the current v2 release
 ```
 
-In CI use the official `golangci/golangci-lint-action` GitHub Action, which caches the binary for the correct platform automatically. Pin the version in both places.
+In CI use the official `golangci/golangci-lint-action` GitHub Action, which caches the binary for the correct platform automatically. Pin the same version in both places.
 
 ### `Makefile`
 
@@ -534,25 +542,27 @@ trace:
 
 ### `.golangci.yml`
 
+golangci-lint v2 config format (`version: "2"`; `goimports` moved to the `formatters` section, `linters-settings` became `linters.settings`):
+
 ```yaml
+version: "2"
+
 linters:
+  default: standard   # errcheck, govet, ineffassign, staticcheck, unused
   enable:
-    - staticcheck   # SA*, S*, QF* — supersedes gosimple + unused as standalone
-    - errcheck
-    - govet
-    - ineffassign
     - misspell
     - noctx
     - exhaustive
-    - goimports
+  settings:
+    staticcheck:
+      checks: ["all"]
 
-linters-settings:
-  staticcheck:
-    checks: ["all"]
+formatters:
+  enable:
+    - goimports
 
 issues:
   max-same-issues: 0
-  exclude-use-default-excludes: false
 ```
 
 ### `internal/debug/pprof.go`
@@ -655,6 +665,16 @@ The `onFire` callback is provided by the runner — it sends a `TimerFiredEvent`
 - `ha.after("30m")`: `next_run = now + 30m`; timer ID is a UUID (multiple concurrent calls are valid)
 - Catch-up check for `every`/`at`: `if next_run <= now → fire once, recompute next_run from now`
 
+### Timezone resolution (for `ha.at`)
+
+`ha.at` schedules in **local time**, which only means something if the process knows what "local" is — and add-on containers default to UTC. The binary imports `_ "time/tzdata"` (embedded zone database, no `/usr/share/zoneinfo` dependency — required for a pure-Go static binary in a minimal container) and resolves the scheduling location in order:
+
+1. `timezone` config option (IANA name, e.g. `"Europe/Budapest"`), if set
+2. `TZ` environment variable, if set
+3. UTC, with a startup warning that `ha.at` timers will fire in UTC
+
+The `timezone` option exists in both `config.dev.yaml` and the add-on options schema. All `next_run` values are still stored as RFC3339 UTC; the location only affects what wall-clock instant `"07:00"` maps to.
+
 ### `ha.after` persistence semantics
 
 `ha.after` does **not** survive process restarts. The timer ID is a UUID generated at call time; on restart the script generates a new UUID, so there is no way to match the old row to the new callback. On startup, every `"after"` row found in the `timers` table is treated as orphaned: log a warning and delete it.
@@ -688,6 +708,7 @@ map:
   - addon_config:rw            # /addon_config inside container = /config/ha-lua on host
 options:
   log_level: "info"
+  timezone: ""
   state_history:
     retention_days: 2
     purge_interval: "1h"
@@ -695,6 +716,7 @@ options:
     pprof_addr: ""
 schema:
   log_level: "str"
+  timezone: "str?"
   state_history:
     retention_days: "int"
     purge_interval: "str"
@@ -737,15 +759,10 @@ CMD ["/run.sh"]
 #!/usr/bin/with-contenv bashio
 set -e
 
-exec /usr/local/bin/ha-lua \
-    --ha-url="ws://supervisor/core/websocket" \
-    --ha-token="${SUPERVISOR_TOKEN}" \
-    --scripts-dir="/addon_config/scripts" \
-    --database="/data/ha-lua.db"
-# Options are read from /data/options.json (written by the Supervisor)
+exec /usr/local/bin/ha-lua
 ```
 
-The binary reads `/data/options.json` automatically for all other settings (log level, retention, etc.).
+No flags. In add-on mode (no `--config` flag) the binary reads `/data/options.json` for user options, takes the token from `$SUPERVISOR_TOKEN`, and hardcodes the rest: URL `ws://supervisor/core/websocket`, scripts at `/addon_config/scripts`, DB at `/data/ha-lua.db`. There is exactly one source for each value — flags duplicating what the environment and options.json already provide is how the two drift apart.
 
 ### `build.yaml`
 
@@ -786,7 +803,7 @@ The daemon is a single static Go binary (no CGO). It runs inside a Docker contai
 | `internal/db` | `db_test.go` | Schema migrations run cleanly; idempotent (apply twice = no error) |
 | `internal/store` | `kv_test.go` | Get/Set/Delete/GetAll; per-script isolation (script A can't read script B's keys); global namespace; JSON round-trip for all types via `store.state()` proxy |
 | `internal/state` | `tracker_test.go` | Upsert overwrites `states`; `state_history` appends; both written atomically; `ha.get_entity_ids` and `ha.get_entities` return correct subsets |
-| `internal/purge` | `purge_test.go` | Rows older than `retention_days` are deleted; rows within window are kept; `RunOnce()` test harness |
+| `internal/purge` | `purge_test.go` | Rows older than `retention_days` are deleted; rows within window are kept; same-day rows older than the cutoff are deleted (RFC3339 cutoff-format regression test); `RunOnce()` test harness |
 | `internal/scheduler` | `scheduler_test.go` | `ha.every` fires at interval; catch-up fires once when `next_run` is past; `ha.at` computes correct next daily time; `ha.after` fires once and row is deleted; orphaned `ha.after` rows cleaned up on start; min-heap ordering with many concurrent timers |
 | `internal/lua` | `json_test.go` | `luaToJSON`/`jsonToLua` round-trip: `nil`, `bool`, `number` (int and float), `string`, nested table, array table |
 | `internal/lua` | `api_store_test.go` | `store.state()` loads defaults on first use; persists on write; reloads values across LState re-creation |
@@ -940,7 +957,9 @@ end
 
 #### `http` — backed by `net/http` package
 
-Uses `L.Context()` (the current callback's context) so HTTP calls respect the per-callback timeout. The default HTTP client timeout is `min(L.Context().Deadline, 10s)`.
+Uses `L.Context()` (the current callback's context) as the request context. The per-callback 5s timeout is the **only** timeout — there is no separate HTTP timeout knob, because any independent value would either be dead (longer than the callback budget, so it could never fire first) or a second, confusing way to spell the same limit.
+
+A slow HTTP call burns the callback's entire 5s budget and stalls that script's event queue while it runs; if the queue fills, new events are dropped with a warning. Keep network calls out of high-frequency handlers.
 
 | Function | Returns |
 |----------|---------|
@@ -1015,7 +1034,7 @@ Four functions added to the existing `math` table:
 
 ### Implementation structure
 
-All stdlib registration lives in `internal/lua/stdlib.go` (`RegisterStdlib(L, opts StdlibOpts)`), called during LState setup alongside the HA and store API registration. Each module has its own file:
+All stdlib registration lives in `internal/lua/stdlib.go` (`RegisterStdlib(L)`), called during LState setup alongside the HA and store API registration. Each module has its own file:
 
 | File | Module |
 |------|--------|
@@ -1028,14 +1047,7 @@ All stdlib registration lives in `internal/lua/stdlib.go` (`RegisterStdlib(L, op
 | `internal/lua/stdlib_crypto.go` | `crypto` module |
 | `internal/lua/stdlib_math.go` | `math` augmentation |
 
-`StdlibOpts`:
-```go
-type StdlibOpts struct {
-    HTTPTimeout time.Duration  // default 10s; 0 = use context deadline only
-}
-```
-
-`HTTPTimeout` is read from config (`http_timeout: "10s"`) and passed in at script creation. Add to `config.dev.yaml` and the add-on `options` schema.
+`RegisterStdlib(L)` takes no options. The `http` module's timeout comes from the callback context (see the `http` section above), so there is no HTTP timeout configuration to thread through.
 
 ---
 
@@ -1043,11 +1055,12 @@ type StdlibOpts struct {
 
 Add to `internal/lua/stdlib_test.go`:
 
-- **Sandboxing**: assert `require`, `loadfile`, `dofile`, `load`, `os.execute`, `os.exit`, `io` are nil/error in a fresh LState.
+- **Sandboxing**: assert `loadfile`, `dofile`, `load`, `os.execute`, `os.exit`, `io` are nil/error in a fresh LState.
+- **Restricted `require`**: resolves inside `scripts/lib/` only; path escape raises; same module required twice executes once (cached return value); circular require raises a clear error instead of overflowing the stack.
 - **`strings`**: table-driven tests for all 12 functions; edge cases for empty string, UTF-8 input, `split` with empty separator.
 - **`time`**: parse RFC3339 → format back → round-trip identical; `:sub` between two times; `:weekday` on known dates; `parse_duration` for all unit letters.
 - **`json`**: already covered by `json_test.go` — add `json.encode`/`json.decode` Lua-surface tests.
-- **exception handlers**: `ha.exceptions.log_file` — write known error, assert file contents match template; `ha.exceptions.email` — use `net/smtp` test server (or capture SMTP conversation) to verify subject, body fields.
+- **exception handlers**: `ha.exceptions.log_file` — write known error, assert file contents match template; `ha.exceptions.email` — use `net/smtp` test server (or capture SMTP conversation) to verify subject, body fields; cooldown suppresses a second send inside the window and the next send reports the suppressed count.
 - **`re`**: match / no-match, `find_all` returns correct count, `replace` with group references, cached vs. first-compile performance.
 - **`http`**: use `net/http/httptest` test server; assert status, body, headers round-trip; assert context cancellation propagates (cancel context mid-flight, expect `nil, err`).
 - **`crypto`**: table-driven against RFC/NIST test vectors for md5, sha1, sha256, sha512, hmac_sha256, hmac_sha512; base64 round-trip (standard + URL-safe); hex round-trip; `random_bytes(n)` produces exactly `n` bytes and two calls differ; `crypto.equal` returns true for equal inputs, false for differing inputs.
@@ -1066,8 +1079,8 @@ Add benchmarks: `BenchmarkReMatchCached` (warm cache) vs `BenchmarkReMatchCold` 
 5. **Service calls** — `ha.call_service`, `ha.fire_event`
 6. **Hot reload** — fsnotify watcher, graceful script restart
 7. **History & purge** — `ha.get_history`, `ha.get_entities`, `ha.get_entity_ids`, simple retention-delete purge job
-8. **Scheduling** — `ha.every`, `ha.at`, `ha.after` (one-shot), SQLite-backed timer persistence, catch-up on startup, orphaned `ha.after` cleanup
-9. **Error handling** — `ha.on_exception`, `ha.exceptions.email` (`net/smtp`), `ha.exceptions.log_file`; per-callback `pcall` + slog fallback
+8. **Scheduling** — `ha.every`, `ha.at`, `ha.after` (one-shot), SQLite-backed timer persistence, catch-up on startup, orphaned `ha.after` cleanup, timezone resolution for `ha.at` (`time/tzdata`)
+9. **Error handling** — `ha.on_exception`, `ha.exceptions.email` (`net/smtp`, rate-limited), `ha.exceptions.log_file`; per-callback `pcall` + slog fallback
 10. **Lua stdlib** — sandboxing + restricted `require`; `strings`, `time`, `json` (v2), `re`, `http`, `crypto` modules; `math` augmentation; `opts.initial` for `ha.on_state_change`
 11. **Testing & benchmarks** — full test suite per package, all benchmarks passing, baseline committed
 12. **Add-on packaging** — `config.yaml` manifest, `Dockerfile`, `run.sh`, `build.yaml`, `DOCS.md`, `CHANGELOG.md`, GitHub Actions CI/CD

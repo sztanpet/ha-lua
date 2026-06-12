@@ -2,27 +2,60 @@
 Last updated: 2026-06-12
 
 ## Phase
-Planning — no code written yet. All milestones are pending.
+Implementation — milestones 1–5 committed and passing. Working tree has an
+uncommitted CLAUDE.md edit (added Linus persona line to Working Process).
 
-## Completed this session
-- Wrote full architecture plan in plan.md (all milestones, schema, Lua API, config)
-- Created CLAUDE.md (package map, conventions, add-on layout, AI.state pointer)
-- Review pass: cut overkill items, added missing features (see key decisions)
-- Updated CLAUDE.md: added Working Process, Git Commit Style, and Code Search (semble) sections; fixed stale references to removed features
+## Completed (commits on main)
+- `0740db9` scaffold — module, deps, Makefile, .golangci.yml, tools.go, benchmarks/
+- `647818b` M1 HA client — auth flow, reconnect with backoff, event stream (internal/ha)
+- `5103275` M2 state tracker — schema, migrations, upsert + history append (internal/state, internal/testutil)
+- `2a1eaa4` M3 Lua runner — runner, ha.*/store.*/global.* API, store.state() proxy, JSON round-trip
+- `ee30da4` M4+M5 — event dispatch (registry), service calls, fire_event, config, pprof, main wiring
+
+### Landed earlier than planned (already in the commits above)
+- `ha.get_history`, `ha.get_entities`, `ha.get_entity_ids` (planned for M7)
+- `ha.on_exception` + `ha.exceptions.email` / `ha.exceptions.log_file` (planned for M9)
+- Restricted `require` (scripts/lib/ only) in internal/lua/stdlib.go (planned for M10)
+- `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-1. HA client — auth flow, reconnect, raw event stream
-2. State tracker — SQLite schema/migrations, seed, upsert on state_changed
-3. Lua runner — single script, ha.log + ha.get_state + store.* + global.* + store.state() proxy
-4. Event dispatch — per-script goroutines, ha.on_state_change routing, glob matching
-5. Service calls — ha.call_service, ha.fire_event
-6. Hot reload — fsnotify watcher, graceful script restart
-7. History & purge — ha.get_history, ha.get_entities, ha.get_entity_ids, simple 2-day retention delete
-8. Scheduling — ha.every, ha.at, ha.after (one-shot), SQLite timer persistence, catch-up on startup
-9. Error handling — ha.on_exception, ha.exceptions.email (net/smtp), ha.exceptions.log_file; pcall per callback
-10. Lua stdlib — sandboxing + restricted require (scripts/lib/ only); strings, time, json (v2), re, http, crypto modules; math augmentation; ha.on_state_change opts.initial
-11. Testing & benchmarks — full test suite, benchmarks, baseline committed
-12. Add-on packaging — config.yaml manifest, Dockerfile, run.sh, build.yaml, DOCS.md, CI/CD
+6. Hot reload — fsnotify watcher (dep already in go.mod), graceful script restart
+7. Purge — internal/purge/ is an empty dir; ticker + retention DELETE + RunOnce()
+8. Scheduling — internal/scheduler/ is an empty dir; ha.every/at/after, timers table,
+   min-heap, catch-up, orphan cleanup, ha.at timezone resolution (time/tzdata);
+   wire TimerFiredEvent dispatch into runner.go (see runner.go:195 TODO comment)
+9. Error handling — mostly done early; add email cooldown (see follow-ups);
+   verify pcall coverage for timer callbacks once M8 lands
+10. Lua stdlib — full sandboxing (SkipOpenLibs + selective open; see runner.go:202 TODO);
+    strings, time, json, re, http, crypto modules; math augmentation
+11. Testing & benchmarks — per-package tests exist for ha/state/store/lua; benchmarks
+    not yet written, no baseline.txt committed
+12. Add-on packaging — config.yaml, config.dev.yaml, Dockerfile, run.sh, build.yaml,
+    DOCS.md, CHANGELOG.md, CI/CD — none exist yet
+
+## Plan review fixes (applied to plan.md 2026-06-12)
+All 10 review findings are now folded into plan.md: Go-computed RFC3339 purge
+cutoff + idx_sh_time index; seed-on-reconnect history dedup; require caching +
+cycle detection; http uses callback context only (StdlibOpts/HTTPTimeout knob
+removed); email handler cooldown (default 15m, suppressed-count reporting);
+ha.at timezone resolution (timezone option → $TZ → UTC warn, time/tzdata);
+run.sh passes no flags (options.json is the single prod config channel);
+golangci-lint rationale corrected + .golangci.yml migrated to v2 format;
+websocket lib is github.com/coder/websocket.
+
+## Code follow-ups (committed code now diverging from the fixed plan)
+- **Swap nhooyr.io/websocket → github.com/coder/websocket** in internal/ha +
+  go.mod (same API, import-path change only).
+- **Add idx_sh_time(changed_at)** to the schema in internal/state/db.go (purge
+  DELETE filters by time alone).
+- **Seed dedup**: only append a state_history row on seed when state/attributes
+  differ from the mirror row (internal/state tracker / seed path).
+- **require caching + cycle detection** in internal/lua/stdlib.go — current
+  loader DoFiles on every call (re-executes modules, loops on mutual requires).
+- **Email cooldown** in internal/lua/exceptions.go — handler already landed
+  without rate limiting.
+- **Verify main.go/config.go** match the single-channel config story (no
+  --ha-url/--ha-token-style flag duplication) when M12 lands.
 
 ## Key decisions (do not re-litigate without good reason)
 - **State scope**: full history log (append-only) + current-state mirror for fast get_state
@@ -39,13 +72,20 @@ Planning — no code written yet. All milestones are pending.
 - **Config**: production reads /data/options.json; development uses --config flag pointing to config.dev.yaml
 - **Lua sandbox**: SkipOpenLibs=true; open base/math/string/table/os/coroutine selectively; nil out load/loadfile/dofile/io/debug/package/os.execute/os.exit; replace require with restricted loader (scripts/lib/ only)
 - **Error handling**: every callback dispatch wrapped in pcall; on error build exception info table {script_id, error, traceback, callback, event, timestamp} and call registered on_exception handler; slog.Error fallback if no handler; ha.exceptions.email uses net/smtp, ha.exceptions.log_file uses os.OpenFile append
-- **New Lua API**: ha.on_exception(fn), ha.exceptions.email(cfg), ha.exceptions.log_file(path), ha.get_entities(pattern), ha.get_entity_ids(pattern), ha.on_state_change opts.initial=true for initial state delivery
 - **JSON library**: github.com/go-json-experiment/json everywhere — deterministic key order, strict UTF-8; import path changes to encoding/json/v2 when stdlib proposal lands
 - **Lua stdlib modules**: strings, time, json (v2), re (kept — user explicitly disagreed with cutting it), http, crypto (md5/sha1/sha256/sha512/hmac_sha256/hmac_sha512/base64/hex/rand/equal); math augmentation (round/clamp/log2/sign)
 - **Tests**: real SQLite (:memory:) everywhere, no mocks; table-driven; helpers in internal/testutil/db.go
 - **Benchmark regression**: benchstat comparison is informational only — bench-compare target prints output but does not fail the build; no cmd/bench-check tool
 - **Purge**: single DELETE for rows older than retention_days (default 2); no downsampling; no stats tables; Purger.RunOnce() for tests
 - **Retention config**: state_history.retention_days default 2; purge_interval default "1h"
+- **Purge cutoff**: computed in Go as RFC3339 and bound as a parameter — never datetime('now',...) in SQL (format mismatch vs RFC3339 changed_at breaks string comparison)
+- **Seed dedup**: state_history row on seed only when state/attributes differ from mirror (reconnects must not pollute history)
+- **require semantics**: per-LState loaded-module cache + circular-require error (not bare DoFile)
+- **http timeout**: callback context (5s) is the only timeout; no separate HTTP timeout config
+- **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited
+- **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC
+- **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
+- **golangci-lint**: v2 (config format version "2"); installed via release binary / official action, never go install
 
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables
@@ -60,3 +100,4 @@ Planning — no code written yet. All milestones are pending.
 - Pure Go only — modernc.org/sqlite (no CGO), gopher-lua (no CGO)
 - Deployment target: HA add-on (single static binary + /data + /addon_config volumes)
 - Prefers planning to be done before any code is written
+- Wants code written in the persona of Linus Torvalds; avoid needless complexity
