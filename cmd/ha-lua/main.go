@@ -24,32 +24,12 @@ import (
 
 func main() {
 	configPath := flag.String("config", "", "Path to YAML config file (dev mode)")
-	haURL := flag.String("ha-url", "", "HA WebSocket URL (overrides config)")
-	haToken := flag.String("ha-token", "", "HA long-lived access token (overrides config)")
-	scriptsDir := flag.String("scripts-dir", "", "Scripts directory (overrides config)")
-	database := flag.String("database", "", "SQLite database path (overrides config)")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		if *haURL == "" && *haToken == "" {
-			slog.Error("config load failed", "err", err)
-			os.Exit(1)
-		}
-		cfg = &config.Config{}
-		cfg.Defaults()
-	}
-	if *haURL != "" {
-		cfg.HomeAssistant.URL = *haURL
-	}
-	if *haToken != "" {
-		cfg.HomeAssistant.Token = *haToken
-	}
-	if *scriptsDir != "" {
-		cfg.ScriptsDir = *scriptsDir
-	}
-	if *database != "" {
-		cfg.Database = *database
+		slog.Error("config load failed", "err", err)
+		os.Exit(1)
 	}
 
 	var level slog.Level

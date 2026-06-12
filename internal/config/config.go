@@ -60,13 +60,20 @@ func (c *Config) Defaults() {
 	}
 }
 
-// Load reads config from path. If path is empty, tries /data/options.json.
-// Returns an error if neither file exists.
+// Load reads config from path (dev mode, YAML). If path is empty, add-on
+// mode is assumed: user options come from /data/options.json and the
+// connection details are not options at all — the token comes from
+// $SUPERVISOR_TOKEN and the URL is the fixed Supervisor proxy endpoint.
+// This is the single production config channel; run.sh passes no flags.
 func Load(path string) (*Config, error) {
-	if path == "" {
+	addon := path == ""
+	if addon {
 		path = defaultOptionsPath
 	}
+	return load(path, addon)
+}
 
+func load(path string, addon bool) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config %q: %w", path, err)
@@ -80,5 +87,9 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	cfg.Defaults()
+	if addon {
+		cfg.HomeAssistant.URL = "ws://supervisor/core/websocket"
+		cfg.HomeAssistant.Token = os.Getenv("SUPERVISOR_TOKEN")
+	}
 	return &cfg, nil
 }
