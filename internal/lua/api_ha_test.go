@@ -240,3 +240,45 @@ func TestOnStateChangeRegistration(t *testing.T) {
 		t.Errorf("pattern: %q", api.stateChangeHandlers[0].pattern)
 	}
 }
+
+// The traceback must be the Lua stack trace, not a second copy of the
+// error message.
+func TestExceptionTraceback(t *testing.T) {
+	L, api, _ := newHALState(t)
+
+	var errMsg, traceback string
+	api.onExceptionFn = L.NewFunction(func(L *lua.LState) int {
+		info := L.CheckTable(1)
+		errMsg = luaStrField(info, "error")
+		traceback = luaStrField(info, "traceback")
+		return 0
+	})
+
+	if err := L.DoString(`function boom() error("kaboom") end`); err != nil {
+		t.Fatal(err)
+	}
+	fn, _ := L.GetGlobal("boom").(*lua.LFunction)
+	callProtected(L, api, "state_changed", lua.LNil, fn)
+
+	if !strings.Contains(errMsg, "kaboom") {
+		t.Errorf("error: %q", errMsg)
+	}
+	if !strings.Contains(traceback, "traceback") {
+		t.Errorf("traceback missing stack trace: %q", traceback)
+	}
+	if strings.Contains(errMsg, "traceback") {
+		t.Errorf("error message contains the stack trace: %q", errMsg)
+	}
+}
+
+func TestOnStateChangeBadPattern(t *testing.T) {
+	L, _, _ := newHALState(t)
+
+	err := L.DoString(`ha.on_state_change("light.[", function() end)`)
+	if err == nil {
+		t.Fatal("expected load-time error for malformed pattern")
+	}
+	if !strings.Contains(err.Error(), "bad pattern") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}

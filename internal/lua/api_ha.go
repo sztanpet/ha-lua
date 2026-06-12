@@ -2,8 +2,9 @@ package lua
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/go-json-experiment/json/jsontext"
@@ -172,6 +173,13 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 	L.SetField(haTable, "on_state_change", L.NewFunction(func(L *lua.LState) int {
 		pattern := L.CheckString(1)
 		fn := L.CheckFunction(2)
+		// Match's error depends only on the pattern. Catch typos at load
+		// time — dispatch silently ignores match errors, so a bad pattern
+		// would otherwise just never fire.
+		if _, err := filepath.Match(pattern, ""); err != nil {
+			L.RaiseError("on_state_change: bad pattern %q: %v", pattern, err)
+			return 0
+		}
 		opts := L.OptTable(3, nil)
 		initial := false
 		if opts != nil {
@@ -286,6 +294,15 @@ func dispatchException(L *lua.LState, api *haAPI, errMsg, traceback, callbackNam
 func callProtected(L *lua.LState, api *haAPI, callbackName string, eventTbl lua.LValue, fn *lua.LFunction, args ...lua.LValue) {
 	params := lua.P{Fn: fn, NRet: 0, Protect: true}
 	if err := L.CallByParam(params, args...); err != nil {
-		dispatchException(L, api, err.Error(), fmt.Sprintf("%v", err), callbackName, eventTbl)
+		// Split message and stack trace: ApiError.Error() glues them
+		// together, which made info.traceback a copy of info.error.
+		errMsg := err.Error()
+		traceback := ""
+		var apiErr *lua.ApiError
+		if errors.As(err, &apiErr) {
+			errMsg = apiErr.Object.String()
+			traceback = apiErr.StackTrace
+		}
+		dispatchException(L, api, errMsg, traceback, callbackName, eventTbl)
 	}
 }
