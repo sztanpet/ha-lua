@@ -1,3 +1,4 @@
+// Package debug serves optional pprof endpoints when configured.
 package debug
 
 import (

@@ -131,7 +131,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		}
 		domain := L.CheckString(1)
 		service := L.CheckString(2)
-		var data jsontext.Value = jsontext.Value("{}")
+		data := jsontext.Value("{}")
 		if L.GetTop() >= 3 {
 			tbl := L.CheckTable(3)
 			b, err := luaMarshal(L, tbl)
@@ -153,7 +153,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			return 0
 		}
 		eventType := L.CheckString(1)
-		var data jsontext.Value = jsontext.Value("{}")
+		data := jsontext.Value("{}")
 		if L.GetTop() >= 2 {
 			tbl := L.CheckTable(2)
 			b, err := luaMarshal(L, tbl)

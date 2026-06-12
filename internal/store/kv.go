@@ -1,3 +1,5 @@
+// Package store provides per-script and global key-value storage over
+// SQLite. Values round-trip as JSON so Lua types are preserved.
 package store
 
 import (

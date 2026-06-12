@@ -554,6 +554,13 @@ linters:
     - noctx
     - exhaustive
   settings:
+    errcheck:
+      # Deferred cleanup where the error is unconditionally uninteresting.
+      exclude-functions:
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+        - (*github.com/coder/websocket.Conn).CloseNow
     staticcheck:
       checks: ["all"]
 

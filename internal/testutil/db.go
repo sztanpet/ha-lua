@@ -1,3 +1,5 @@
+// Package testutil provides shared test helpers: in-memory SQLite
+// databases with the schema applied.
 package testutil
 
 import (

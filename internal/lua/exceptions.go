@@ -128,10 +128,17 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 				L.RaiseError("ha.exceptions.log_file: %v", err)
 				return 0
 			}
-			defer f.Close()
 			entry := fmt.Sprintf("---\n%s\n", body)
-			if _, err := f.WriteString(entry); err != nil {
-				L.RaiseError("ha.exceptions.log_file write: %v", err)
+			_, werr := f.WriteString(entry)
+			// Close before raising: RaiseError unwinds via panic and a
+			// deferred Close would swallow its own error anyway.
+			cerr := f.Close()
+			if werr != nil {
+				L.RaiseError("ha.exceptions.log_file write: %v", werr)
+				return 0
+			}
+			if cerr != nil {
+				L.RaiseError("ha.exceptions.log_file close: %v", cerr)
 			}
 			return 0
 		})

@@ -1,6 +1,9 @@
+// Package state mirrors Home Assistant entity state into SQLite: a
+// current-state table for fast lookups plus an append-only history log.
 package state
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -76,6 +79,6 @@ func OpenDB(path string) (writeDB, readDB *sql.DB, err error) {
 
 // Migrate applies the schema to db. Safe to call multiple times (idempotent).
 func Migrate(db *sql.DB) error {
-	_, err := db.Exec(schema)
+	_, err := db.ExecContext(context.Background(), schema)
 	return err
 }

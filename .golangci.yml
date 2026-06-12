@@ -1,18 +1,28 @@
+version: "2"
+
 linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
-    - staticcheck
-    - errcheck
-    - govet
-    - ineffassign
     - misspell
     - noctx
     - exhaustive
-    - goimports
+  settings:
+    errcheck:
+      # Deferred cleanup where the error is unconditionally uninteresting:
+      # Rollback after Commit is a no-op error, Rows.Close errors surface
+      # via Rows.Err, double-Close of DB handles is harmless, and
+      # websocket CloseNow is documented best-effort.
+      exclude-functions:
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+        - (*github.com/coder/websocket.Conn).CloseNow
+    staticcheck:
+      checks: ["all"]
 
-linters-settings:
-  staticcheck:
-    checks: ["all"]
+formatters:
+  enable:
+    - goimports
 
 issues:
   max-same-issues: 0
-  exclude-use-default-excludes: false

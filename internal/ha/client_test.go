@@ -166,7 +166,7 @@ func TestReconnect(t *testing.T) {
 		_ = wsjson.Read(ctx, conn, &msg)
 		_ = wsjson.Write(ctx, conn, map[string]string{"type": "auth_ok"})
 		_ = wsjson.Write(ctx, conn, map[string]any{"id": 1, "type": "result", "result": []any{}})
-		conn.Close(websocket.StatusGoingAway, "test disconnect")
+		_ = conn.Close(websocket.StatusGoingAway, "test disconnect")
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

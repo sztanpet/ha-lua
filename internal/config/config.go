@@ -1,3 +1,5 @@
+// Package config loads the daemon configuration: /data/options.json in
+// add-on mode, YAML via --config in dev mode.
 package config
 
 import (

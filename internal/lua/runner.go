@@ -1,3 +1,5 @@
+// Package lua owns the per-script LState lifecycle and all Lua API
+// bindings: ha.*, store.*, global.*, and the restricted require.
 package lua
 
 import (

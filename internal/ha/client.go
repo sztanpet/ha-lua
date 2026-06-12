@@ -1,3 +1,5 @@
+// Package ha implements the Home Assistant WebSocket client: auth,
+// reconnect with backoff, state seeding, and the raw event stream.
 package ha
 
 import (
