@@ -16,6 +16,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/ha"
 	luapkg "github.com/sztanpet/ha-lua/internal/lua"
 	"github.com/sztanpet/ha-lua/internal/purge"
+	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 )
@@ -49,6 +50,18 @@ func main() {
 
 	tracker := state.New(writeDB, readDB)
 	globalStore := store.NewGlobal(writeDB, readDB)
+
+	loc, err := scheduler.ResolveLocation(cfg.Timezone)
+	if err != nil {
+		slog.Error("bad timezone", "err", err)
+		os.Exit(1)
+	}
+	reg := luapkg.NewRegistry()
+	sched := scheduler.New(writeDB, loc, reg.DispatchToTimer)
+	if err := sched.Start(ctx); err != nil {
+		slog.Error("scheduler start failed", "err", err)
+		os.Exit(1)
+	}
 
 	purgeInterval, err := cfg.PurgeInterval()
 	if err != nil {
@@ -84,10 +97,10 @@ func main() {
 		}
 	}()
 
-	reg := luapkg.NewRegistry()
 	sup := luapkg.NewSupervisor(reg, cfg.ScriptsDir, luapkg.Deps{
-		Tracker: tracker,
-		Global:  globalStore,
+		Tracker:   tracker,
+		Scheduler: sched,
+		Global:    globalStore,
 		NewKV: func(scriptID string) *store.Store {
 			return store.New(writeDB, readDB, scriptID)
 		},

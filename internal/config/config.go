@@ -23,6 +23,7 @@ type Config struct {
 	ScriptsDir string `json:"scripts_dir" yaml:"scripts_dir"`
 	Database   string `json:"database"    yaml:"database"`
 	LogLevel   string `json:"log_level"   yaml:"log_level"`
+	Timezone   string `json:"timezone"    yaml:"timezone"`
 
 	StateHistory struct {
 		RetentionDays int    `json:"retention_days" yaml:"retention_days"`

@@ -13,12 +13,13 @@ import (
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
-func newHALState(t testing.TB) (*lua.LState, *haAPI, *state.Tracker) {
+func newHALState(t testing.TB) (*lua.LState, *haAPI, *state.Tracker, *Runner) {
 	t.Helper()
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -32,24 +33,32 @@ func newHALState(t testing.TB) (*lua.LState, *haAPI, *state.Tracker) {
 	t.Cleanup(L.Close)
 	L.SetContext(context.Background())
 
-	runner := &Runner{
+	var runner *Runner
+	sched := scheduler.New(writeDB, time.UTC, func(scriptID, timerID string) {
+		if runner != nil {
+			runner.Send(Event{TimerFired: &TimerFiredEvent{TimerID: timerID}})
+		}
+	})
+
+	runner = &Runner{
 		scriptID:  "test",
 		scriptDir: t.TempDir(),
 		ch:        make(chan Event, 8),
 		timerFns:  make(map[string]*lua.LFunction),
 		LoadedCh:  make(chan struct{}),
 		tracker:   tracker,
+		scheduler: sched,
 		kv:        kv,
 		global:    global,
 	}
-	api := &haAPI{scriptID: "test", tracker: tracker}
+	api := &haAPI{scriptID: "test", tracker: tracker, scheduler: sched, timerFns: runner.timerFns}
 	runner.registerHaAPI(L, api)
 	registerStoreAPI(L, kv, global)
-	return L, api, tracker
+	return L, api, tracker, runner
 }
 
 func TestOnExceptionCalled(t *testing.T) {
-	L, api, _ := newHALState(t)
+	L, api, _, _ := newHALState(t)
 
 	var caught string
 	api.onExceptionFn = L.NewFunction(func(L *lua.LState) int {
@@ -70,7 +79,7 @@ func TestOnExceptionCalled(t *testing.T) {
 }
 
 func TestExceptionInfoFields(t *testing.T) {
-	L, api, _ := newHALState(t)
+	L, api, _, _ := newHALState(t)
 
 	var scriptID, callback string
 	api.onExceptionFn = L.NewFunction(func(L *lua.LState) int {
@@ -95,7 +104,7 @@ func TestExceptionInfoFields(t *testing.T) {
 }
 
 func TestLogFileException(t *testing.T) {
-	L, api, _ := newHALState(t)
+	L, api, _, _ := newHALState(t)
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "errors.log")
 
@@ -148,7 +157,7 @@ func TestLogFileException(t *testing.T) {
 }
 
 func TestEmailExceptionCooldown(t *testing.T) {
-	L, _, _ := newHALState(t)
+	L, _, _, _ := newHALState(t)
 
 	var sent []string
 	orig := smtpSendMail
@@ -210,7 +219,7 @@ func TestEmailExceptionCooldown(t *testing.T) {
 }
 
 func TestGetState(t *testing.T) {
-	L, _, tracker := newHALState(t)
+	L, _, tracker, _ := newHALState(t)
 	ctx := context.Background()
 
 	_ = tracker.Seed(ctx, []ha.StateData{
@@ -228,7 +237,7 @@ func TestGetState(t *testing.T) {
 }
 
 func TestOnStateChangeRegistration(t *testing.T) {
-	L, api, _ := newHALState(t)
+	L, api, _, _ := newHALState(t)
 
 	if err := L.DoString(`ha.on_state_change("light.*", function(data) end)`); err != nil {
 		t.Fatal(err)
@@ -244,7 +253,7 @@ func TestOnStateChangeRegistration(t *testing.T) {
 // The traceback must be the Lua stack trace, not a second copy of the
 // error message.
 func TestExceptionTraceback(t *testing.T) {
-	L, api, _ := newHALState(t)
+	L, api, _, _ := newHALState(t)
 
 	var errMsg, traceback string
 	api.onExceptionFn = L.NewFunction(func(L *lua.LState) int {
@@ -272,7 +281,7 @@ func TestExceptionTraceback(t *testing.T) {
 }
 
 func TestOnStateChangeBadPattern(t *testing.T) {
-	L, _, _ := newHALState(t)
+	L, _, _, _ := newHALState(t)
 
 	err := L.DoString(`ha.on_state_change("light.[", function() end)`)
 	if err == nil {
@@ -280,5 +289,62 @@ func TestOnStateChangeBadPattern(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bad pattern") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestTimerAPI(t *testing.T) {
+	L, api, _, runner := newHALState(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := api.scheduler.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	fired := make(chan string, 8)
+	L.SetGlobal("fired", L.NewFunction(func(L *lua.LState) int {
+		fired <- L.CheckString(1)
+		return 0
+	}))
+
+	// 1. ha.every - use a long interval so it only fires once for catch-up
+	// if we were to test catch-up, but here it's a fresh registration.
+	// Actually, the loop fires it because nextRun is set to now+interval.
+	// Wait, RegisterEvery sets nextRun to now+d.
+	if err := L.DoString(`
+		ha.every("1h", function() fired("every") end)
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. ha.after - use a short interval to fire soon
+	if err := L.DoString(`
+		ha.after("10ms", function() fired("after") end)
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Event loop: we expect "after" because "every" is 1h away.
+	select {
+	case ev := <-runner.ch:
+		runner.handleEvent(L, api, ev)
+	case <-time.After(time.Second):
+		t.Fatal("timer did not fire")
+	}
+
+	select {
+	case tag := <-fired:
+		if tag != "after" {
+			t.Errorf("got %q, want after", tag)
+		}
+	default:
+		t.Fatal("fired channel empty")
+	}
+
+	// 3. ha.at
+	if err := L.DoString(`
+		ha.at("07:00", function() end)
+	`); err != nil {
+		t.Fatal(err)
 	}
 }

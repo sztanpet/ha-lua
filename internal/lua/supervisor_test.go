@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 	"github.com/sztanpet/ha-lua/internal/testutil"
@@ -20,9 +21,11 @@ func newSupervisor(t testing.TB, scriptDir string) (*Supervisor, *Registry, *sto
 	}
 	global := store.NewGlobal(writeDB, readDB)
 	reg := NewRegistry()
+	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 	sup := NewSupervisor(reg, scriptDir, Deps{
-		Tracker: state.New(writeDB, readDB),
-		Global:  global,
+		Tracker:   state.New(writeDB, readDB),
+		Scheduler: sched,
+		Global:    global,
 		NewKV: func(id string) *store.Store {
 			return store.New(writeDB, readDB, id)
 		},

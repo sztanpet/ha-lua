@@ -11,13 +11,15 @@ import (
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 )
 
 // haAPI holds the Go-side state needed by the ha.* Lua functions.
 type haAPI struct {
-	scriptID string
-	tracker  *state.Tracker
+	scriptID  string
+	tracker   *state.Tracker
+	scheduler *scheduler.Scheduler
 	// callService sends a service call to HA; set by runner wiring.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	// fireEvent fires a HA event; set by runner wiring.
@@ -28,6 +30,10 @@ type haAPI struct {
 	stateChangeHandlers []stateChangeHandler
 	// eventHandlers registered during load time.
 	eventHandlers []eventHandler
+	// timerFns registered during load time or from callbacks.
+	timerFns map[string]*lua.LFunction
+	// timerIDs tracks load-time timers for PruneScript.
+	timerIDs []string
 }
 
 type stateChangeHandler struct {
@@ -166,6 +172,58 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		if err := api.fireEvent(L.Context(), eventType, data); err != nil {
 			L.RaiseError("fire_event: %v", err)
 		}
+		return 0
+	}))
+
+	L.SetField(haTable, "every", L.NewFunction(func(L *lua.LState) int {
+		if api.scheduler == nil {
+			L.RaiseError("scheduler not available")
+			return 0
+		}
+		spec := L.CheckString(1)
+		fn := L.CheckFunction(2)
+		seq := len(api.timerIDs) + 1
+		id, err := api.scheduler.RegisterEvery(L.Context(), api.scriptID, spec, seq)
+		if err != nil {
+			L.RaiseError("every: %v", err)
+			return 0
+		}
+		api.timerIDs = append(api.timerIDs, id)
+		api.timerFns[id] = fn
+		return 0
+	}))
+
+	L.SetField(haTable, "at", L.NewFunction(func(L *lua.LState) int {
+		if api.scheduler == nil {
+			L.RaiseError("scheduler not available")
+			return 0
+		}
+		spec := L.CheckString(1)
+		fn := L.CheckFunction(2)
+		seq := len(api.timerIDs) + 1
+		id, err := api.scheduler.RegisterAt(L.Context(), api.scriptID, spec, seq)
+		if err != nil {
+			L.RaiseError("at: %v", err)
+			return 0
+		}
+		api.timerIDs = append(api.timerIDs, id)
+		api.timerFns[id] = fn
+		return 0
+	}))
+
+	L.SetField(haTable, "after", L.NewFunction(func(L *lua.LState) int {
+		if api.scheduler == nil {
+			L.RaiseError("scheduler not available")
+			return 0
+		}
+		spec := L.CheckString(1)
+		fn := L.CheckFunction(2)
+		id, err := api.scheduler.RegisterAfter(L.Context(), api.scriptID, spec)
+		if err != nil {
+			L.RaiseError("after: %v", err)
+			return 0
+		}
+		api.timerFns[id] = fn
 		return 0
 	}))
 

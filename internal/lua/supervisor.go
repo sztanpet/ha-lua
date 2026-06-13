@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-json-experiment/json/jsontext"
 
+	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 )
@@ -23,6 +24,7 @@ const stopTimeout = 5 * time.Second
 // Deps are the shared subsystems every script runner is wired with.
 type Deps struct {
 	Tracker     *state.Tracker
+	Scheduler   *scheduler.Scheduler
 	Global      *store.GlobalStore
 	NewKV       func(scriptID string) *store.Store
 	CallService func(ctx context.Context, domain, service string, data jsontext.Value) error
@@ -87,7 +89,7 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 		return
 	}
 
-	r := NewRunner(id, s.scriptDir, s.deps.Tracker, s.deps.NewKV(id), s.deps.Global)
+	r := NewRunner(id, s.scriptDir, s.deps.Tracker, s.deps.Scheduler, s.deps.NewKV(id), s.deps.Global)
 	r.SetCallService(s.deps.CallService)
 	r.SetFireEvent(s.deps.FireEvent)
 
@@ -133,6 +135,7 @@ func (s *Supervisor) StopScript(id string) {
 	// returns nobody can Send to this runner and closing its channel
 	// is safe.
 	s.reg.Remove(id)
+	s.deps.Scheduler.RemoveScript(id)
 	h.runner.Close()
 	select {
 	case <-h.done:

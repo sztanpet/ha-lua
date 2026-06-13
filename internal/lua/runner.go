@@ -6,12 +6,14 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 )
@@ -39,9 +41,10 @@ type Runner struct {
 	// cachedEventHandlers is set after load; safe to read once LoadedCh is closed.
 	cachedEventHandlers []eventHandler
 
-	tracker *state.Tracker
-	kv      *store.Store
-	global  *store.GlobalStore
+	tracker   *state.Tracker
+	scheduler *scheduler.Scheduler
+	kv        *store.Store
+	global    *store.GlobalStore
 
 	// Wired by caller after construction; nil = not yet connected.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
@@ -49,7 +52,7 @@ type Runner struct {
 }
 
 // NewRunner creates a Runner. Call Start to load and run the script.
-func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, kv *store.Store, global *store.GlobalStore) *Runner {
+func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
 	return &Runner{
 		scriptID:  scriptID,
 		scriptDir: scriptDir,
@@ -57,6 +60,7 @@ func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, kv *store.Sto
 		LoadedCh:  make(chan struct{}),
 		timerFns:  make(map[string]*lua.LFunction),
 		tracker:   tracker,
+		scheduler: scheduler,
 		kv:        kv,
 		global:    global,
 	}
@@ -119,14 +123,24 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	api := &haAPI{
 		scriptID:    r.scriptID,
 		tracker:     r.tracker,
+		scheduler:   r.scheduler,
 		callService: r.callService,
 		fireEvent:   r.fireEvent,
+		timerFns:    make(map[string]*lua.LFunction),
 	}
 	r.registerHaAPI(L, api)
 	registerStoreAPI(L, r.kv, r.global)
 
 	if err := L.DoFile(scriptPath); err != nil {
 		slog.Error("lua: script load error", "script", r.scriptID, "err", err)
+	}
+
+	// Persist timer functions for dispatch and prune old rows.
+	r.timerFns = api.timerFns
+	if r.scheduler != nil {
+		if err := r.scheduler.PruneScript(ctx, r.scriptID, api.timerIDs); err != nil {
+			slog.Warn("lua: timer pruning failed", "script", r.scriptID, "err", err)
+		}
 	}
 
 	// Cache event handlers for Registry.EventTypes() and close the loaded signal.
@@ -177,7 +191,7 @@ func (r *Runner) handleEvent(L *lua.LState, api *haAPI, ev Event) {
 		r.handleHAEvent(L, api, *ev.HAEvent)
 	}
 	if ev.TimerFired != nil {
-		r.handleTimerFired(L, ev.TimerFired.TimerID)
+		r.handleTimerFired(L, api, ev.TimerFired.TimerID)
 	}
 }
 
@@ -209,11 +223,19 @@ func (r *Runner) handleHAEvent(L *lua.LState, api *haAPI, ev ha.Event) {
 	}
 }
 
-func (r *Runner) handleTimerFired(L *lua.LState, timerID string) {
-	// Timer dispatch is wired in after milestone 8 adds the scheduler API.
-	// Placeholder: runners created before that milestone have no timer fns.
-	_ = L
-	_ = timerID
+func (r *Runner) handleTimerFired(L *lua.LState, api *haAPI, timerID string) {
+	fn, ok := r.timerFns[timerID]
+	if !ok {
+		return
+	}
+
+	// IDs are "script_id|type|spec|N" or "script_id|after|uuid"
+	callback := "timer"
+	parts := strings.Split(timerID, "|")
+	if len(parts) >= 2 {
+		callback = "timer_" + parts[1]
+	}
+	callProtected(L, api, callback, nil, fn)
 }
 
 // newLState creates a Lua state with a basic set of libraries.

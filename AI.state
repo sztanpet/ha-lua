@@ -2,12 +2,18 @@
 Last updated: 2026-06-13
 
 ## Phase
-Implementation — milestones 1–7 committed and passing. A code-review pass
-(2026-06-13) found and fixed serious M1/M2-era bugs, most notably that WAL
-was never actually enabled. gofmt + vet + staticcheck + golangci-lint are
-enforced by a pre-commit hook (.githooks/, installed via `make hooks` —
-already active in this clone). Working tree is clean. Next up: milestone 8
-(scheduling).
+Implementation — milestones 1–8 committed and passing.
+
+## Milestone 8 — scheduling (2026-06-13)
+- internal/scheduler/scheduler.go: SQLite-backed timer engine with min-heap.
+- ha.every, ha.at, ha.after Lua APIs implemented in internal/lua/api_ha.go.
+- Timers persisted in SQLite; catch-up logic fires missed recurring timers once on startup.
+- ha.after is best-effort: orphaned rows cleaned up on startup.
+- ha.at timezone resolution via config.timezone or $TZ, fallback to UTC.
+- TimerFiredEvent dispatch wired into internal/lua/runner.go.
+- PruneScript removes orphaned every/at timers when script reloads.
+- RemoveScript cleans up heap and after-timers on script stop.
+- Tests: TestTimerAPI in api_ha_test.go, full scheduler tests in scheduler_test.go.
 
 ## Milestone 7 — purge (2026-06-13)
 - internal/purge/purge.go: Purger with New(db, retentionDays, interval) —
