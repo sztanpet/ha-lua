@@ -324,12 +324,27 @@ func TestTimerAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var afterKey string
+	for k := range runner.timerFns {
+		if strings.Contains(k, "|after|") {
+			afterKey = k
+			break
+		}
+	}
+	if afterKey == "" {
+		t.Fatal("after timer not found in runner.timerFns")
+	}
+
 	// Event loop: we expect "after" because "every" is 1h away.
 	select {
 	case ev := <-runner.ch:
 		runner.handleEvent(L, api, ev)
 	case <-time.After(time.Second):
 		t.Fatal("timer did not fire")
+	}
+
+	if _, ok := runner.timerFns[afterKey]; ok {
+		t.Errorf("after timer %q not deleted from runner.timerFns after firing", afterKey)
 	}
 
 	select {

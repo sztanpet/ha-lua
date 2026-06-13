@@ -8,6 +8,8 @@ Implementation — milestones 1–9 committed and passing.
 - Verify `pcall` coverage for timer callbacks via new `TestTimerExceptionHandling` unit test in `internal/lua/api_ha_test.go`.
 - Ensure exceptions occurring in timer callbacks (every/at/after) are caught, protected, and routed to `ha.on_exception` with real stack tracebacks.
 - Confirm email cooldown behavior (which was implemented early in M8) is fully tested.
+- Fix memory leak by deleting one-shot `ha.after` timers from the script's `timerFns` map after firing.
+
 
 ## Milestone 8 — scheduling (2026-06-13)
 - internal/scheduler/scheduler.go: SQLite-backed timer engine with min-heap.
@@ -100,8 +102,8 @@ Implementation — milestones 1–9 committed and passing.
 - `4373da1` M6 hot reload — script supervisor + fsnotify watcher
 - `11225f0` M7 purge — state_history retention job
 - `747eb21` M8 scheduling — SQLite-backed timer engine
-- `676647b` M9 error handling — verify pcall coverage for timer callbacks and test exception system
-
+- `7d11f10` M9 error handling — verify pcall coverage for timer callbacks and test exception system
+- `41def7a` lua: fix memory leak in one-shot after timers
 
 ### Landed earlier than planned (already in the commits above)
 - `ha.get_history`, `ha.get_entities`, `ha.get_entity_ids` (planned for M7)

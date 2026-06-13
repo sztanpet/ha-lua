@@ -234,6 +234,9 @@ func (r *Runner) handleTimerFired(L *lua.LState, api *haAPI, timerID string) {
 	parts := strings.Split(timerID, "|")
 	if len(parts) >= 2 {
 		callback = "timer_" + parts[1]
+		if parts[1] == "after" {
+			delete(r.timerFns, timerID)
+		}
 	}
 	callProtected(L, api, callback, nil, fn)
 }
