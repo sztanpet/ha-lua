@@ -348,3 +348,49 @@ func TestTimerAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTimerExceptionHandling(t *testing.T) {
+	L, api, _, runner := newHALState(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := api.scheduler.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var caughtErr, caughtCallback, caughtTraceback string
+	api.onExceptionFn = L.NewFunction(func(L *lua.LState) int {
+		info := L.CheckTable(1)
+		caughtErr = luaStrField(info, "error")
+		caughtCallback = luaStrField(info, "callback")
+		caughtTraceback = luaStrField(info, "traceback")
+		return 0
+	})
+
+	// Register a failing after timer
+	if err := L.DoString(`
+		ha.after("10ms", function()
+			error("timer fail")
+		end)
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for the timer to fire and deliver to the runner's channel
+	select {
+	case ev := <-runner.ch:
+		runner.handleEvent(L, api, ev)
+	case <-time.After(time.Second):
+		t.Fatal("timer did not fire")
+	}
+
+	if !strings.Contains(caughtErr, "timer fail") {
+		t.Errorf("expected error 'timer fail', got %q", caughtErr)
+	}
+	if caughtCallback != "timer_after" {
+		t.Errorf("expected callback 'timer_after', got %q", caughtCallback)
+	}
+	if !strings.Contains(caughtTraceback, "traceback") {
+		t.Errorf("expected stack traceback, got %q", caughtTraceback)
+	}
+}

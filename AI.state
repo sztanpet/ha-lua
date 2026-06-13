@@ -2,7 +2,12 @@
 Last updated: 2026-06-13
 
 ## Phase
-Implementation — milestones 1–8 committed and passing.
+Implementation — milestones 1–9 committed and passing.
+
+## Milestone 9 — error handling (2026-06-13)
+- Verify `pcall` coverage for timer callbacks via new `TestTimerExceptionHandling` unit test in `internal/lua/api_ha_test.go`.
+- Ensure exceptions occurring in timer callbacks (every/at/after) are caught, protected, and routed to `ha.on_exception` with real stack tracebacks.
+- Confirm email cooldown behavior (which was implemented early in M8) is fully tested.
 
 ## Milestone 8 — scheduling (2026-06-13)
 - internal/scheduler/scheduler.go: SQLite-backed timer engine with min-heap.
@@ -92,6 +97,11 @@ Implementation — milestones 1–8 committed and passing.
 - `5103275` M2 state tracker — schema, migrations, upsert + history append (internal/state, internal/testutil)
 - `2a1eaa4` M3 Lua runner — runner, ha.*/store.*/global.* API, store.state() proxy, JSON round-trip
 - `ee30da4` M4+M5 — event dispatch (registry), service calls, fire_event, config, pprof, main wiring
+- `4373da1` M6 hot reload — script supervisor + fsnotify watcher
+- `11225f0` M7 purge — state_history retention job
+- `747eb21` M8 scheduling — SQLite-backed timer engine
+- `676647b` M9 error handling — verify pcall coverage for timer callbacks and test exception system
+
 
 ### Landed earlier than planned (already in the commits above)
 - `ha.get_history`, `ha.get_entities`, `ha.get_entity_ids` (planned for M7)
@@ -100,11 +110,6 @@ Implementation — milestones 1–8 committed and passing.
 - `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-8. Scheduling — internal/scheduler/ is an empty dir; ha.every/at/after, timers table,
-   min-heap, catch-up, orphan cleanup, ha.at timezone resolution (time/tzdata);
-   wire TimerFiredEvent dispatch into runner.go (see runner.go:195 TODO comment)
-9. Error handling — mostly done early; add email cooldown (see follow-ups);
-   verify pcall coverage for timer callbacks once M8 lands
 10. Lua stdlib — full sandboxing (SkipOpenLibs + selective open; see runner.go:202 TODO);
     strings, time, json, re, http, crypto modules; math augmentation
 11. Testing & benchmarks — per-package tests exist for ha/state/store/lua; benchmarks
