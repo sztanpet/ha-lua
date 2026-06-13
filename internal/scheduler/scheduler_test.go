@@ -397,3 +397,54 @@ func BenchmarkSchedulerFire(b *testing.B) {
 		s.fireDue(ctx)
 	}
 }
+
+func BenchmarkSchedulerConcurrencyStress(b *testing.B) {
+	s, fired, _ := newTestSched(b, time.UTC)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Drain fired events in background to prevent blocking the scheduler
+	go func() {
+		for {
+			select {
+			case <-fired:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	if err := s.Start(ctx); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		workerID := rand.IntN(100000)
+		seq := 0
+		for pb.Next() {
+			seq++
+			scriptID := fmt.Sprintf("s_%d", workerID)
+
+			// 1. Register a recurring timer
+			everyID, err := s.RegisterEvery(ctx, scriptID, "100ms", seq)
+			if err != nil {
+				b.Errorf("RegisterEvery failed: %v", err)
+			}
+
+			// 2. Register a one-shot timer
+			afterID, err := s.RegisterAfter(ctx, scriptID, "10ms")
+			if err != nil {
+				b.Errorf("RegisterAfter failed: %v", err)
+			}
+
+			// 3. Prune timers
+			if err := s.PruneScript(ctx, scriptID, []string{everyID, afterID}); err != nil {
+				b.Errorf("PruneScript failed: %v", err)
+			}
+
+			// 4. Remove script (clears heap and after timers)
+			s.RemoveScript(scriptID)
+		}
+	})
+}
