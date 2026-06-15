@@ -1,8 +1,35 @@
 # AI Working State
-Last updated: 2026-06-13
+Last updated: 2026-06-15
 
 ## Phase
-Implementation — milestones 1–11 committed and passing.
+Implementation COMPLETE — milestones 1–12 committed and passing.
+
+## Milestone 12 — Add-on packaging (2026-06-15)
+- config.yaml: HA add-on manifest (slug ha-lua, arch aarch64/amd64,
+  homeassistant_api, addon_config:rw map, options + schema). Options/schema
+  deliberately omit url/token/scripts_dir/database — add-on mode forces those.
+- config.dev.yaml: standalone dev config; the ONE file that must carry
+  homeassistant.url + token (dev mode reads them straight from YAML; only
+  add-on mode injects them from the Supervisor). Keys mirror config.go yaml
+  tags exactly; verified it round-trips through config.Load.
+- Dockerfile: multi-stage golang:1.26-bookworm builder (NOT 1.24 — go.mod
+  requires 1.26.4) → base-debian. No GOARCH mapping: home-assistant/builder
+  runs the build emulated under the target arch, so plain `go build` is
+  correct; mapping HA's aarch64→Go's arm64 by hand is the classic broken-image
+  trap. CGO_ENABLED=0 static, ca-certificates for TLS. Built clean and the
+  binary runs (`--config` flag present); final image content ~38MB.
+- .dockerignore: keeps the build context clean and never copies a host-built
+  ha-lua binary / .git / *.db into the image.
+- run.sh: bashio entrypoint, no flags (single prod config channel).
+- build.yaml: base-debian for both arches.
+- .github/workflows/release.yml: RELEASE ONLY per user decision (no PR
+  test/lint workflow). Tag push (v*) → home-assistant/builder@2026.06.0,
+  matrix aarch64/amd64, GHCR login, push ghcr.io/<owner>/ha-lua-{arch}.
+  config.yaml version must be kept in sync with the tag.
+- DOCS.md: user-facing add-on docs (install, paths, first script, every
+  option, API table). CHANGELOG.md: 1.0.0 entry.
+- README.md: removed the stale "Planned" section — timers, purge, sandbox,
+  and stdlib are all implemented; added timer rows + stdlib note.
 
 ## Milestone 11 — Testing & benchmarks (2026-06-15)
 - Established performance baseline in `benchmarks/baseline.txt`.
@@ -131,8 +158,7 @@ Implementation — milestones 1–11 committed and passing.
 - `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-12. Add-on packaging — config.yaml, config.dev.yaml, Dockerfile, run.sh, build.yaml,
-    DOCS.md, CHANGELOG.md, CI/CD — none exist yet
+None — all 12 milestones complete.
 
 ## Plan review fixes (applied to plan.md 2026-06-12)
 All 10 review findings are now folded into plan.md: Go-computed RFC3339 purge

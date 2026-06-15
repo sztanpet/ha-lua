@@ -1,0 +1,32 @@
+# Standalone development config for running outside Home Assistant.
+#
+#   go run ./cmd/ha-lua --config config.dev.yaml
+#
+# In add-on mode the binary ignores all connection fields: the URL is fixed
+# to ws://supervisor/core/websocket and the token comes from
+# $SUPERVISOR_TOKEN. In dev mode there is no Supervisor, so url and token
+# MUST be supplied here or the daemon connects to nothing.
+homeassistant:
+  url: "ws://localhost:8123/api/websocket"
+  token: "REPLACE_WITH_LONG_LIVED_ACCESS_TOKEN"
+
+# Where your *.lua scripts live (add-on mode forces /addon_config/scripts).
+scripts_dir: "./scripts"
+
+# SQLite database path (add-on mode forces /data/ha-lua.db).
+database: "./ha-lua.db"
+
+# debug | info | warn | error
+log_level: "info"
+
+# IANA name (e.g. "Europe/Budapest"). Empty falls back to $TZ, then UTC.
+# Affects what wall-clock instant ha.at("07:00") resolves to.
+timezone: ""
+
+state_history:
+  retention_days: 2
+  purge_interval: "1h"
+
+debug:
+  # host:port for net/http/pprof + execution trace. Empty disables it.
+  pprof_addr: ""

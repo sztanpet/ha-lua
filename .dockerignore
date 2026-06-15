@@ -1,0 +1,12 @@
+# Keep the build context small and never copy a host-built artifact into the
+# image — the Dockerfile compiles from source.
+/ha-lua
+.git
+.github
+*.db
+*.db-shm
+*.db-wal
+trace.out
+/config/
+benchmarks/current.txt
+config.dev.yaml
