@@ -2,7 +2,13 @@
 Last updated: 2026-06-13
 
 ## Phase
-Implementation — milestones 1–10 committed and passing.
+Implementation — milestones 1–11 committed and passing.
+
+## Milestone 11 — Testing & benchmarks (2026-06-15)
+- Established performance baseline in `benchmarks/baseline.txt`.
+- Added benchmarks for registry dispatch, event parsing, and config loading.
+- Silenced logging during benchmarks to keep output clean and results files small.
+- Verified that all packages have unit tests and they pass `make test`.
 
 ## Milestone 10 — Lua stdlib (2026-06-15)
 - Full sandboxing: `lua.NewState(lua.Options{SkipOpenLibs: true})` used in `newLState`.
@@ -125,8 +131,6 @@ Implementation — milestones 1–10 committed and passing.
 - `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-11. Testing & benchmarks — per-package tests exist for ha/state/store/lua; benchmarks
-    added for lua stdlib; baseline.txt committed
 12. Add-on packaging — config.yaml, config.dev.yaml, Dockerfile, run.sh, build.yaml,
     DOCS.md, CHANGELOG.md, CI/CD — none exist yet
 

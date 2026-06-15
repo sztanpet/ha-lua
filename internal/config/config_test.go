@@ -6,11 +6,21 @@ import (
 	"testing"
 )
 
-func writeFile(t *testing.T, name, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), name)
+func writeFile(t testing.TB, name, content string) string {
+	if t != nil {
+		t.Helper()
+	}
+	dir := os.TempDir()
+	if t != nil {
+		dir = t.TempDir()
+	}
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+		if t != nil {
+			t.Fatal(err)
+		} else {
+			panic(err)
+		}
 	}
 	return path
 }
@@ -40,8 +50,11 @@ func TestLoadAddonMode(t *testing.T) {
 	if cfg.Database != "/data/ha-lua.db" {
 		t.Errorf("database: got %q", cfg.Database)
 	}
-	if cfg.LogLevel != "debug" || cfg.StateHistory.RetentionDays != 5 {
-		t.Errorf("options not applied: %+v", cfg)
+	if cfg.LogLevel != "debug" {
+		t.Errorf("log_level: got %q, want debug", cfg.LogLevel)
+	}
+	if cfg.StateHistory.RetentionDays != 5 {
+		t.Errorf("retention_days: got %d, want 5", cfg.StateHistory.RetentionDays)
 	}
 }
 
@@ -94,5 +107,13 @@ database: "./ha-lua.db"
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := load(filepath.Join(t.TempDir(), "nope.json"), false); err == nil {
 		t.Fatal("expected error for missing config file")
+	}
+}
+
+func BenchmarkLoadConfig(b *testing.B) {
+	path := writeFile(b, "options.json", `{"log_level":"debug","state_history":{"retention_days":5,"purge_interval":"30m"}}`)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = load(path, true)
 	}
 }

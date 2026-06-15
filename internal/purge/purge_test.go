@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -103,6 +104,7 @@ func TestRunOnceEmptyTable(t *testing.T) {
 }
 
 func BenchmarkPurge(b *testing.B) {
+	slog.SetLogLoggerLevel(slog.LevelError)
 	for b.Loop() {
 		b.StopTimer()
 		db := newPurgeDB(b)

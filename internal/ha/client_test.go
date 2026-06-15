@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/go-json-experiment/json"
 )
 
 // mockServer runs a minimal HA WebSocket server for testing.
@@ -270,5 +271,22 @@ func TestAddEventTypeLiveSubscribe(t *testing.T) {
 	case et := <-subs:
 		t.Errorf("duplicate subscription sent: %q", et)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func BenchmarkEventParsing(b *testing.B) {
+	raw := []byte(`{"id":2,"type":"event","event":{"event_type":"state_changed","time_fired":"2026-01-01T00:00:00Z","data":{"entity_id":"light.bedroom","new_state":{"entity_id":"light.bedroom","state":"on","attributes":{"brightness":200}}}}}`)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var snap incomingMsg
+		if err := json.Unmarshal(raw, &snap); err != nil {
+			b.Fatal(err)
+		}
+		if snap.Type == "event" {
+			var env eventEnvelope
+			if err := json.Unmarshal(raw, &env); err != nil {
+				b.Fatal(err)
+			}
+		}
 	}
 }

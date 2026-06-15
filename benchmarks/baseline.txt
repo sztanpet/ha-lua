@@ -1,561 +1,130 @@
 ?   	github.com/sztanpet/ha-lua/cmd/ha-lua	[no test files]
+goos: linux
+goarch: amd64
+pkg: github.com/sztanpet/ha-lua/internal/config
+cpu: 12th Gen Intel(R) Core(TM) i5-12500H
+BenchmarkLoadConfig-16    	  159878	      6757 ns/op	    1304 B/op	      14 allocs/op
+BenchmarkLoadConfig-16    	  178525	      6128 ns/op	    1304 B/op	      14 allocs/op
+BenchmarkLoadConfig-16    	  168703	      6067 ns/op	    1304 B/op	      14 allocs/op
+BenchmarkLoadConfig-16    	  170290	      6317 ns/op	    1304 B/op	      14 allocs/op
+BenchmarkLoadConfig-16    	  160569	      7078 ns/op	    1304 B/op	      14 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/config	0.002s
+ok  	github.com/sztanpet/ha-lua/internal/config	6.717s
 ?   	github.com/sztanpet/ha-lua/internal/debug	[no test files]
+goos: linux
+goarch: amd64
+pkg: github.com/sztanpet/ha-lua/internal/ha
+cpu: 12th Gen Intel(R) Core(TM) i5-12500H
+BenchmarkEventParsing-16    	  455432	      2873 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-16    	  442413	      2661 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-16    	  413690	      2556 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-16    	  487729	      2524 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-16    	  498763	      2444 ns/op	     232 B/op	       3 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/ha	0.003s
+ok  	github.com/sztanpet/ha-lua/internal/ha	7.131s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/lua
 cpu: 12th Gen Intel(R) Core(TM) i5-12500H
-BenchmarkStoreStateProxyWrite-16    	  140406	      7424 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-16    	  146500	      7402 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-16    	  162835	      7337 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-16    	  148911	      7488 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-16    	  160424	      7380 ns/op	     367 B/op	      17 allocs/op
-BenchmarkLuaJSONEncode-16           	  216726	      5082 ns/op	    2307 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-16           	  235820	      4998 ns/op	    2307 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-16           	  244028	      5030 ns/op	    2307 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-16           	  206886	      4918 ns/op	    2307 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-16           	  241594	      4954 ns/op	    2307 B/op	      77 allocs/op
-BenchmarkLuaJSONDecode-16           	  131329	     10904 ns/op	   18433 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-16           	  135974	      9785 ns/op	   18433 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-16           	  107857	     10578 ns/op	   18434 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-16           	  144873	      9279 ns/op	   18437 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-16           	  128731	     10758 ns/op	   18433 B/op	     125 allocs/op
+BenchmarkStoreStateProxyWrite-16    	   88878	     13804 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-16    	   89116	     13371 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-16    	   93649	     14139 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-16    	   80842	     13321 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-16    	   85806	     13216 ns/op	     367 B/op	      17 allocs/op
+BenchmarkLuaJSONEncode-16           	  140342	      8778 ns/op	    2308 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-16           	  135024	      8581 ns/op	    2307 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-16           	  135234	      8612 ns/op	    2307 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-16           	  140745	      9257 ns/op	    2307 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-16           	  128950	      9080 ns/op	    2308 B/op	      77 allocs/op
+BenchmarkLuaJSONDecode-16           	   81758	     15195 ns/op	   18434 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-16           	   71365	     15425 ns/op	   18435 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-16           	   78259	     14600 ns/op	   18435 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-16           	   79023	     14957 ns/op	   18434 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-16           	   80830	     15730 ns/op	   18435 B/op	     125 allocs/op
+BenchmarkRegistryDispatch-16        	   60394	     22848 ns/op	    6958 B/op	     134 allocs/op
+BenchmarkRegistryDispatch-16        	   45764	     26060 ns/op	    6943 B/op	     133 allocs/op
+BenchmarkRegistryDispatch-16        	   44041	     73878 ns/op	    6477 B/op	     104 allocs/op
+BenchmarkRegistryDispatch-16        	   47648	     26256 ns/op	    6939 B/op	     133 allocs/op
+BenchmarkRegistryDispatch-16        	   44732	     48229 ns/op	    6624 B/op	     113 allocs/op
+BenchmarkReMatchCached-16           	   49662	     23110 ns/op	   33689 B/op	      71 allocs/op
+BenchmarkReMatchCached-16           	   49686	     27867 ns/op	   33837 B/op	      71 allocs/op
+BenchmarkReMatchCached-16           	   43875	     26322 ns/op	   33832 B/op	      71 allocs/op
+BenchmarkReMatchCached-16           	   49239	     24864 ns/op	   33896 B/op	      71 allocs/op
+BenchmarkReMatchCached-16           	   49086	     23771 ns/op	   33875 B/op	      71 allocs/op
+BenchmarkReMatchCold-16             	   31338	     38287 ns/op	   43361 B/op	      95 allocs/op
+BenchmarkReMatchCold-16             	   27871	     41168 ns/op	   43561 B/op	      95 allocs/op
+BenchmarkReMatchCold-16             	   28399	     39863 ns/op	   43545 B/op	      95 allocs/op
+BenchmarkReMatchCold-16             	   30724	     41203 ns/op	   43536 B/op	      95 allocs/op
+BenchmarkReMatchCold-16             	   25371	     43457 ns/op	   43446 B/op	      95 allocs/op
+BenchmarkHTTPGet-16                 	    7430	    148708 ns/op	   45518 B/op	     162 allocs/op
+BenchmarkHTTPGet-16                 	    7648	    151335 ns/op	   45564 B/op	     163 allocs/op
+BenchmarkHTTPGet-16                 	    6984	    149679 ns/op	   45558 B/op	     163 allocs/op
+BenchmarkHTTPGet-16                 	    7011	    144923 ns/op	   45563 B/op	     163 allocs/op
+BenchmarkHTTPGet-16                 	    8144	    140787 ns/op	   45556 B/op	     163 allocs/op
+BenchmarkTimeNow-16                 	   66573	     18875 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-16                 	   56971	     21067 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-16                 	   55414	     21292 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-16                 	   53121	     21878 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-16                 	   56988	     21667 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkCryptoSHA256-16            	   53583	     21276 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-16            	   50863	     23981 ns/op	   33743 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-16            	   40482	     28609 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-16            	   45613	     24738 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-16            	   49098	     24001 ns/op	   33744 B/op	      69 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/lua	19.178s
-2026/06/13 01:16:54 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:54Z
-2026/06/13 01:16:54 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:54Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:55 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:55Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:56 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:56Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:57 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:57Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:58 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:58Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:16:59 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:16:59Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:00 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:00Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:01 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:01Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:02 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:02Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:03 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:03Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
+ok  	github.com/sztanpet/ha-lua/internal/lua	67.593s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/purge
 cpu: 12th Gen Intel(R) Core(TM) i5-12500H
-BenchmarkPurge-16    	      97	  12579003 ns/op	    8384 B/op	      23 allocs/op
-BenchmarkPurge-16    	2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:04 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:04Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:05 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:05Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:06 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:06Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:07 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:07Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:08 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:08Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:09 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:09Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:10 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:10Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:11 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:11Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:12 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:12Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-      97	  12565236 ns/op	    6586 B/op	      23 allocs/op
-BenchmarkPurge-16    	2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:13 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:13Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:14 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:14Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:15 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:15Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:16 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:16Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:17 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:17Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:18 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:18Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:19 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:19Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:20 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:20Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:21 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:21Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:22 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:22Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-      98	  12473565 ns/op	    6652 B/op	      23 allocs/op
-BenchmarkPurge-16    	2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:23 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:23Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:24 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:24Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:25 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:25Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:26 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:26Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:27 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:27Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:28 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:28Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:29 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:29Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:30 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:30Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:31 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:31Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-      96	  12509006 ns/op	    6722 B/op	      23 allocs/op
-BenchmarkPurge-16    	2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:32 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:32Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:33 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:33Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:34 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:34Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:35 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:35Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:36 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:36Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:37 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:37Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:38 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:38Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:39 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:39Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:40 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:40Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-2026/06/13 01:17:41 INFO purge: deleted expired history rows rows=10000 cutoff=2026-06-10T23:17:41Z
-      96	  12547914 ns/op	    6658 B/op	      23 allocs/op
+BenchmarkPurge-16    	      52	  21208498 ns/op	    2305 B/op	      10 allocs/op
+BenchmarkPurge-16    	      66	  19073485 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-16    	      58	  20377131 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-16    	      48	  22519600 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-16    	      60	  22020853 ns/op	     208 B/op	      10 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/purge	47.255s
+ok  	github.com/sztanpet/ha-lua/internal/purge	46.583s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/scheduler
 cpu: 12th Gen Intel(R) Core(TM) i5-12500H
-BenchmarkSchedulerFire-16    	    1401	    857615 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-16    	    1353	    844840 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-16    	    1389	    866327 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-16    	    1330	    859180 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-16    	    1266	    864417 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-16                 	     684	   1515489 ns/op	   37608 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-16                 	     763	   1499344 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-16                 	     864	   1476875 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-16                 	     868	   1540878 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-16                 	     781	   1516771 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerConcurrencyStress-16    	    7046	    173625 ns/op	    5923 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-16    	    7527	    184775 ns/op	    5915 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-16    	    7098	    184610 ns/op	    5917 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-16    	    5664	    190856 ns/op	    5914 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-16    	    6708	    177648 ns/op	    5923 B/op	     151 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/scheduler	6.213s
+ok  	github.com/sztanpet/ha-lua/internal/scheduler	13.530s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/state
 cpu: 12th Gen Intel(R) Core(TM) i5-12500H
-BenchmarkStateInsert-16    	   36987	     33798 ns/op	    1590 B/op	      40 allocs/op
-BenchmarkStateInsert-16    	   35544	     34893 ns/op	    1592 B/op	      40 allocs/op
-BenchmarkStateInsert-16    	   38520	     34652 ns/op	    1589 B/op	      40 allocs/op
-BenchmarkStateInsert-16    	   32548	     35776 ns/op	    1590 B/op	      40 allocs/op
-BenchmarkStateInsert-16    	   37838	     35773 ns/op	    1589 B/op	      40 allocs/op
+BenchmarkStateInsert-16    	   20025	     65209 ns/op	    1595 B/op	      40 allocs/op
+BenchmarkStateInsert-16    	   20785	     58127 ns/op	    1592 B/op	      40 allocs/op
+BenchmarkStateInsert-16    	   21543	     59061 ns/op	    1590 B/op	      40 allocs/op
+BenchmarkStateInsert-16    	   19785	     60974 ns/op	    1590 B/op	      40 allocs/op
+BenchmarkStateInsert-16    	   21330	     59276 ns/op	    1590 B/op	      40 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/state	8.068s
+ok  	github.com/sztanpet/ha-lua/internal/state	9.254s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/store
 cpu: 12th Gen Intel(R) Core(TM) i5-12500H
-BenchmarkKVGet-16    	  196988	      5259 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-16    	  225633	      5220 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-16    	  223206	      5203 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-16    	  212770	      5172 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-16    	  226678	      5133 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVSet-16    	  168758	      6936 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-16    	  171510	      7094 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-16    	  171002	      7001 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-16    	  161313	      6949 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-16    	  165436	      6960 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVGet-16    	  124623	      9194 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-16    	  133563	      9127 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-16    	  139814	      9358 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-16    	  118640	      9361 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-16    	  121615	     10739 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVSet-16    	   88845	     12976 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-16    	  100400	     11996 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-16    	  102172	     12203 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-16    	   94908	     12110 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-16    	  102367	     12131 ns/op	     343 B/op	      15 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/store	12.204s
+ok  	github.com/sztanpet/ha-lua/internal/store	13.289s
 ?   	github.com/sztanpet/ha-lua/internal/testutil	[no test files]
