@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
+	"github.com/sztanpet/ha-lua/internal/web"
 )
 
 func main() {
@@ -57,6 +59,7 @@ func main() {
 		os.Exit(1)
 	}
 	reg := luapkg.NewRegistry()
+	router := luapkg.NewRouter(reg)
 	sched := scheduler.New(writeDB, loc, reg.DispatchToTimer)
 	if err := sched.Start(ctx); err != nil {
 		slog.Error("scheduler start failed", "err", err)
@@ -101,6 +104,7 @@ func main() {
 		Tracker:   tracker,
 		Scheduler: sched,
 		Global:    globalStore,
+		Router:    router,
 		NewKV: func(scriptID string) *store.Store {
 			return store.New(writeDB, readDB, scriptID)
 		},
@@ -157,6 +161,10 @@ func main() {
 	}
 	if watcher != nil {
 		go watcher.Run(ctx, sup)
+	}
+
+	if cfg.HTTPPort != 0 {
+		web.Start(ctx, fmt.Sprintf(":%d", cfg.HTTPPort), router)
 	}
 
 	// Route HA events to state tracker and all runners.

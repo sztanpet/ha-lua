@@ -29,6 +29,9 @@ type Deps struct {
 	NewKV       func(scriptID string) *store.Store
 	CallService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	FireEvent   func(ctx context.Context, eventType string, data jsontext.Value) error
+	// Router receives each script's ha.serve routes on load and loses them on
+	// stop. May be nil (no UI server).
+	Router *Router
 	// OnLoaded is called (on its own goroutine) once a started script has
 	// finished loading — the hook for subscribing newly required event
 	// types. May be nil.
@@ -105,14 +108,32 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 		defer close(h.done)
 		r.Start(sctx, path)
 	}()
-	if s.deps.OnLoaded != nil {
+	if s.deps.Router != nil || s.deps.OnLoaded != nil {
 		go func() {
 			select {
 			case <-r.LoadedCh:
-				s.deps.OnLoaded(r)
+				s.afterLoad(id, h, r)
 			case <-sctx.Done():
 			}
 		}()
+	}
+}
+
+// afterLoad runs once a script has loaded: it registers the script's UI routes
+// and fires the OnLoaded hook. Route registration holds s.mu across the
+// handle-identity check and the Register call, so it is fully serialized with
+// StopScript's Unregister (also under s.mu) — a concurrent stop/reload can
+// never leave a dangling mapping.
+func (s *Supervisor) afterLoad(id string, h *scriptHandle, r *Runner) {
+	if s.deps.Router != nil {
+		s.mu.Lock()
+		if s.scripts[id] == h {
+			s.deps.Router.Register(id, r.Routes())
+		}
+		s.mu.Unlock()
+	}
+	if s.deps.OnLoaded != nil {
+		s.deps.OnLoaded(r)
 	}
 }
 
@@ -125,6 +146,9 @@ func (s *Supervisor) StopScript(id string) {
 	h, ok := s.scripts[id]
 	if ok {
 		delete(s.scripts, id)
+		if s.deps.Router != nil {
+			s.deps.Router.Unregister(id)
+		}
 	}
 	s.mu.Unlock()
 	if !ok {

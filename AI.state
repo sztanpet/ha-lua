@@ -2,7 +2,44 @@
 Last updated: 2026-06-15
 
 ## Phase
-Implementation COMPLETE — milestones 1–12 committed and passing.
+Core daemon COMPLETE (milestones 1–12). New feature track: thermostat UI
+(see thermostat-ui-spec.md) — milestone 1 of 7 done.
+
+## Thermostat UI — Milestone 1: HTTP server core (2026-06-15)
+- New Lua-facing HTTP server so a script can serve a UI. ha.serve(method,
+  prefix, handler); handler returns status[, body[, headers]].
+- internal/lua/router.go: Router (http.Handler). Table is (method,prefix)->
+  scriptID, resolved through the Registry at request time (immediate 404 after
+  stop; stale entry self-heals because api.routes is the authoritative lookup).
+  Longest-prefix match. Body capped at 1 MiB.
+- Request path is SEPARATE from the lossy event fan-out: Runner.reqCh is
+  unbuffered and NEVER closed (sends can only block, never panic); reply chan
+  is buffered cap 1 (run loop's reply never blocks even after client timeout).
+  Single round-trip deadline (default 5s) → 503. The 503 bounds the client
+  wait, not handler execution (a hung handler still occupies its goroutine,
+  same as a hung event handler).
+- Route lifecycle (spec §3.1a): Supervisor.afterLoad registers routes holding
+  s.mu across the handle-identity check + Router.Register, fully serialized
+  with StopScript's Router.Unregister (also under s.mu) — no dangling mapping
+  on reload. Verified by TestRouterReloadReRegisters.
+- callHandler reads (status, body, headers) defensively: PCall pads to NRet=3,
+  garbage/short returns → 200, never a panic. Errors → on_exception + 500.
+  Refactored luaErrParts shared with callProtected.
+- internal/web/server.go: web.Start(ctx, addr, router) (mirrors debug.Start;
+  no-op if addr empty). config.HTTPPort (http_port, 0=disabled); wired in main;
+  config.dev.yaml sets 8100.
+- Tests in internal/lua/router_test.go: round-trip, request-field echo,
+  longest-prefix, 404 (unknown + wrong method), handler-error 500, garbage/
+  no-return defaults, busy 503 (send timeout), reload re-registration.
+
+## Pending (thermostat UI)
+2. Packaging — ingress fields + ports mapping in config.yaml
+3. Controller — desired() engine, 1-min tick, schedule/boost/override persist,
+   publish global:thermostat:desired:<zone>, skip write while window open
+4. Window cooperation — heating_windows.lua restores published desired on close
+5. HTTP API — state/boost/schedule/settings endpoints
+6. UI — single-page HTML/JS
+7. Docs — DOCS.md + CHANGELOG
 
 ## Milestone 12 — Add-on packaging (2026-06-15)
 - config.yaml: HA add-on manifest (slug ha-lua, arch aarch64/amd64,

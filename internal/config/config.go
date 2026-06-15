@@ -24,6 +24,8 @@ type Config struct {
 	Database   string `json:"database"    yaml:"database"`
 	LogLevel   string `json:"log_level"   yaml:"log_level"`
 	Timezone   string `json:"timezone"    yaml:"timezone"`
+	// HTTPPort is the LAN port for the script-driven UI server. 0 disables it.
+	HTTPPort int `json:"http_port" yaml:"http_port"`
 
 	StateHistory struct {
 		RetentionDays int    `json:"retention_days" yaml:"retention_days"`

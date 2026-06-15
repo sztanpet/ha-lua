@@ -5,6 +5,7 @@ package lua
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -34,12 +35,19 @@ type Runner struct {
 	scriptID  string
 	scriptDir string
 	ch        chan Event
-	timerFns  map[string]*lua.LFunction
+	// reqCh delivers UI HTTP requests. Unlike ch (lossy fan-out, dropped when
+	// full), requests block the sender up to the request timeout and are never
+	// dropped. reqCh is never closed, so the Router's send can only block
+	// (bounded by its deadline), never panic.
+	reqCh    chan *request
+	timerFns map[string]*lua.LFunction
 
 	// LoadedCh is closed once the script has finished loading.
 	LoadedCh chan struct{}
 	// cachedEventHandlers is set after load; safe to read once LoadedCh is closed.
 	cachedEventHandlers []eventHandler
+	// cachedRoutes is set after load; safe to read once LoadedCh is closed.
+	cachedRoutes []RouteSpec
 
 	tracker   *state.Tracker
 	scheduler *scheduler.Scheduler
@@ -57,6 +65,7 @@ func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, scheduler *sc
 		scriptID:  scriptID,
 		scriptDir: scriptDir,
 		ch:        make(chan Event, 64),
+		reqCh:     make(chan *request),
 		LoadedCh:  make(chan struct{}),
 		timerFns:  make(map[string]*lua.LFunction),
 		tracker:   tracker,
@@ -143,8 +152,10 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		}
 	}
 
-	// Cache event handlers for Registry.EventTypes() and close the loaded signal.
+	// Cache event handlers and routes for the supervisor/router, then signal
+	// loaded. Both are safe to read once LoadedCh is closed.
 	r.cachedEventHandlers = api.eventHandlers
+	r.cachedRoutes = api.routeSpecs()
 	close(r.LoadedCh)
 
 	// Deliver initial states for on_state_change with initial=true
@@ -154,6 +165,8 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		select {
 		case <-ctx.Done():
 			return
+		case req := <-r.reqCh:
+			r.handleRequest(L, api, req)
 		case ev, ok := <-r.ch:
 			if !ok {
 				return
@@ -162,6 +175,10 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		}
 	}
 }
+
+// Routes returns the routes this script registered via ha.serve. Only valid
+// once LoadedCh is closed.
+func (r *Runner) Routes() []RouteSpec { return r.cachedRoutes }
 
 func (r *Runner) deliverInitialStates(ctx context.Context, L *lua.LState, api *haAPI) {
 	for _, h := range api.stateChangeHandlers {
@@ -239,6 +256,78 @@ func (r *Runner) handleTimerFired(L *lua.LState, api *haAPI, timerID string) {
 		}
 	}
 	callProtected(L, api, callback, nil, fn)
+}
+
+// handleRequest runs a UI request handler on the script goroutine and replies.
+// The reply channel is buffered (cap 1), so the send never blocks even if the
+// client already timed out.
+func (r *Runner) handleRequest(L *lua.LState, api *haAPI, req *request) {
+	resp := response{status: http.StatusNotFound, body: "not found"}
+	defer func() { req.reply <- resp }()
+
+	fn := api.matchRoute(req.method, req.path)
+	if fn == nil {
+		return
+	}
+
+	reqTbl := requestToLua(L, req)
+	out, err := r.callHandler(L, api, req.method+" "+req.path, fn, reqTbl)
+	if err != nil {
+		resp = response{status: http.StatusInternalServerError, body: "internal error"}
+		return
+	}
+	resp = out
+}
+
+// callHandler invokes a route handler protected, reads its (status, body,
+// headers) return values defensively, and routes any error to on_exception.
+func (r *Runner) callHandler(L *lua.LState, api *haAPI, name string, fn *lua.LFunction, arg lua.LValue) (response, error) {
+	if err := L.CallByParam(lua.P{Fn: fn, NRet: 3, Protect: true}, arg); err != nil {
+		errMsg, traceback := luaErrParts(err)
+		dispatchException(L, api, errMsg, traceback, name, nil)
+		return response{}, err
+	}
+	// PCall pads to exactly NRet results, so all three slots exist (nil if the
+	// handler returned fewer). Parse defensively: a garbage return is a 200,
+	// never a panic.
+	statusV := L.Get(-3)
+	bodyV := L.Get(-2)
+	headersV := L.Get(-1)
+	L.Pop(3)
+
+	resp := response{status: http.StatusOK}
+	if n, ok := statusV.(lua.LNumber); ok {
+		resp.status = int(n)
+	}
+	if s, ok := bodyV.(lua.LString); ok {
+		resp.body = string(s)
+	}
+	if t, ok := headersV.(*lua.LTable); ok {
+		resp.headers = make(map[string]string)
+		t.ForEach(func(k, v lua.LValue) {
+			resp.headers[k.String()] = v.String()
+		})
+	}
+	return resp, nil
+}
+
+// requestToLua builds the request table passed to a Lua handler.
+func requestToLua(L *lua.LState, req *request) *lua.LTable {
+	t := L.NewTable()
+	t.RawSetString("method", lua.LString(req.method))
+	t.RawSetString("path", lua.LString(req.path))
+	t.RawSetString("body", lua.LString(req.body))
+	t.RawSetString("query", stringMapToLua(L, req.query))
+	t.RawSetString("headers", stringMapToLua(L, req.headers))
+	return t
+}
+
+func stringMapToLua(L *lua.LState, m map[string]string) *lua.LTable {
+	t := L.NewTable()
+	for k, v := range m {
+		t.RawSetString(k, lua.LString(v))
+	}
+	return t
 }
 
 // newLState creates a Lua state with a basic set of libraries.

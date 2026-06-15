@@ -19,6 +19,9 @@ database: "./ha-lua.db"
 # debug | info | warn | error
 log_level: "info"
 
+# LAN port for the script-driven UI server (ha.serve). 0 disables it.
+http_port: 8100
+
 # IANA name (e.g. "Europe/Budapest"). Empty falls back to $TZ, then UTC.
 # Affects what wall-clock instant ha.at("07:00") resolves to.
 timezone: ""

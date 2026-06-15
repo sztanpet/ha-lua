@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-json-experiment/json/jsontext"
@@ -34,12 +35,47 @@ type haAPI struct {
 	timerFns map[string]*lua.LFunction
 	// timerIDs tracks load-time timers for PruneScript.
 	timerIDs []string
+	// routes registered via ha.serve during load time.
+	routes []routeEntry
 }
 
 type stateChangeHandler struct {
 	pattern string
 	fn      *lua.LFunction
 	initial bool
+}
+
+type routeEntry struct {
+	method string
+	prefix string
+	fn     *lua.LFunction
+}
+
+// matchRoute returns the handler for the longest registered prefix of path
+// under method, or nil. This is the authoritative lookup: the daemon Router's
+// table is only a hint.
+func (api *haAPI) matchRoute(method, path string) *lua.LFunction {
+	var best *lua.LFunction
+	bestLen := -1
+	for _, e := range api.routes {
+		if e.method != method {
+			continue
+		}
+		if len(e.prefix) > bestLen && strings.HasPrefix(path, e.prefix) {
+			best = e.fn
+			bestLen = len(e.prefix)
+		}
+	}
+	return best
+}
+
+// routeSpecs returns the (method, prefix) pairs for daemon Router registration.
+func (api *haAPI) routeSpecs() []RouteSpec {
+	out := make([]RouteSpec, 0, len(api.routes))
+	for _, e := range api.routes {
+		out = append(out, RouteSpec{Method: e.method, Prefix: e.prefix})
+	}
+	return out
 }
 
 type eventHandler struct {
@@ -263,6 +299,21 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		return 0
 	}))
 
+	// ha.serve registers an HTTP handler for a method + path prefix. Load-time
+	// only. The handler receives a request table {method, path, query, headers,
+	// body} and returns status:int[, body:string[, headers:table]].
+	L.SetField(haTable, "serve", L.NewFunction(func(L *lua.LState) int {
+		method := strings.ToUpper(L.CheckString(1))
+		prefix := L.CheckString(2)
+		fn := L.CheckFunction(3)
+		if !strings.HasPrefix(prefix, "/") {
+			L.RaiseError("serve: path prefix must start with '/', got %q", prefix)
+			return 0
+		}
+		api.routes = append(api.routes, routeEntry{method: method, prefix: prefix, fn: fn})
+		return 0
+	}))
+
 	L.SetField(haTable, "on_exception", L.NewFunction(func(L *lua.LState) int {
 		fn := L.CheckFunction(1)
 		api.onExceptionFn = fn
@@ -347,20 +398,25 @@ func dispatchException(L *lua.LState, api *haAPI, errMsg, traceback, callbackNam
 		"traceback", traceback)
 }
 
+// luaErrParts splits a protected-call error into message and stack trace.
+// ApiError.Error() glues them together, which would make info.traceback a copy
+// of info.error.
+func luaErrParts(err error) (msg, traceback string) {
+	msg = err.Error()
+	var apiErr *lua.ApiError
+	if errors.As(err, &apiErr) {
+		msg = apiErr.Object.String()
+		traceback = apiErr.StackTrace
+	}
+	return msg, traceback
+}
+
 // callProtected calls fn with args in a protected call, dispatching any error
 // to the exception handler.
 func callProtected(L *lua.LState, api *haAPI, callbackName string, eventTbl lua.LValue, fn *lua.LFunction, args ...lua.LValue) {
 	params := lua.P{Fn: fn, NRet: 0, Protect: true}
 	if err := L.CallByParam(params, args...); err != nil {
-		// Split message and stack trace: ApiError.Error() glues them
-		// together, which made info.traceback a copy of info.error.
-		errMsg := err.Error()
-		traceback := ""
-		var apiErr *lua.ApiError
-		if errors.As(err, &apiErr) {
-			errMsg = apiErr.Object.String()
-			traceback = apiErr.StackTrace
-		}
+		errMsg, traceback := luaErrParts(err)
 		dispatchException(L, api, errMsg, traceback, callbackName, eventTbl)
 	}
 }
