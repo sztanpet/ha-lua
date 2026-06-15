@@ -7,11 +7,64 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// installRestrictedRequire replaces the global `require` with one that only
-// resolves paths inside scriptsDir/lib/. It implements real require
-// semantics: each module runs once per LState and its return value is
-// cached; a circular require chain raises an error instead of recursing
-// until the stack dies.
+// RegisterStdlib applies full sandboxing (SkipOpenLibs + selective open) and
+// registers all additional modules (strings, time, json, re, http, crypto)
+// and math augmentations.
+func RegisterStdlib(L *lua.LState, scriptsDir string) {
+	// 1. Selective open of standard libraries
+	for _, lib := range []struct {
+		name string
+		open lua.LGFunction
+	}{
+		{lua.BaseLibName, lua.OpenBase},
+		{lua.TabLibName, lua.OpenTable},
+		{lua.StringLibName, lua.OpenString},
+		{lua.MathLibName, lua.OpenMath},
+		{lua.OsLibName, lua.OpenOs},
+		{lua.CoroutineLibName, lua.OpenCoroutine},
+	} {
+		L.Push(L.NewFunction(lib.open))
+		L.Push(lua.LString(lib.name))
+		L.Call(1, 0)
+	}
+
+	// 2. Sandboxing: Remove/Nil dangerous functions
+	// Removed from _G
+	L.SetGlobal("load", lua.LNil)
+	L.SetGlobal("loadstring", lua.LNil)
+	L.SetGlobal("loadfile", lua.LNil)
+	L.SetGlobal("dofile", lua.LNil)
+	L.SetGlobal("module", lua.LNil)
+	L.SetGlobal("package", lua.LNil)
+
+	// Restricted os module
+	if osMod, ok := L.GetGlobal("os").(*lua.LTable); ok {
+		allowed := map[string]bool{
+			"clock":    true,
+			"date":     true,
+			"difftime": true,
+			"time":     true,
+		}
+		osMod.ForEach(func(k, v lua.LValue) {
+			if !allowed[k.String()] {
+				osMod.RawSet(k, lua.LNil)
+			}
+		})
+	}
+
+	// 3. Install restricted require
+	installRestrictedRequire(L, scriptsDir)
+
+	// 4. Register custom modules
+	registerMath(L)
+	registerStrings(L)
+	registerTime(L)
+	registerJSON(L)
+	registerRE(L)
+	registerHTTP(L)
+	registerCrypto(L)
+}
+
 func installRestrictedRequire(L *lua.LState, scriptsDir string) {
 	libDir := filepath.Join(scriptsDir, "lib")
 	loaded := make(map[string]lua.LValue)

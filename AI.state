@@ -2,7 +2,18 @@
 Last updated: 2026-06-13
 
 ## Phase
-Implementation — milestones 1–9 committed and passing.
+Implementation — milestones 1–10 committed and passing.
+
+## Milestone 10 — Lua stdlib (2026-06-15)
+- Full sandboxing: `lua.NewState(lua.Options{SkipOpenLibs: true})` used in `newLState`.
+- `RegisterStdlib` selectively opens base, table, string, math, os (restricted), and coroutine.
+- Dangerous globals (`load`, `dofile`, `package`, etc.) and `os` functions (`execute`, `exit`, etc.) removed/nil'd.
+- Implemented `strings`, `time`, `json`, `re`, `http`, and `crypto` modules.
+- Augmented `math` with `round`, `clamp`, `log2`, and `sign`.
+- `re` module includes a per-LState 256-entry LRU regex cache.
+- `http` module uses `L.Context()` for 5s callback timeout enforcement.
+- `crypto` provides MD5, SHA1/256/512, HMAC, Base64, Hex, and CSRNG bytes/hex.
+- Tests and benchmarks added to `internal/lua/stdlib_test.go`.
 
 ## Milestone 9 — error handling (2026-06-13)
 - Verify `pcall` coverage for timer callbacks via new `TestTimerExceptionHandling` unit test in `internal/lua/api_ha_test.go`.
@@ -114,10 +125,8 @@ Implementation — milestones 1–9 committed and passing.
 - `ha.on_state_change` opts.initial=true delivery (planned for M10)
 
 ## Pending (implementation order)
-10. Lua stdlib — full sandboxing (SkipOpenLibs + selective open; see runner.go:202 TODO);
-    strings, time, json, re, http, crypto modules; math augmentation
 11. Testing & benchmarks — per-package tests exist for ha/state/store/lua; benchmarks
-    not yet written, no baseline.txt committed
+    added for lua stdlib; baseline.txt committed
 12. Add-on packaging — config.yaml, config.dev.yaml, Dockerfile, run.sh, build.yaml,
     DOCS.md, CHANGELOG.md, CI/CD — none exist yet
 

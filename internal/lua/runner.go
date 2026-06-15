@@ -244,8 +244,8 @@ func (r *Runner) handleTimerFired(L *lua.LState, api *haAPI, timerID string) {
 // newLState creates a Lua state with a basic set of libraries.
 // Full sandboxing (SkipOpenLibs + selective open) is applied in milestone 10.
 func (r *Runner) newLState(ctx context.Context) *lua.LState {
-	L := lua.NewState()
-	installRestrictedRequire(L, r.scriptDir)
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	RegisterStdlib(L, r.scriptDir)
 	L.SetContext(ctx)
 	return L
 }
