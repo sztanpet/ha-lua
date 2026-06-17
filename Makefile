@@ -6,7 +6,7 @@ BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
 BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 
-.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps
+.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps release
 
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
@@ -56,6 +56,28 @@ update-deps:
 	go get -u -t ./...
 	go mod tidy
 	@echo "Dependencies updated. Review 'git diff go.mod' and run 'make check'."
+
+# Cut a release: bump the config.yaml version, commit it, and create the
+# annotated vX.Y.Z tag. Pushing the tag (which is what triggers the GHCR
+# build in .github/workflows/release.yml) is left to you on purpose:
+#
+#   make release VERSION=1.2.0
+#   git push --follow-tags
+#
+# Update CHANGELOG.md with the new version's section before running this.
+release:
+	@test -n "$(VERSION)" || { echo "ERROR: VERSION is required, e.g. make release VERSION=1.2.0"; exit 1; }
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "ERROR: VERSION must be semver X.Y.Z (no leading v)"; exit 1; }
+	@test -z "$$(git status --porcelain)" || { echo "ERROR: working tree is not clean; commit or stash first"; exit 1; }
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then echo "ERROR: tag v$(VERSION) already exists"; exit 1; fi
+	@grep -q "## $(VERSION)" CHANGELOG.md || echo "WARN: CHANGELOG.md has no '## $(VERSION)' section yet"
+	sed -i -E 's/^version: ".*"/version: "$(VERSION)"/' config.yaml
+	@grep -qx 'version: "$(VERSION)"' config.yaml || { echo "ERROR: failed to update version in config.yaml"; exit 1; }
+	git add config.yaml
+	git commit -m "release: v$(VERSION)"
+	git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@echo "Tagged v$(VERSION). Push it to trigger the GHCR build:"
+	@echo "    git push --follow-tags"
 
 profile-cpu:
 	go tool pprof -http=:8080 "http://localhost:6060/debug/pprof/profile?seconds=30"
