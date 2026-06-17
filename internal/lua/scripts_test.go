@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -226,4 +227,101 @@ func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	t.Fatalf("no set_temperature(climate.bedroom, 20) call; got %+v", calls)
+}
+
+// TestThermostatAPI loads the real thermostat.lua (with its libs, a real
+// scheduler, and the Router wired up) and drives its HTTP API end to end:
+// /api/state returns per-zone status, a boost shows up in the next read, and a
+// bad zone is rejected with 400.
+func TestThermostatAPI(t *testing.T) {
+	dir := t.TempDir()
+	libDir := filepath.Join(dir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
+
+	writeDB, readDB := testutil.NewTestDB(t, nil)
+	if err := state.Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	tracker := state.New(writeDB, readDB)
+	kv := store.New(writeDB, readDB, "thermostat")
+	global := store.NewGlobal(writeDB, readDB)
+	reg := NewRegistry()
+	router := NewRouter(reg)
+	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
+
+	// The boost path calls set_temperature; a no-op capture keeps it from erroring.
+	cs := func(context.Context, string, string, jsontext.Value) error { return nil }
+
+	if err := tracker.Seed(context.Background(), []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":19.5,"temperature":18}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := NewRunner("thermostat", dir, tracker, sched, kv, global)
+	r.SetCallService(cs)
+	reg.Add(r)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); r.Start(ctx, filepath.Join(dir, "thermostat.lua")) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	select {
+	case <-r.LoadedCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("thermostat.lua did not finish loading")
+	}
+	router.Register("thermostat", r.Routes())
+
+	decode := func(rec *httptest.ResponseRecorder) map[string]any {
+		t.Helper()
+		var m map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+			t.Fatalf("decode %q: %v", rec.Body.String(), err)
+		}
+		return m
+	}
+
+	// GET /api/state: bedroom present with its default comfort temp.
+	rec := doReq(router, "GET", "/api/state", "")
+	if rec.Code != 200 {
+		t.Fatalf("GET /api/state status %d", rec.Code)
+	}
+	zones, _ := decode(rec)["zones"].(map[string]any)
+	bedroom, _ := zones["bedroom"].(map[string]any)
+	if bedroom == nil {
+		t.Fatalf("no bedroom zone in state: %s", rec.Body.String())
+	}
+	if bedroom["comfort_temp"] != float64(21) {
+		t.Errorf("comfort_temp = %v, want 21", bedroom["comfort_temp"])
+	}
+	if bedroom["mode"] != "heat" {
+		t.Errorf("mode = %v, want heat", bedroom["mode"])
+	}
+
+	// POST /api/boost: the boost is reflected in the returned state.
+	rec = doReq(router, "POST", "/api/boost", `{"zone":"bedroom","minutes":30}`)
+	if rec.Code != 200 {
+		t.Fatalf("POST /api/boost status %d body %q", rec.Code, rec.Body.String())
+	}
+	zones, _ = decode(rec)["zones"].(map[string]any)
+	bedroom, _ = zones["bedroom"].(map[string]any)
+	boost, _ := bedroom["boost"].(map[string]any)
+	if boost == nil || boost["active"] != true {
+		t.Fatalf("boost not active after POST: %s", rec.Body.String())
+	}
+	if rem, _ := boost["remaining_s"].(float64); rem <= 0 || rem > 30*60 {
+		t.Errorf("remaining_s = %v, want 0<rem<=1800", boost["remaining_s"])
+	}
+
+	// Bad zone -> 400.
+	rec = doReq(router, "POST", "/api/boost", `{"zone":"nope","minutes":30}`)
+	if rec.Code != 400 {
+		t.Fatalf("bad zone status = %d, want 400", rec.Code)
+	}
 }

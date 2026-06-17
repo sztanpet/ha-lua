@@ -195,6 +195,151 @@ for z, conf in pairs(Z) do
   end)
 end
 
+-- ---------------------------------------------------------------------------
+-- HTTP API (§6). Handlers run on this script's goroutine, so they may use any
+-- ha.*/store.* call directly. All mutating endpoints re-apply the affected zone
+-- and return the full state so the UI can refresh in one round-trip.
+-- ---------------------------------------------------------------------------
+
+local JSON_HDR = { ["Content-Type"] = "application/json" }
+local TEXT_HDR = { ["Content-Type"] = "text/plain" }
+
+local function json_ok(tbl)
+  return 200, json.encode(tbl), JSON_HDR
+end
+
+local function bad(msg)
+  return 400, msg, TEXT_HDR
+end
+
+-- zone_state builds the per-zone status block for GET /api/state.
+local function zone_state(z, now, dow, minute)
+  local c = ha.get_state(Z[z].climate)
+  local md = c and c.state or "unknown"
+  local cur, target
+  if c and c.attributes then
+    cur = c.attributes.current_temperature
+    target = c.attributes.temperature
+  end
+  local days = load_schedule(z)
+  local sched_temp, now_index = schedule.resolve(days, dow, minute)
+
+  local boost_tbl
+  local b = active_boost(z, now)
+  if b then
+    local rem = 0
+    local ends = parse_time(b.ends_at)
+    if ends ~= nil then
+      local s = ends:sub(now)
+      if s > 0 then rem = math.floor(s) end
+    end
+    boost_tbl = { active = true, ends_at = b.ends_at, remaining_s = rem }
+  end
+
+  return {
+    mode = md,
+    current_temp = cur,
+    target = target,
+    comfort_temp = comfort(z),
+    window_open = any_window_open(z),
+    scheduled_temp = sched_temp,
+    today = schedule.day_list(days, dow),
+    now_index = now_index,
+    boost = boost_tbl,
+  }
+end
+
+local function full_state()
+  local now, dow, minute = now_parts()
+  local zs = {}
+  for z in pairs(Z) do
+    zs[z] = zone_state(z, now, dow, minute)
+  end
+  return { zones = zs }
+end
+
+-- decode_body parses a JSON request body into a table, or returns nil.
+local function decode_body(req)
+  local ok, b = pcall(json.decode, req.body)
+  if ok and type(b) == "table" then return b end
+  return nil
+end
+
+ha.serve("GET", "/api/state", function()
+  return json_ok(full_state())
+end)
+
+ha.serve("POST", "/api/boost", function(req)
+  local b = decode_body(req)
+  if b == nil then return bad("invalid JSON body") end
+  local z = b.zone
+  if type(z) ~= "string" or Z[z] == nil then return bad("unknown zone") end
+  if type(b.minutes) ~= "number" or b.minutes <= 0 or b.minutes > 1440 then
+    return bad("minutes must be 1..1440")
+  end
+  local now, dow, minute = now_parts()
+  store.set(boost_key(z), {
+    active = true,
+    ends_at = now:add(b.minutes * 60):format(time.RFC3339),
+  })
+  store.delete(override_key(z)) -- a boost outranks and clears any override
+  apply_zone(z, now, dow, minute)
+  return json_ok(full_state())
+end)
+
+-- Registered after /api/boost; the router's longest-prefix match sends
+-- /api/boost/cancel here and bare /api/boost to the boost handler.
+ha.serve("POST", "/api/boost/cancel", function(req)
+  local b = decode_body(req)
+  if b == nil then return bad("invalid JSON body") end
+  local z = b.zone
+  if type(z) ~= "string" or Z[z] == nil then return bad("unknown zone") end
+  store.delete(boost_key(z))
+  local now, dow, minute = now_parts()
+  apply_zone(z, now, dow, minute)
+  return json_ok(full_state())
+end)
+
+ha.serve("PUT", "/api/settings", function(req)
+  local b = decode_body(req)
+  if b == nil then return bad("invalid JSON body") end
+  local z = b.zone
+  if type(z) ~= "string" or Z[z] == nil then return bad("unknown zone") end
+  if type(b.comfort_temp) ~= "number" or b.comfort_temp < 5 or b.comfort_temp > 35 then
+    return bad("comfort_temp out of range (5..35)")
+  end
+  store.set(comfort_key(z), b.comfort_temp)
+  local now, dow, minute = now_parts()
+  apply_zone(z, now, dow, minute) -- if a boost is active, the new comfort applies now
+  return json_ok(full_state())
+end)
+
+ha.serve("GET", "/api/schedule", function(req)
+  local z = req.query and req.query.zone
+  if type(z) == "string" and z ~= "" then
+    if Z[z] == nil then return bad("unknown zone") end
+    return json_ok({ zone = z, days = load_schedule(z) })
+  end
+  local all = {}
+  for zz in pairs(Z) do
+    all[zz] = load_schedule(zz)
+  end
+  return json_ok({ schedules = all })
+end)
+
+ha.serve("PUT", "/api/schedule", function(req)
+  local b = decode_body(req)
+  if b == nil then return bad("invalid JSON body") end
+  local z = b.zone
+  if type(z) ~= "string" or Z[z] == nil then return bad("unknown zone") end
+  local valid, msg = schedule.validate(b.days)
+  if not valid then return bad("invalid schedule: " .. msg) end
+  store.set(sched_key(z), { days = b.days })
+  local now, dow, minute = now_parts()
+  apply_zone(z, now, dow, minute)
+  return json_ok(full_state())
+end)
+
 -- Publish each zone's desired once at load time so the window script has a
 -- value to restore before the first tick fires.
 do
