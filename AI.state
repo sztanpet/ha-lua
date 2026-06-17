@@ -44,6 +44,15 @@ Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
   the /api/hassio_ingress/<token> prefix before forwarding (so the router sees
   /api/state). Confirm on first real deploy; if false, every route 404s under
   ingress.
+- TIMEZONE FIX (post-review): main now sets time.Local = ResolveLocation(
+  cfg.timezone) so scripts' time.now() (drives the thermostat schedule via
+  ha.every) agrees with the scheduler's ha.at. Before this, a non-UTC user on a
+  UTC container would have schedules fire at the wrong wall-clock time
+  (self-consistent in the UI, wrong vs the clock). Boost/override DURATIONS were
+  always fine (absolute instants).
+- Override engine tests added (TestThermostatManualOverrideDetected,
+  TestThermostatBoostSuppressesOverride) — the latter uses a 2nd zone as a FIFO
+  barrier to make the negative (boost suppresses override) deterministic.
 
 ## Thermostat UI — Milestone 1: HTTP server core (2026-06-15)
 - New Lua-facing HTTP server so a script can serve a UI. ha.serve(method,

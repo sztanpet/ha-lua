@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
@@ -58,6 +59,11 @@ func main() {
 		slog.Error("bad timezone", "err", err)
 		os.Exit(1)
 	}
+	// Align the process wall-clock with the configured zone so that scripts'
+	// time.now() (used by e.g. the thermostat's schedule) agrees with the
+	// scheduler's ha.at. Without this, a non-UTC user on a UTC container would
+	// see schedules fire at the wrong wall-clock time.
+	time.Local = loc
 	reg := luapkg.NewRegistry()
 	router := luapkg.NewRouter(reg)
 	sched := scheduler.New(writeDB, loc, reg.DispatchToTimer)

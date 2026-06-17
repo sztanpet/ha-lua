@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -336,4 +337,146 @@ func TestThermostatAPI(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "<!doctype html>") {
 		t.Errorf("GET / did not return the HTML page")
 	}
+}
+
+// startThermostat loads the real thermostat.lua (with libs + a real scheduler)
+// and returns the pieces needed to seed state and dispatch events at it. The
+// scheduler is created but not Start()ed, so no tick fires and tests drive the
+// controller purely through dispatched state-change events.
+func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore, *state.Tracker) {
+	t.Helper()
+	dir := t.TempDir()
+	libDir := filepath.Join(dir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
+
+	writeDB, readDB := testutil.NewTestDB(t, nil)
+	if err := state.Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	tracker := state.New(writeDB, readDB)
+	kv := store.New(writeDB, readDB, "thermostat")
+	global := store.NewGlobal(writeDB, readDB)
+	reg := NewRegistry()
+	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
+
+	r := NewRunner("thermostat", dir, tracker, sched, kv, global)
+	r.SetCallService(func(context.Context, string, string, jsontext.Value) error { return nil })
+	reg.Add(r)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); r.Start(ctx, filepath.Join(dir, "thermostat.lua")) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	select {
+	case <-r.LoadedCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("thermostat.lua did not finish loading")
+	}
+	return reg, kv, global, tracker
+}
+
+// climateChange builds a state_changed event for a heating climate entity whose
+// target setpoint moved from oldT to newT.
+func climateChange(entity string, oldT, newT float64) ha.Event {
+	return ha.Event{Type: "state_changed", Data: jsontext.Value(fmt.Sprintf(
+		`{"entity_id":%q,"old_state":{"state":"heat","attributes":{"temperature":%v}},`+
+			`"new_state":{"state":"heat","attributes":{"temperature":%v}}}`, entity, oldT, newT))}
+}
+
+func overrideTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
+	t.Helper()
+	v, err := kv.Get(context.Background(), "override:"+zone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	temp, _ := m["temp"].(float64)
+	return temp, true
+}
+
+// TestThermostatManualOverrideDetected: with no boost and a closed (seeded)
+// window, a climate target that differs from the published desired is recorded
+// as a manual override (§9), with a future expiry.
+func TestThermostatManualOverrideDetected(t *testing.T) {
+	reg, kv, global, tracker := startThermostat(t)
+	ctx := context.Background()
+
+	if err := tracker.Seed(ctx, []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":18}`)},
+		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := global.Set(ctx, "thermostat:desired:bedroom", 18.0); err != nil {
+		t.Fatal(err)
+	}
+
+	reg.Dispatch(climateChange("climate.bedroom", 18, 22))
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if temp, ok := overrideTemp(t, kv, "bedroom"); ok {
+			if temp != 22 {
+				t.Fatalf("override temp = %v, want 22", temp)
+			}
+			ov, _ := kv.Get(ctx, "override:bedroom")
+			m := ov.(map[string]any)
+			exp, _ := m["expires"].(string)
+			if _, err := time.Parse(time.RFC3339, exp); err != nil {
+				t.Fatalf("override expires not RFC3339: %q", exp)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("manual override was never recorded")
+}
+
+// TestThermostatBoostSuppressesOverride: an active boost makes the controller
+// ignore manual dial changes (§5.3a). A second zone with no boost acts as a
+// FIFO barrier — once its override appears, the boosted zone's event has
+// already been processed, so the absence of its override is deterministic.
+func TestThermostatBoostSuppressesOverride(t *testing.T) {
+	reg, kv, global, tracker := startThermostat(t)
+	ctx := context.Background()
+
+	if err := kv.Set(ctx, "boost:bedroom", map[string]any{
+		"active":  true,
+		"ends_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tracker.Seed(ctx, []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":18}`)},
+		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
+		{EntityID: "climate.childrens_room", State: "heat", Attributes: jsontext.Value(`{"temperature":18}`)},
+		{EntityID: "binary_sensor.childrens_room_window", State: "off", Attributes: jsontext.Value("{}")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = global.Set(ctx, "thermostat:desired:bedroom", 18.0)
+	_ = global.Set(ctx, "thermostat:desired:childrens", 18.0)
+
+	reg.Dispatch(climateChange("climate.bedroom", 18, 22))        // must be suppressed (boost)
+	reg.Dispatch(climateChange("climate.childrens_room", 18, 22)) // barrier: must create override
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := overrideTemp(t, kv, "childrens"); ok {
+			if _, ok := overrideTemp(t, kv, "bedroom"); ok {
+				t.Fatal("boost did not suppress the manual override")
+			}
+			return // barrier processed and bedroom has no override
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("barrier override (childrens) never appeared")
 }
