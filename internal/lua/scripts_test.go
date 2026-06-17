@@ -2,12 +2,22 @@ package lua
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/go-json-experiment/json/jsontext"
 	lua "github.com/yuin/gopher-lua"
+
+	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/scheduler"
+	"github.com/sztanpet/ha-lua/internal/state"
+	"github.com/sztanpet/ha-lua/internal/store"
+	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
 // repoScriptsDir is the shipped example/script tree, relative to this package.
@@ -113,4 +123,107 @@ func TestSchedulePureLib(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func copyRepoFile(t *testing.T, src, dst string) {
+	t.Helper()
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestWindowHandoffRestoresPublishedDesired exercises the two-script contract
+// (spec §4.2): on a window close, the real heating_windows.lua must restore the
+// setpoint the controller published to global:thermostat:desired:<zone> — not a
+// stale saved value. It runs the shipped script in a real runner with a captured
+// call_service, a seeded climate entity, and a published desired.
+func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
+	dir := t.TempDir()
+	libDir := filepath.Join(dir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "heating_windows.lua"), filepath.Join(dir, "heating_windows.lua"))
+
+	writeDB, readDB := testutil.NewTestDB(t, nil)
+	if err := state.Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	tracker := state.New(writeDB, readDB)
+	global := store.NewGlobal(writeDB, readDB)
+	reg := NewRegistry()
+	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
+
+	type svcCall struct {
+		domain, service string
+		data            jsontext.Value
+	}
+	var mu sync.Mutex
+	var calls []svcCall
+	cs := func(_ context.Context, domain, service string, data jsontext.Value) error {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, svcCall{domain, service, data})
+		return nil
+	}
+
+	sup := NewSupervisor(reg, dir, Deps{
+		Tracker:     tracker,
+		Scheduler:   sched,
+		Global:      global,
+		NewKV:       func(id string) *store.Store { return store.New(writeDB, readDB, id) },
+		CallService: cs,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() { cancel(); sup.Wait() }()
+
+	// The zone must be heating, and the controller has published its desired.
+	if err := tracker.Seed(ctx, []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value("{}")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := global.Set(ctx, "thermostat:desired:bedroom", 20.0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sup.LoadAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// The window closes: heating_windows must restore the published desired.
+	reg.Dispatch(ha.Event{
+		Type: "state_changed",
+		Data: jsontext.Value(`{"entity_id":"binary_sensor.bedroom_window",` +
+			`"old_state":{"state":"on"},"new_state":{"state":"off"}}`),
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		snapshot := append([]svcCall(nil), calls...)
+		mu.Unlock()
+		for _, c := range snapshot {
+			if c.domain != "climate" || c.service != "set_temperature" {
+				continue
+			}
+			var m map[string]any
+			if err := json.Unmarshal(c.data, &m); err != nil {
+				continue
+			}
+			if m["entity_id"] == "climate.bedroom" && m["temperature"] == float64(20) {
+				return // handoff worked
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("no set_temperature(climate.bedroom, 20) call; got %+v", calls)
 }
