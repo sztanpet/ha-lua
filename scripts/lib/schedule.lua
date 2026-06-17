@@ -14,13 +14,13 @@
 local M = {}
 
 -- parse_hhmm turns "HH:MM" into minutes since midnight, or nil if malformed.
-function M.parse_hhmm(s)
-  if type(s) ~= "string" then return nil end
-  local h, m = s:match("^(%d%d):(%d%d)$")
-  if h == nil then return nil end
-  h, m = tonumber(h), tonumber(m)
-  if h > 23 or m > 59 then return nil end
-  return h * 60 + m
+function M.parse_hhmm(text)
+  if type(text) ~= "string" then return nil end
+  local hour, minute = text:match("^(%d%d):(%d%d)$")
+  if hour == nil then return nil end
+  hour, minute = tonumber(hour), tonumber(minute)
+  if hour > 23 or minute > 59 then return nil end
+  return hour * 60 + minute
 end
 
 -- day_list returns a copy of the transitions for lua weekday dow (0=Mon..6=Sun)
@@ -30,8 +30,8 @@ function M.day_list(days, dow)
   local raw = days and days[tostring(dow)]
   if type(raw) ~= "table" then return {} end
   local out = {}
-  for _, t in ipairs(raw) do
-    out[#out + 1] = t
+  for _, transition in ipairs(raw) do
+    out[#out + 1] = transition
   end
   table.sort(out, function(a, b)
     return (M.parse_hhmm(a.time) or -1) < (M.parse_hhmm(b.time) or -1)
@@ -51,10 +51,10 @@ function M.resolve(days, dow, minute)
 
   -- Most recent transition at or before `minute` today.
   local active, idx = nil, -1
-  for i, t in ipairs(today) do
-    local tm = M.parse_hhmm(t.time)
-    if tm ~= nil and tm <= minute then
-      active = t.temp
+  for i, transition in ipairs(today) do
+    local trans_minutes = M.parse_hhmm(transition.time)
+    if trans_minutes ~= nil and trans_minutes <= minute then
+      active = transition.temp
       idx = i - 1
     end
   end
@@ -75,10 +75,10 @@ function M.resolve(days, dow, minute)
   -- Next transition strictly after now: the rest of today first, then scan
   -- forward up to 7 days for the first transition of the next non-empty day.
   local minutes_to_next = nil
-  for _, t in ipairs(today) do
-    local tm = M.parse_hhmm(t.time)
-    if tm ~= nil and tm > minute then
-      minutes_to_next = tm - minute
+  for _, transition in ipairs(today) do
+    local trans_minutes = M.parse_hhmm(transition.time)
+    if trans_minutes ~= nil and trans_minutes > minute then
+      minutes_to_next = trans_minutes - minute
       break
     end
   end
@@ -86,9 +86,9 @@ function M.resolve(days, dow, minute)
     for fwd = 1, 7 do
       local list = M.day_list(days, (dow + fwd) % 7)
       if #list > 0 then
-        local tm = M.parse_hhmm(list[1].time)
-        if tm ~= nil then
-          minutes_to_next = fwd * 1440 - minute + tm
+        local trans_minutes = M.parse_hhmm(list[1].time)
+        if trans_minutes ~= nil then
+          minutes_to_next = fwd * 1440 - minute + trans_minutes
           break
         end
       end
@@ -111,15 +111,15 @@ function M.validate(days)
       if type(list) ~= "table" then
         return false, "day " .. dow .. " must be a list"
       end
-      for _, t in ipairs(list) do
-        if type(t) ~= "table" then
+      for _, transition in ipairs(list) do
+        if type(transition) ~= "table" then
           return false, "day " .. dow .. " has a non-table transition"
         end
-        if M.parse_hhmm(t.time) == nil then
-          return false, "bad time: " .. tostring(t.time)
+        if M.parse_hhmm(transition.time) == nil then
+          return false, "bad time: " .. tostring(transition.time)
         end
-        if type(t.temp) ~= "number" or t.temp < 5 or t.temp > 35 then
-          return false, "temp out of range (5..35): " .. tostring(t.temp)
+        if type(transition.temp) ~= "number" or transition.temp < 5 or transition.temp > 35 then
+          return false, "temp out of range (5..35): " .. tostring(transition.temp)
         end
       end
     end

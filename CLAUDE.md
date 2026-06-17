@@ -150,6 +150,7 @@ See `plan.md` for the full design. Short version:
 - Scheduler fires timers via an `onFire` callback → `TimerFiredEvent` → script channel. Scheduler never holds `*lua.LFunction` references.
 - `ha.exceptions.email` uses `net/smtp`. Credentials must come from `store.get(...)`, never hardcoded in scripts.
 - Restricted `require`: resolves only paths inside `scripts/lib/`. Any other path raises a Lua error.
+- **Descriptive variable names in Lua scripts (and their embedded JS).** No single-letter locals (`z`, `c`, `b`, …); name a value for what it holds (`zone`, `climate`, `body`). The idiomatic module table `M`, trivial loop counters (`i`, `d`), and sort comparators (`a, b`) are the only allowed exceptions.
 
 ---
 

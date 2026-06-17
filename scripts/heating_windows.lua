@@ -18,47 +18,47 @@
 local zones = require "zones"
 
 local FROST = zones.frost_temp
-local Z = zones.zones
+local zone_defs = zones.zones
 
 -- Reverse lookup so a window callback can find its zone key from the sensor
 -- that fired. A zone may list several window sensors.
 local by_window = {}
-for z, conf in pairs(Z) do
-  for _, w in ipairs(conf.windows) do
-    by_window[w] = z
+for zone, conf in pairs(zone_defs) do
+  for _, window in ipairs(conf.windows) do
+    by_window[window] = zone
   end
 end
 
 -- The climate entity's state IS its hvac mode: "heat", not "off".
-local function is_heating(z)
-  local c = ha.get_state(Z[z].climate)
-  return c ~= nil and c.state == "heat"
+local function is_heating(zone)
+  local state = ha.get_state(zone_defs[zone].climate)
+  return state ~= nil and state.state == "heat"
 end
 
-local function set_temp(z, temp)
+local function set_temp(zone, temp)
   ha.call_service("climate", "set_temperature", {
-    entity_id = Z[z].climate,
+    entity_id = zone_defs[zone].climate,
     temperature = temp,
   })
 end
 
 -- Door/window binary_sensor convention: "on" = open, "off" = closed.
-for w in pairs(by_window) do
-  ha.on_state_change(w, function(data)
-    local ns = data.new_state
-    if ns == nil then return end
-    local z = by_window[data.entity_id]
-    if not is_heating(z) then return end -- mode must be "heat", not "off"
+for window in pairs(by_window) do
+  ha.on_state_change(window, function(data)
+    local new_state = data.new_state
+    if new_state == nil then return end
+    local zone = by_window[data.entity_id]
+    if not is_heating(zone) then return end -- mode must be "heat", not "off"
 
-    if ns.state == "on" then
+    if new_state.state == "on" then
       -- Opened: drop to the frost guard. No need to save anything — the
       -- controller keeps publishing what it wants in global.
-      set_temp(z, FROST)
-    elseif ns.state == "off" then
+      set_temp(zone, FROST)
+    elseif new_state.state == "off" then
       -- Closed: restore whatever the controller currently wants. This is the
       -- live schedule/boost value, never the stale pre-open setpoint.
-      local desired = global.get(zones.desired_key(z))
-      if type(desired) == "number" then set_temp(z, desired) end
+      local desired = global.get(zones.desired_key(zone))
+      if type(desired) == "number" then set_temp(zone, desired) end
     end
   end)
 end
