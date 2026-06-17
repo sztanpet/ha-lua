@@ -13,6 +13,10 @@ import (
 
 const defaultOptionsPath = "/data/options.json"
 
+// ingressPort is the internal port the HA Supervisor proxies for the
+// authenticated sidebar panel. It must match `ingress_port` in config.yaml.
+const ingressPort = 8099
+
 // Config is the unified config struct for both production and dev modes.
 type Config struct {
 	HomeAssistant struct {
@@ -26,6 +30,12 @@ type Config struct {
 	Timezone   string `json:"timezone"    yaml:"timezone"`
 	// HTTPPort is the LAN port for the script-driven UI server. 0 disables it.
 	HTTPPort int `json:"http_port" yaml:"http_port"`
+	// IngressPort is the internal port the HA Supervisor proxies for the
+	// authenticated sidebar panel. 0 disables the ingress listener. It is not a
+	// user option: add-on mode forces it to the manifest value, dev mode leaves
+	// it 0. The spec (§5.5) lists it only as a manifest field, but the Go daemon
+	// must actually bind it for ingress to work.
+	IngressPort int `json:"ingress_port" yaml:"ingress_port"`
 
 	StateHistory struct {
 		RetentionDays int    `json:"retention_days" yaml:"retention_days"`
@@ -95,6 +105,11 @@ func load(path string, addon bool) (*Config, error) {
 	if addon {
 		cfg.HomeAssistant.URL = "ws://supervisor/core/websocket"
 		cfg.HomeAssistant.Token = os.Getenv("SUPERVISOR_TOKEN")
+		// Ingress only exists under the Supervisor. Force the manifest port so
+		// the sidebar panel works out of the box; dev mode binds no ingress
+		// listener (IngressPort stays 0). Keep this in sync with
+		// `ingress_port` in config.yaml.
+		cfg.IngressPort = ingressPort
 	}
 	return &cfg, nil
 }

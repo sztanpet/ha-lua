@@ -9,11 +9,20 @@ arch:
 homeassistant_api: true        # provides $SUPERVISOR_TOKEN + ws://supervisor/core/websocket
 startup: services
 boot: auto
+ingress: true                  # authenticated sidebar panel
+ingress_port: 8099             # internal port the Supervisor proxies; MUST match config.IngressPort default
+panel_icon: mdi:thermostat
+panel_title: "Heating"
+ports:
+  "8100/tcp": 8100             # stable LAN port for dashboard Webpage cards (unauthenticated, LAN-trust)
+ports_description:
+  "8100/tcp": "Script-driven UI (e.g. thermostat). Unauthenticated — keep on the LAN only."
 map:
   - addon_config:rw            # /addon_config inside container = /config/ha-lua on host
 options:
   log_level: "info"
   timezone: ""
+  http_port: 8100
   state_history:
     retention_days: 2
     purge_interval: "1h"
@@ -22,6 +31,7 @@ options:
 schema:
   log_level: "str"
   timezone: "str?"
+  http_port: "int"
   state_history:
     retention_days: "int"
     purge_interval: "str"

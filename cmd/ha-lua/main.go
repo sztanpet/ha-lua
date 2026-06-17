@@ -163,8 +163,13 @@ func main() {
 		go watcher.Run(ctx, sup)
 	}
 
+	// LAN port (dashboard Webpage card + dev) and the HA ingress port
+	// (authenticated sidebar panel) are two entry points onto the same router.
 	if cfg.HTTPPort != 0 {
 		web.Start(ctx, fmt.Sprintf(":%d", cfg.HTTPPort), router)
+	}
+	if cfg.IngressPort != 0 && cfg.IngressPort != cfg.HTTPPort {
+		web.Start(ctx, fmt.Sprintf(":%d", cfg.IngressPort), router)
 	}
 
 	// Route HA events to state tracker and all runners.

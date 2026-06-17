@@ -56,6 +56,31 @@ func TestLoadAddonMode(t *testing.T) {
 	if cfg.StateHistory.RetentionDays != 5 {
 		t.Errorf("retention_days: got %d, want 5", cfg.StateHistory.RetentionDays)
 	}
+	// Ingress port is not an option; it defaults to the manifest value so the
+	// sidebar panel works out of the box.
+	if cfg.IngressPort != 8099 {
+		t.Errorf("ingress_port: got %d, want default 8099", cfg.IngressPort)
+	}
+}
+
+func TestHTTPAndIngressPorts(t *testing.T) {
+	path := writeFile(t, "config.dev.yaml", `
+homeassistant:
+  url: "ws://x/api/websocket"
+  token: "t"
+http_port: 8100
+`)
+	cfg, err := load(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTPPort != 8100 {
+		t.Errorf("http_port: got %d, want 8100", cfg.HTTPPort)
+	}
+	// Dev mode binds no ingress listener.
+	if cfg.IngressPort != 0 {
+		t.Errorf("ingress_port: got %d, want 0 in dev mode", cfg.IngressPort)
+	}
 }
 
 func TestLoadAddonIgnoresConnectionOptions(t *testing.T) {
