@@ -1,9 +1,49 @@
 # AI Working State
-Last updated: 2026-06-15
+Last updated: 2026-06-17
 
 ## Phase
-Core daemon COMPLETE (milestones 1–12). New feature track: thermostat UI
-(see thermostat-ui-spec.md) — milestone 1 of 7 done.
+Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
+(milestones 1–7, see thermostat-ui-spec.md). Shipped as add-on 1.1.0.
+
+## Thermostat UI — Milestones 2–7 (2026-06-17)
+- M2 Packaging (commit ee7667a): config.yaml gained ingress/ingress_port/
+  panel_icon/panel_title, a ports: 8100/tcp mapping, and http_port as an
+  option+schema. RESOLVED the §5.5 contradiction (ingress_port is "manifest
+  only" but Go must bind it): IngressPort is forced to 8099 in ADD-ON MODE ONLY
+  inside config.load(); dev mode leaves it 0 and binds just the LAN port. main
+  starts a second web.Start on the ingress port sharing the one Router. The Go
+  const ingressPort=8099 MUST stay equal to config.yaml ingress_port.
+- M3 Controller (commit c6aad7d): scripts/thermostat.lua + scripts/lib/zones.lua
+  + scripts/lib/schedule.lua. desired() = boost > override > schedule. 1-min
+  ha.every tick publishes global:thermostat:desired:<zone> and writes the
+  climate entity only when mode==heat AND no window open AND value changed
+  (>0.05). Manual-override detection: a climate target differing from published
+  desired (tolerance >0.1) starts an override until the next transition; boost
+  and open/UNSEEDED windows suppress it. Override store field is named
+  "expires" NOT "until" (Lua keyword). Initial publish runs once at load.
+- schedule.lua is PURE (no ha/store/time) so it is Go-unit-testable: resolve()
+  returns (active_temp, now_index 0-based or -1 carryover, minutes_to_next with
+  7-day fwd scan); weekday converted lua_dow=(go_weekday+6)%7 (0=Mon). validate()
+  bounds temp 5..35 and HH:MM. Tested in scripts_test.go TestSchedulePureLib.
+- M4 Window cooperation (commit 7ccb236): heating_windows.lua rewritten to use
+  lib/zones and restore global desired on close (dropped save-the-setpoint).
+  TestWindowHandoffRestoresPublishedDesired runs the real script in a runner.
+- M5 HTTP API (commit 9634706): GET /api/state, POST /api/boost,
+  POST /api/boost/cancel (longest-prefix beats /api/boost), PUT /api/settings,
+  GET+PUT /api/schedule. Server-side validation → 400. TestThermostatAPI loads
+  the real script with libs+scheduler+Router and drives it.
+- M6 UI (commit c62cdbb): GET / serves one self-contained HTML page (vanilla
+  JS/CSS). Boost hero, per-zone comfort stepper, today strip, per-zone 7-day
+  editor. RELATIVE fetch URLs (./api/...) for ingress+LAN. Polls 5s, local 1s
+  countdown, polling suppressed while an editor is open.
+- M7 Docs (this commit): DOCS.md Web UIs + Thermostat sections, http_port
+  option; CHANGELOG 1.1.0; config.yaml version → 1.1.0.
+- Empty Lua tables encode as {} (object), so today=[] arrives as {} — the UI
+  guards with Array.isArray. luaMarshal already passes Deterministic(true).
+- INGRESS NOT YET VERIFIED against a live Supervisor: depends on HA stripping
+  the /api/hassio_ingress/<token> prefix before forwarding (so the router sees
+  /api/state). Confirm on first real deploy; if false, every route 404s under
+  ingress.
 
 ## Thermostat UI — Milestone 1: HTTP server core (2026-06-15)
 - New Lua-facing HTTP server so a script can serve a UI. ha.serve(method,
@@ -33,13 +73,7 @@ Core daemon COMPLETE (milestones 1–12). New feature track: thermostat UI
   no-return defaults, busy 503 (send timeout), reload re-registration.
 
 ## Pending (thermostat UI)
-2. Packaging — ingress fields + ports mapping in config.yaml
-3. Controller — desired() engine, 1-min tick, schedule/boost/override persist,
-   publish global:thermostat:desired:<zone>, skip write while window open
-4. Window cooperation — heating_windows.lua restores published desired on close
-5. HTTP API — state/boost/schedule/settings endpoints
-6. UI — single-page HTML/JS
-7. Docs — DOCS.md + CHANGELOG
+None — milestones 1–7 complete.
 
 ## Milestone 12 — Add-on packaging (2026-06-15)
 - config.yaml: HA add-on manifest (slug ha-lua, arch aarch64/amd64,

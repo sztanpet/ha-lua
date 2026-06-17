@@ -4,6 +4,24 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.1.0
+
+### Added
+- HTTP **server** for script-driven web UIs: `ha.serve(method, prefix, fn)`
+  registers a route; requests are marshaled onto the owning script's goroutine
+  (never touching its `LState` from the HTTP goroutine), run under `pcall`, and
+  time out to 503 rather than hanging. Routes are owned by the script and
+  re-registered on hot reload.
+- Two entry points onto the same routes: an authenticated **ingress** sidebar
+  panel and a stable, unauthenticated **LAN port** (`http_port`, default 8100)
+  for embedding in a dashboard Webpage card.
+- New `http_port` option, plus the ingress manifest fields.
+- **Thermostat example** scripts: `thermostat.lua` (weekly schedule, duration
+  boosts, manual-override detection, controller tick, HTTP API, and a
+  self-contained single-page UI) cooperating with a rewritten
+  `heating_windows.lua` via a shared published setpoint, with shared
+  `lib/zones.lua` and pure `lib/schedule.lua`.
+
 ## 1.0.0
 
 First release.

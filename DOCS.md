@@ -55,6 +55,7 @@ Save it. The add-on log shows the script loading, and the automation is live.
 ```yaml
 log_level: info
 timezone: ""
+http_port: 8100
 state_history:
   retention_days: 2
   purge_interval: "1h"
@@ -72,6 +73,15 @@ IANA timezone name (e.g. `Europe/Budapest`) used to resolve local-time
 schedules such as `ha.at("07:00", …)`. Leave empty to fall back to the
 container's `$TZ`, then to UTC. State-history timestamps are always stored in
 UTC regardless of this setting.
+
+### Option: `http_port`
+
+LAN port for the script-driven web UI (`ha.serve`). A Lovelace **Webpage**
+card can point at `http://<ha-host>:8100/` to embed a script's UI in a
+dashboard. **This port is unauthenticated** — anyone who can reach it can use
+whatever the script exposes. Keep it on the LAN, off the WAN. Set to `0` to
+disable the LAN listener (the authenticated ingress panel still works).
+Default `8100`.
 
 ### Option: `state_history.retention_days`
 
@@ -101,6 +111,7 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.call_service(domain, service, data)` | Call any Home Assistant service |
 | `ha.fire_event(type, data)` | Fire a custom event |
 | `ha.every(spec, fn)` / `ha.at(time, fn)` / `ha.after(delay, fn)` | Recurring, daily, and one-shot timers (persisted, with startup catch-up) |
+| `ha.serve(method, prefix, fn)` | Serve an HTTP route from a script — see *Web UIs* below |
 | `ha.log(level, msg)` | Log through the daemon's logger |
 | `ha.on_exception(handler)` | Per-script error handler |
 | `ha.exceptions.email(cfg)` / `ha.exceptions.log_file(path)` | Built-in error sinks |
@@ -111,6 +122,53 @@ temporarily — it exposes an unauthenticated debug server.
 
 For the full design and rationale, see `README.md` and `plan.md` in the
 repository.
+
+## Web UIs
+
+A script can serve its own web page and API with `ha.serve`:
+
+```lua
+ha.serve("GET", "/api/state", function(req)
+  return 200, json.encode({ ok = true }), { ["Content-Type"] = "application/json" }
+end)
+ha.serve("GET", "/", function(req)
+  return 200, "<!doctype html>…", { ["Content-Type"] = "text/html" }
+end)
+```
+
+The handler receives `req` (`method`, `path`, `query`, `headers`, `body`) and
+returns `status[, body[, headers]]`. Routing is exact-method + longest-prefix
+match; unmatched requests get a 404. Handlers run on the script's own goroutine
+(so any `ha.*` / `store.*` call is safe) and must be fast — keep them to SQLite
+reads and service calls.
+
+A served UI is reachable two ways, both hitting the same routes:
+
+- **Ingress sidebar panel** — authenticated by Home Assistant, shown in the
+  left sidebar. Always available; needs no port configuration.
+- **Stable LAN port** (`http_port`, default 8100) — for embedding in a
+  dashboard with a **Webpage** card (`http://<ha-host>:8100/`). Unauthenticated;
+  see the `http_port` option above. Use **relative** fetch URLs (`./api/state`)
+  in your page so it works under both entry points.
+
+## Thermostat example
+
+The add-on ships a complete worked example — a heating controller with a web UI
+— in the scripts directory:
+
+| File | Role |
+|------|------|
+| `thermostat.lua` | Controller + HTTP API + single-page UI. A weekly schedule per zone, duration **boosts** (10/30/60 min + custom) to a per-zone comfort temperature, and ad-hoc manual overrides. |
+| `heating_windows.lua` | Drops a zone to a frost guard (15 °C) while a window is open and restores the controller's desired setpoint when it closes. |
+| `lib/zones.lua` | Shared zone definitions (climate + window entity ids) used by both scripts. **Edit this to match your setup.** |
+| `lib/schedule.lua` | Pure schedule math (no I/O). |
+
+To use it, edit the entity ids in `lib/zones.lua`, then open **Heating** from
+the sidebar (ingress) or add a Webpage card pointing at
+`http://<ha-host>:8100/`. Schedules, boosts, and comfort temperatures are
+persisted per zone, so they survive restarts. The controller writes a zone's
+setpoint only while its mode is `heat` and no window is open; it never changes
+the hvac mode.
 
 ## Notes
 
