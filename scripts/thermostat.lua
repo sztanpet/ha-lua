@@ -340,6 +340,280 @@ ha.serve("PUT", "/api/schedule", function(req)
   return json_ok(full_state())
 end)
 
+-- ---------------------------------------------------------------------------
+-- The single-page UI (§7). One self-contained HTML document — inline vanilla
+-- JS/CSS, no build step, no external assets. All fetches are RELATIVE
+-- (./api/...) so the page works unchanged under both entry points: the stable
+-- LAN port and the ingress base path the Supervisor rotates.
+-- ---------------------------------------------------------------------------
+
+local PAGE = [==[
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heating</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --ink:#1c1e21; --muted:#76787d;
+          --accent:#e8543f; --accent-ink:#fff; --line:#e3e5e8; --now:#fff1ee; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         padding:12px; max-width:600px; margin:0 auto; }
+  h1 { font-size:1.3rem; margin:8px 4px 16px; }
+  .card { background:var(--card); border-radius:14px; padding:14px;
+          margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .head { display:flex; justify-content:space-between; align-items:baseline;
+          margin-bottom:12px; }
+  .zone { font-weight:600; font-size:1.1rem; }
+  .status { color:var(--muted); font-size:.95rem; }
+  .status b { color:var(--ink); }
+  .boost-row { display:flex; gap:8px; margin-bottom:12px; }
+  .boost-row button { flex:1; padding:16px 0; font-size:1.1rem; font-weight:600;
+          border:none; border-radius:10px; background:var(--accent);
+          color:var(--accent-ink); cursor:pointer; }
+  .boost-row button.alt { background:#f0f1f3; color:var(--ink); flex:0 0 56px; }
+  .boosting { display:flex; align-items:center; gap:12px; margin-bottom:12px;
+          background:var(--now); border-radius:10px; padding:12px; }
+  .boosting .cd { font-size:1.4rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .boosting button { margin-left:auto; padding:10px 16px; border:none;
+          border-radius:8px; background:#fff; cursor:pointer; }
+  .stepper { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+  .stepper .lbl { color:var(--muted); }
+  .stepper button { width:44px; height:44px; font-size:1.4rem; border:1px solid var(--line);
+          border-radius:10px; background:#fff; cursor:pointer; }
+  .stepper .val { font-size:1.3rem; font-weight:600; min-width:60px; text-align:center; }
+  .today { display:flex; flex-wrap:wrap; gap:6px 10px; font-size:.9rem;
+           color:var(--muted); margin-bottom:8px; }
+  .today .step.now { color:var(--accent); font-weight:700; }
+  .muted { color:var(--muted); font-style:italic; margin-bottom:8px; }
+  .editlink { display:block; text-align:right; font-size:.9rem; color:#2b6cff;
+              cursor:pointer; user-select:none; }
+  .editor { border-top:1px solid var(--line); margin-top:12px; padding-top:12px; }
+  .day { margin-bottom:10px; }
+  .day .dname { font-weight:600; margin-bottom:4px; }
+  .row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+  .row input[type=time] { flex:1; padding:8px; border:1px solid var(--line); border-radius:8px; }
+  .row input[type=number] { width:80px; padding:8px; border:1px solid var(--line); border-radius:8px; }
+  .row .rm, .day .add { border:none; background:#f0f1f3; border-radius:8px;
+            padding:8px 12px; cursor:pointer; }
+  .editor-actions { display:flex; gap:8px; margin-top:8px; }
+  .editor-actions button { flex:1; padding:12px; border:none; border-radius:10px;
+            font-weight:600; cursor:pointer; }
+  .editor-actions .save { background:var(--accent); color:var(--accent-ink); }
+  .editor-actions .cancel { background:#f0f1f3; }
+  #err { position:fixed; left:12px; right:12px; bottom:12px; background:#c0392b;
+         color:#fff; padding:12px; border-radius:10px; display:none; }
+</style>
+</head>
+<body>
+<h1>Heating</h1>
+<div id="app"></div>
+<div id="err"></div>
+<script>
+const PRESETS = [10, 30, 60];
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+let editing = null;        // zone whose schedule editor is open (suppresses polling)
+let lastState = null;
+
+const $ = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstChild; };
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const title = (z) => z.charAt(0).toUpperCase() + z.slice(1).replace(/_/g, " ");
+
+function showErr(msg) {
+  const e = document.getElementById("err");
+  e.textContent = msg; e.style.display = "block";
+  setTimeout(() => { e.style.display = "none"; }, 4000);
+}
+
+async function send(path, method, payload) {
+  const r = await fetch("./" + path, {
+    method, headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) { showErr("Error " + r.status + ": " + (await r.text())); return null; }
+  return r.json();
+}
+
+async function poll() {
+  if (editing) return;                 // don't clobber an open editor
+  try {
+    const r = await fetch("./api/state");
+    if (r.ok) { lastState = await r.json(); render(lastState); }
+  } catch (e) { /* transient; next poll retries */ }
+}
+
+function fmtCountdown(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+function render(state) {
+  if (editing) return;
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  Object.keys(state.zones).sort().forEach(z => app.appendChild(zoneCard(z, state.zones[z])));
+}
+
+function zoneCard(z, s) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const cur = (s.current_temp != null) ? s.current_temp.toFixed(1) + "°" : "";
+  card.appendChild($(
+    '<div class="head"><span class="zone">' + esc(title(z)) + '</span>' +
+    '<span class="status"><b>' + esc(s.mode) + '</b> ' + cur + '</span></div>'
+  ));
+
+  const controllable = s.mode === "heat";
+  if (!controllable) {
+    card.appendChild($('<div class="muted">mode ' + esc(s.mode) + ' — not controlled</div>'));
+  } else if (s.boost && s.boost.active) {
+    const ends = Date.now() + (s.boost.remaining_s || 0) * 1000;
+    const row = $('<div class="boosting"><span class="cd" data-ends="' + ends + '">' +
+      fmtCountdown(s.boost.remaining_s || 0) + '</span><span>boosting to ' +
+      esc(s.comfort_temp) + '°</span><button>cancel</button></div>');
+    row.querySelector("button").onclick = () =>
+      send("api/boost/cancel", "POST", { zone: z }).then(st => st && (lastState = st, render(st)));
+    card.appendChild(row);
+  } else {
+    const row = document.createElement("div");
+    row.className = "boost-row";
+    PRESETS.forEach(min => {
+      const b = $('<button>' + min + 'm</button>');
+      b.onclick = () => send("api/boost", "POST", { zone: z, minutes: min })
+        .then(st => st && (lastState = st, render(st)));
+      row.appendChild(b);
+    });
+    const custom = $('<button class="alt" title="custom minutes">⌨</button>');
+    custom.onclick = () => {
+      const v = prompt("Boost for how many minutes?", "45");
+      const n = parseInt(v, 10);
+      if (n > 0) send("api/boost", "POST", { zone: z, minutes: n })
+        .then(st => st && (lastState = st, render(st)));
+    };
+    row.appendChild(custom);
+    card.appendChild(row);
+  }
+
+  if (controllable) {
+    const step = document.createElement("div");
+    step.className = "stepper";
+    step.appendChild($('<span class="lbl">boost to</span>'));
+    const minus = $('<button>−</button>'), plus = $('<button>+</button>');
+    const val = $('<span class="val">' + esc(s.comfort_temp) + '°</span>');
+    const setC = (delta) => {
+      const nv = Math.round((Number(s.comfort_temp) + delta) * 2) / 2;
+      send("api/settings", "PUT", { zone: z, comfort_temp: nv })
+        .then(st => st && (lastState = st, render(st)));
+    };
+    minus.onclick = () => setC(-0.5);
+    plus.onclick = () => setC(0.5);
+    step.appendChild(minus); step.appendChild(val); step.appendChild(plus);
+    card.appendChild(step);
+  }
+
+  const today = Array.isArray(s.today) ? s.today : [];
+  if (today.length) {
+    const strip = today.map((t, i) =>
+      '<span class="step' + (i === s.now_index ? " now" : "") + '">' +
+      (i === s.now_index ? "▶ " : "") + esc(t.time) + " " + esc(t.temp) + "°</span>"
+    ).join("");
+    card.appendChild($('<div class="today">' + strip + '</div>'));
+  } else {
+    card.appendChild($('<div class="today">no schedule set</div>'));
+  }
+
+  const edit = $('<span class="editlink">✎ schedule</span>');
+  edit.onclick = () => openEditor(z, card);
+  card.appendChild(edit);
+  return card;
+}
+
+function normalizeDays(days) {
+  const out = {};
+  for (let d = 0; d < 7; d++) {
+    const list = days && days[String(d)];
+    out[d] = Array.isArray(list) ? list.slice() : [];
+  }
+  return out;
+}
+
+async function openEditor(z, card) {
+  const r = await fetch("./api/schedule?zone=" + encodeURIComponent(z));
+  if (!r.ok) { showErr("Could not load schedule"); return; }
+  const data = await r.json();
+  editing = z;
+  renderEditor(z, normalizeDays(data.days), card);
+}
+
+function renderEditor(z, days, card) {
+  let ed = card.querySelector(".editor");
+  if (ed) ed.remove();
+  ed = document.createElement("div");
+  ed.className = "editor";
+
+  for (let d = 0; d < 7; d++) {
+    const day = document.createElement("div");
+    day.className = "day";
+    day.appendChild($('<div class="dname">' + DAYS[d] + '</div>'));
+    days[d].forEach((t, i) => day.appendChild(transitionRow(days, d, i, z, card)));
+    const add = $('<button class="add">+ add</button>');
+    add.onclick = () => { days[d].push({ time: "07:00", temp: 21 }); renderEditor(z, days, card); };
+    day.appendChild(add);
+    ed.appendChild(day);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "editor-actions";
+  const save = $('<button class="save">Save</button>');
+  const cancel = $('<button class="cancel">Cancel</button>');
+  save.onclick = async () => {
+    const payload = {};
+    for (let d = 0; d < 7; d++) payload[String(d)] = days[d];
+    const st = await send("api/schedule", "PUT", { zone: z, days: payload });
+    if (st) { editing = null; lastState = st; render(st); }
+  };
+  cancel.onclick = () => { editing = null; if (lastState) render(lastState); else poll(); };
+  actions.appendChild(save); actions.appendChild(cancel);
+  ed.appendChild(actions);
+  card.appendChild(ed);
+}
+
+function transitionRow(days, d, i, z, card) {
+  const t = days[d][i];
+  const row = document.createElement("div");
+  row.className = "row";
+  const time = $('<input type="time" value="' + esc(t.time) + '">');
+  const temp = $('<input type="number" min="5" max="35" step="0.5" value="' + esc(t.temp) + '">');
+  time.onchange = () => { t.time = time.value; };
+  temp.onchange = () => { t.temp = Number(temp.value); };
+  const rm = $('<button class="rm">✕</button>');
+  rm.onclick = () => { days[d].splice(i, 1); renderEditor(z, days, card); };
+  row.appendChild(time); row.appendChild(temp); row.appendChild(rm);
+  return row;
+}
+
+// Tick the live boost countdowns once a second between polls.
+setInterval(() => {
+  document.querySelectorAll(".cd[data-ends]").forEach(el => {
+    el.textContent = fmtCountdown((Number(el.dataset.ends) - Date.now()) / 1000);
+  });
+}, 1000);
+
+poll();
+setInterval(poll, 5000);
+</script>
+</body>
+</html>
+]==]
+
+ha.serve("GET", "/", function()
+  return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
+end)
+
 -- Publish each zone's desired once at load time so the window script has a
 -- value to restore before the first tick fires.
 do

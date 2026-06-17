@@ -324,4 +324,16 @@ func TestThermostatAPI(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("bad zone status = %d, want 400", rec.Code)
 	}
+
+	// GET / serves the self-contained UI page.
+	rec = doReq(router, "GET", "/", "")
+	if rec.Code != 200 {
+		t.Fatalf("GET / status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("GET / content-type = %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "<!doctype html>") {
+		t.Errorf("GET / did not return the HTML page")
+	}
 }
