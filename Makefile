@@ -6,10 +6,15 @@ BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
 BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 
-.PHONY: build test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps release
+.PHONY: build run test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps release
 
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
+
+# Run the daemon in development mode against the standalone dev config
+# (config.dev.yaml), outside Home Assistant. Ctrl-C to stop.
+run:
+	go run ./cmd/ha-lua --config config.dev.yaml
 
 test:
 	go test -race ./...
