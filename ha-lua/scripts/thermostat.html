@@ -58,15 +58,16 @@
   .editlink { display:block; text-align:right; font-size:.9rem; color:var(--link);
               cursor:pointer; user-select:none; }
   .editor { border-top:1px solid var(--line); margin-top:12px; padding-top:12px; }
-  .day { margin-bottom:10px; }
-  .day .dname { font-weight:600; margin-bottom:4px; }
   .row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+  .row select { padding:8px; border:1px solid var(--line); border-radius:8px;
+            background:var(--surface); color:var(--ink); }
   .row input[type=time] { flex:1; padding:8px; border:1px solid var(--line); border-radius:8px;
             background:var(--surface); color:var(--ink); }
   .row input[type=number] { width:80px; padding:8px; border:1px solid var(--line); border-radius:8px;
             background:var(--surface); color:var(--ink); }
-  .row .rm, .day .add { border:none; background:var(--btn); color:var(--btn-ink); border-radius:8px;
+  .row .rm, .editor .add { border:none; background:var(--btn); color:var(--btn-ink); border-radius:8px;
             padding:8px 12px; cursor:pointer; }
+  .editor .add { display:block; margin-bottom:8px; }
   .editor-actions { display:flex; gap:8px; margin-top:8px; }
   .editor-actions button { flex:1; padding:12px; border:none; border-radius:10px;
             font-weight:600; cursor:pointer; }
@@ -95,7 +96,19 @@
 <div id="err"></div>
 <script>
 const PRESETS = [10, 30, 60];
-const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+// Each editor entry targets one of these day groups; .days lists the
+// underlying 0=Mon..6=Sun indices the entry expands to on save.
+const DAY_GROUPS = [
+  { value: "weekdays", label: "Mon–Fri", days: [0, 1, 2, 3, 4] },
+  { value: "weekend",  label: "Sat–Sun", days: [5, 6] },
+  { value: "0", label: "Monday",    days: [0] },
+  { value: "1", label: "Tuesday",   days: [1] },
+  { value: "2", label: "Wednesday", days: [2] },
+  { value: "3", label: "Thursday",  days: [3] },
+  { value: "4", label: "Friday",    days: [4] },
+  { value: "5", label: "Saturday",  days: [5] },
+  { value: "6", label: "Sunday",    days: [6] },
+];
 let editing = null;        // zone whose schedule editor is open (suppresses polling)
 let lastState = null;
 
@@ -228,34 +241,73 @@ async function openEditor(zone, card) {
   if (!resp.ok) { showErr("Could not load schedule"); return; }
   const data = await resp.json();
   editing = zone;
-  renderEditor(zone, normalizeDays(data.days), card);
+  renderEditor(zone, entriesFromDays(normalizeDays(data.days)), card);
 }
 
-function renderEditor(zone, days, card) {
+// Collapse the per-day schedule into editor entries, reusing the Mon–Fri
+// and Sat–Sun groups whenever a transition is shared across all of them.
+function entriesFromDays(days) {
+  const byTransition = new Map();
+  const order = [];
+  for (let d = 0; d < 7; d++) {
+    days[d].forEach(transition => {
+      const key = transition.time + "|" + transition.temp;
+      if (!byTransition.has(key)) {
+        byTransition.set(key, { time: transition.time, temp: transition.temp, presentDays: new Set() });
+        order.push(key);
+      }
+      byTransition.get(key).presentDays.add(d);
+    });
+  }
+  const entries = [];
+  order.forEach(key => {
+    const { time, temp, presentDays } = byTransition.get(key);
+    const remaining = new Set(presentDays);
+    if ([0, 1, 2, 3, 4].every(d => remaining.has(d))) {
+      entries.push({ group: "weekdays", time, temp });
+      [0, 1, 2, 3, 4].forEach(d => remaining.delete(d));
+    }
+    if ([5, 6].every(d => remaining.has(d))) {
+      entries.push({ group: "weekend", time, temp });
+      [5, 6].forEach(d => remaining.delete(d));
+    }
+    [...remaining].sort((a, b) => a - b).forEach(d => entries.push({ group: String(d), time, temp }));
+  });
+  entries.sort((a, b) => a.time.localeCompare(b.time));
+  return entries;
+}
+
+// Expand editor entries back into the per-day payload the backend expects.
+function daysFromEntries(entries) {
+  const days = {};
+  for (let d = 0; d < 7; d++) days[String(d)] = [];
+  entries.forEach(entry => {
+    const group = DAY_GROUPS.find(candidate => candidate.value === entry.group);
+    if (!group) return;
+    group.days.forEach(d => days[String(d)].push({ time: entry.time, temp: entry.temp }));
+  });
+  for (let d = 0; d < 7; d++) days[String(d)].sort((a, b) => a.time.localeCompare(b.time));
+  return days;
+}
+
+function renderEditor(zone, entries, card) {
   let ed = card.querySelector(".editor");
   if (ed) ed.remove();
   ed = document.createElement("div");
   ed.className = "editor";
 
-  for (let d = 0; d < 7; d++) {
-    const day = document.createElement("div");
-    day.className = "day";
-    day.appendChild($('<div class="dname">' + DAYS[d] + '</div>'));
-    days[d].forEach((transition, i) => day.appendChild(transitionRow(days, d, i, zone, card)));
-    const add = $('<button class="add">+ add</button>');
-    add.onclick = () => { days[d].push({ time: "07:00", temp: 21 }); renderEditor(zone, days, card); };
-    day.appendChild(add);
-    ed.appendChild(day);
-  }
+  entries.forEach((entry, i) => ed.appendChild(entryRow(entries, i, zone, card)));
+
+  const add = $('<button class="add">+ add entry</button>');
+  add.onclick = () => { entries.push({ group: "weekdays", time: "07:00", temp: 21 }); renderEditor(zone, entries, card); };
+  ed.appendChild(add);
 
   const actions = document.createElement("div");
   actions.className = "editor-actions";
   const save = $('<button class="save">Save</button>');
   const cancel = $('<button class="cancel">Cancel</button>');
   save.onclick = async () => {
-    const payload = {};
-    for (let d = 0; d < 7; d++) payload[String(d)] = days[d];
-    const newState = await send("api/schedule", "PUT", { zone: zone, days: payload });
+    const newState = await send("api/schedule", "PUT", { zone: zone, days: daysFromEntries(entries) });
     if (newState) { editing = null; lastState = newState; render(newState); }
   };
   cancel.onclick = () => { editing = null; if (lastState) render(lastState); else poll(); };
@@ -264,17 +316,26 @@ function renderEditor(zone, days, card) {
   card.appendChild(ed);
 }
 
-function transitionRow(days, d, i, zone, card) {
-  const transition = days[d][i];
+function entryRow(entries, i, zone, card) {
+  const entry = entries[i];
   const row = document.createElement("div");
   row.className = "row";
-  const time = $('<input type="time" value="' + esc(transition.time) + '">');
-  const temp = $('<input type="number" min="5" max="35" step="0.5" value="' + esc(transition.temp) + '">');
-  time.onchange = () => { transition.time = time.value; };
-  temp.onchange = () => { transition.temp = Number(temp.value); };
+  const daySelect = document.createElement("select");
+  DAY_GROUPS.forEach(group => {
+    const option = document.createElement("option");
+    option.value = group.value;
+    option.textContent = group.label;
+    if (group.value === entry.group) option.selected = true;
+    daySelect.appendChild(option);
+  });
+  daySelect.onchange = () => { entry.group = daySelect.value; };
+  const time = $('<input type="time" value="' + esc(entry.time) + '">');
+  const temp = $('<input type="number" min="5" max="35" step="0.5" value="' + esc(entry.temp) + '">');
+  time.onchange = () => { entry.time = time.value; };
+  temp.onchange = () => { entry.temp = Number(temp.value); };
   const rm = $('<button class="rm">✕</button>');
-  rm.onclick = () => { days[d].splice(i, 1); renderEditor(zone, days, card); };
-  row.appendChild(time); row.appendChild(temp); row.appendChild(rm);
+  rm.onclick = () => { entries.splice(i, 1); renderEditor(zone, entries, card); };
+  row.appendChild(daySelect); row.appendChild(time); row.appendChild(temp); row.appendChild(rm);
   return row;
 }
 
