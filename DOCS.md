@@ -27,7 +27,9 @@ automatically.
 
 Drop `*.lua` files into the scripts directory. Edit them with the **Studio
 Code Server** add-on — saved changes reload automatically. Shared helper
-modules go under `scripts/lib/` and are loaded with `require`.
+modules go under `scripts/lib/` and are loaded with `require`. A script may
+also have companion files next to it (e.g. an `.html` page read with
+`fs.read`) — copy those alongside the `.lua`.
 
 ## Your first script
 
@@ -118,7 +120,8 @@ temporarily — it exposes an unauthenticated debug server.
 | `store.*` | Per-script persistent key-value store; `store.state(defaults)` is an auto-persisting proxy table |
 | `global.*` | Key-value store shared across all scripts |
 | `require "mod"` | Load a module from `scripts/lib/` |
-| stdlib | `strings`, `time`, `json`, `re`, `http`, `crypto`; augmented `math` |
+| `fs.read(path)` / `fs.exists` / `fs.list` / `fs.stat` | Read-only access to files in the scripts directory — see *Reading files* below |
+| stdlib | `strings`, `time`, `json`, `re`, `http`, `crypto`, `fs`; augmented `math` |
 
 For the full design and rationale, see `README.md` and `plan.md` in the
 repository.
@@ -131,8 +134,9 @@ A script can serve its own web page and API with `ha.serve`:
 ha.serve("GET", "/api/state", function(req)
   return 200, json.encode({ ok = true }), { ["Content-Type"] = "application/json" }
 end)
+local PAGE = assert(fs.read("myui.html"))   -- the page lives in its own file
 ha.serve("GET", "/", function(req)
-  return 200, "<!doctype html>…", { ["Content-Type"] = "text/html" }
+  return 200, PAGE, { ["Content-Type"] = "text/html" }
 end)
 ```
 
@@ -151,6 +155,31 @@ A served UI is reachable two ways, both hitting the same routes:
   see the `http_port` option above. Use **relative** fetch URLs (`./api/state`)
   in your page so it works under both entry points.
 
+## Reading files
+
+The `fs` module gives scripts **read-only** access to files in the scripts
+directory — chiefly so a web UI's HTML/CSS/JS can live in its own file instead
+of being embedded as a giant Lua string:
+
+```lua
+local html, err = fs.read("dashboard.html")   -- bytes of a sibling file
+if not html then ha.log("error", "asset missing: " .. err) end
+
+if fs.exists("overrides.css") then ... end
+for _, name in ipairs(fs.list("assets") or {}) do ... end   -- names in a dir
+local info = fs.stat("dashboard.html")        -- { size, mtime, is_dir }
+```
+
+- Paths are **relative to the scripts directory** and `/`-separated. A leading
+  `/`, `..`, or a symlink pointing outside the directory is rejected — a script
+  cannot read host files outside its sandbox.
+- `fs.read` returns the file contents, or `nil, errmsg` on any error (missing,
+  too large, a directory). `fs.exists` returns a boolean and never errors.
+- Files are read **once at load time** in the common case (`local PAGE =
+  fs.read(...)`). The hot-reload watcher only watches `.lua` files, so editing
+  an asset alone will not reload the script — re-save the `.lua` (or restart the
+  add-on) to pick up the change.
+
 ## Thermostat example
 
 The add-on ships a complete worked example — a heating controller with a web UI
@@ -158,13 +187,16 @@ The add-on ships a complete worked example — a heating controller with a web U
 
 | File | Role |
 |------|------|
-| `thermostat.lua` | Controller + HTTP API + single-page UI. A weekly schedule per zone, duration **boosts** (10/30/60 min + custom) to a per-zone comfort temperature, and ad-hoc manual overrides. |
+| `thermostat.lua` | Controller + HTTP API. A weekly schedule per zone, duration **boosts** (10/30/60 min + custom) to a per-zone comfort temperature, and ad-hoc manual overrides. |
+| `thermostat.html` | The single-page UI, loaded by `thermostat.lua` via `fs.read`. |
 | `heating_windows.lua` | Drops a zone to a frost guard (15 °C) while a window is open and restores the controller's desired setpoint when it closes. |
 | `lib/zones.lua` | Shared zone definitions (climate + window entity ids) used by both scripts. **Edit this to match your setup.** |
 | `lib/schedule.lua` | Pure schedule math (no I/O). |
 
-To use it, edit the entity ids in `lib/zones.lua`, then open **Heating** from
-the sidebar (ingress) or add a Webpage card pointing at
+To use it, copy all of these into your scripts directory — **`thermostat.html`
+must sit next to `thermostat.lua`** (the script reads it with `fs.read` at load
+and will error without it) — edit the entity ids in `lib/zones.lua`, then open
+**Heating** from the sidebar (ingress) or add a Webpage card pointing at
 `http://<ha-host>:8100/`. Schedules, boosts, and comfort temperatures are
 persisted per zone, so they survive restarts. The controller writes a zone's
 setpoint only while its mode is `heat` and no window is open; it never changes
@@ -173,7 +205,8 @@ the hvac mode.
 ## Notes
 
 - Scripts are sandboxed: `io`, `os.execute`, `os.exit`, `load`, `dofile`, and
-  `package` are unavailable, and `require` is restricted to `scripts/lib/`.
+  `package` are unavailable, `require` is restricted to `scripts/lib/`, and the
+  `fs` module is read-only and confined to the scripts directory.
 - A script that crashes does not affect the others — each runs in its own
   isolated VM.
 - Email credentials for `ha.exceptions.email` must come from `store.get(...)`,

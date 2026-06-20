@@ -4,6 +4,20 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.2.0
+
+### Added
+- Read-only **`fs` module** for scripts: `fs.read`, `fs.exists`, `fs.list`, and
+  `fs.stat`, confined to the scripts directory by Go's `os.Root` (symlink and
+  `..` escapes are rejected at the syscall layer). Lets a web UI's HTML/CSS/JS
+  live in its own file instead of an embedded Lua string.
+
+### Changed
+- The thermostat example's single-page UI now lives in `thermostat.html` and is
+  loaded via `fs.read`, rather than being embedded as a long string in
+  `thermostat.lua`. Editing an asset alone does not hot-reload (the watcher
+  watches `.lua` files); re-save the `.lua` or restart to pick it up.
+
 ## 1.1.0
 
 ### Added

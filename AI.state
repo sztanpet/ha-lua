@@ -1,9 +1,35 @@
 # AI Working State
-Last updated: 2026-06-17
+Last updated: 2026-06-20
 
 ## Phase
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
 (milestones 1–7, see thermostat-ui-spec.md). Shipped as add-on 1.1.0.
+Filesystem plugin COMPLETE (see fs-plugin-spec.md); CHANGELOG staged as
+1.2.0, not yet released.
+
+## Filesystem plugin (2026-06-20, fs-plugin-spec.md)
+- Read-only Lua `fs` module backed by ONE process-wide `os.Root` rooted at the
+  scripts dir, opened in main and shared across all LStates (os.Root is
+  goroutine-safe). os.Root rejects symlink/".." escapes at the syscall layer,
+  so the bindings pass user paths straight through — no filepath string games.
+- API: `fs.read` (8 MiB cap via Stat before read, binary-safe), `fs.exists`
+  (bool, never errors), `fs.list` (names via fs.ReadDir(root.FS())), `fs.stat`
+  ({size, mtime unix, is_dir}). Error convention `value | nil, errmsg` matching
+  http/json. nil root degrades to errors (tests that don't exercise fs pass nil).
+- Threading: `RegisterStdlib(L, scriptsDir, root)`, `NewRunner(..., root, ...)`,
+  `Deps.Root`. main now does MkdirAll → OpenRoot → Deps{Root} (reordered so the
+  dir exists before OpenRoot); `defer scriptsRoot.Close()`.
+- `(*os.Root).Close` added to .golangci.yml errcheck exclude (configure the
+  tool, don't litter `_ =`) — matches the existing deferred-cleanup list.
+- thermostat.lua's ~260-line PAGE long string extracted VERBATIM to
+  scripts/thermostat.html, loaded once at load via `assert(fs.read(...))`.
+  thermostat.lua: 627 → 367 lines. Tests copy thermostat.html into their temp
+  dir and open a test root over it (openTestRoot helper).
+- HOT-RELOAD CAVEAT: the watcher only watches .lua; editing the .html alone
+  does NOT reload. Documented in the script comment + DOCS.md.
+- Deferred (in spec §9, do not add without a real use case): write support;
+  a dedicated scripts/assets/ root; asset hot reload; migrating the restricted
+  `require` loader onto the same os.Root (would close its symlink-escape gap).
 
 ## Thermostat UI — Milestones 2–7 (2026-06-17)
 - M2 Packaging (commit ee7667a): config.yaml gained ingress/ingress_port/
