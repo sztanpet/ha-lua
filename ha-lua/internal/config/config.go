@@ -59,7 +59,7 @@ func (c *Config) PurgeInterval() (time.Duration, error) {
 // Defaults fills in zero-value fields with sensible defaults.
 func (c *Config) Defaults() {
 	if c.ScriptsDir == "" {
-		c.ScriptsDir = "/addon_config/scripts"
+		c.ScriptsDir = "/config/scripts"
 	}
 	if c.Database == "" {
 		c.Database = "/data/ha-lua.db"

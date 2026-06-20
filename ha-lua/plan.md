@@ -412,7 +412,7 @@ Script KV data in SQLite persists across reloads automatically.
 
 ### Production (HA add-on)
 
-When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup — this is the **only** production config channel; `run.sh` passes no flags. Connection details are not options: the URL is always `ws://supervisor/core/websocket`, the token comes from `$SUPERVISOR_TOKEN`, scripts are at `/addon_config/scripts`, and the DB is at `/data/ha-lua.db`.
+When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup — this is the **only** production config channel; `run.sh` passes no flags. Connection details are not options: the URL is always `ws://supervisor/core/websocket`, the token comes from `$SUPERVISOR_TOKEN`, scripts are at `/config/scripts`, and the DB is at `/data/ha-lua.db`.
 
 ### Development (`config.dev.yaml`)
 
@@ -720,7 +720,7 @@ homeassistant_api: true        # provides $SUPERVISOR_TOKEN + ws://supervisor/co
 startup: services
 boot: auto
 map:
-  - addon_config:rw            # /addon_config inside container = /config/ha-lua on host
+  - addon_config:rw            # /config inside container = /addon_configs/local_ha-lua on host
 options:
   log_level: "info"
   timezone: ""
@@ -741,7 +741,7 @@ schema:
 
 Key implications:
 - **No user-supplied HA URL or token.** The Supervisor injects `$SUPERVISOR_TOKEN` and the internal proxy endpoint is fixed at `ws://supervisor/core/websocket`.
-- **Scripts**: live at `/addon_config/scripts/` inside the container, which maps to `/config/ha-lua/scripts/` on the host — editable via Studio Code Server.
+- **Scripts**: live at `/config/scripts/` inside the container, which maps to `/addon_configs/local_ha-lua/scripts/` on the host — editable via Studio Code Server.
 - **Data** (SQLite DB): `/data/ha-lua.db` — the Supervisor provides `/data` as a persistent volume, survives add-on updates.
 
 ### `Dockerfile` (multi-stage)
@@ -777,7 +777,7 @@ set -e
 exec /usr/local/bin/ha-lua
 ```
 
-No flags. In add-on mode (no `--config` flag) the binary reads `/data/options.json` for user options, takes the token from `$SUPERVISOR_TOKEN`, and hardcodes the rest: URL `ws://supervisor/core/websocket`, scripts at `/addon_config/scripts`, DB at `/data/ha-lua.db`. There is exactly one source for each value — flags duplicating what the environment and options.json already provide is how the two drift apart.
+No flags. In add-on mode (no `--config` flag) the binary reads `/data/options.json` for user options, takes the token from `$SUPERVISOR_TOKEN`, and hardcodes the rest: URL `ws://supervisor/core/websocket`, scripts at `/config/scripts`, DB at `/data/ha-lua.db`. There is exactly one source for each value — flags duplicating what the environment and options.json already provide is how the two drift apart.
 
 ### `build.yaml`
 
@@ -793,11 +793,11 @@ On tag push: use `home-assistant/builder` action to build multi-arch images and 
 
 ### Local development install
 
-Copy (or symlink) the repo into `/addons/ha-lua/` on the HA host via Samba/SSH, then install from **Settings → Add-ons → Local add-ons**. Studio Code Server can edit scripts in `/config/ha-lua/scripts/` immediately.
+Copy (or symlink) the repo into `/addons/ha-lua/` on the HA host via Samba/SSH, then install from **Settings → Add-ons → Local add-ons**. Studio Code Server can edit scripts in `/addon_configs/local_ha-lua/scripts/` immediately.
 
 ## Deployment
 
-The daemon is a single static Go binary (no CGO). It runs inside a Docker container managed by the HA Supervisor. Scripts live under `/addon_config/scripts/` (= `/config/ha-lua/scripts/` on the host), editable via Studio Code Server. The binary watches for changes and hot-reloads without restarting the container.
+The daemon is a single static Go binary (no CGO). It runs inside a Docker container managed by the HA Supervisor. Scripts live under `/config/scripts/` (= `/addon_configs/local_ha-lua/scripts/` on the host), editable via Studio Code Server. The binary watches for changes and hot-reloads without restarting the container.
 
 ---
 

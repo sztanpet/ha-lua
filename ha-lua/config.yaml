@@ -23,7 +23,7 @@ ports:
 ports_description:
   "8100/tcp": "Script-driven UI (e.g. thermostat). Unauthenticated — keep on the LAN only."
 map:
-  - addon_config:rw            # /addon_config inside container = /config/ha-lua on host
+  - addon_config:rw            # /config inside container = /addon_configs/local_ha-lua on host
 options:
   log_level: "info"
   timezone: ""

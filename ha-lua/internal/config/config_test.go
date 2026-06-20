@@ -44,7 +44,7 @@ func TestLoadAddonMode(t *testing.T) {
 	if cfg.HomeAssistant.Token != "super-secret" {
 		t.Errorf("token: got %q", cfg.HomeAssistant.Token)
 	}
-	if cfg.ScriptsDir != "/addon_config/scripts" {
+	if cfg.ScriptsDir != "/config/scripts" {
 		t.Errorf("scripts_dir: got %q", cfg.ScriptsDir)
 	}
 	if cfg.Database != "/data/ha-lua.db" {

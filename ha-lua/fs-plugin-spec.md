@@ -159,7 +159,7 @@ script→asset dependency map we do not have today. Out of scope for v1.
   this is acceptable; stated here so it is a decision, not an accident (§9.2).
 - `os.Root`'s documented residual risks (does not block `/proc`, bind mounts,
   or device files *if such a thing were reachable under the root*) do not apply:
-  the root is a plain add-on data directory under `/addon_config`.
+  the root is a plain add-on data directory under `/config`.
 
 ## 8. Relationship to `require`
 

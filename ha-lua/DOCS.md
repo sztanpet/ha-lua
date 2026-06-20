@@ -19,11 +19,14 @@ automatically.
 
 ## Where things live
 
-| Inside the container        | On the host                       |
-|-----------------------------|-----------------------------------|
-| `/addon_config/scripts/`    | `/config/ha-lua/scripts/`         |
-| `/addon_config/scripts/lib/`| `/config/ha-lua/scripts/lib/`     |
-| `/data/ha-lua.db`           | persistent add-on data (survives updates) |
+| Inside the container  | On the host (local install)              |
+|-----------------------|------------------------------------------|
+| `/config/scripts/`    | `/addon_configs/local_ha-lua/scripts/`   |
+| `/config/scripts/lib/`| `/addon_configs/local_ha-lua/scripts/lib/` |
+| `/data/ha-lua.db`     | persistent add-on data (survives updates) |
+
+> For add-ons installed from a custom repository, `local` in the host path
+> is replaced with a hash of the repository URL (e.g. `a0d7b954_ha-lua`).
 
 Drop `*.lua` files into the scripts directory. Edit them with the **Studio
 Code Server** add-on — saved changes reload automatically. Shared helper
@@ -33,7 +36,7 @@ also have companion files next to it (e.g. an `.html` page read with
 
 ## Your first script
 
-Create `/config/ha-lua/scripts/hallway.lua`:
+Create `/addon_configs/local_ha-lua/scripts/hallway.lua`:
 
 ```lua
 ha.on_state_change("binary_sensor.hallway_motion", function(data)
@@ -47,7 +50,7 @@ ha.on_state_change("binary_sensor.hallway_motion", function(data)
 end)
 
 -- Route any error in this script to a log file you can open in Studio Code.
-ha.on_exception(ha.exceptions.log_file("/addon_config/hallway-errors.log"))
+ha.on_exception(ha.exceptions.log_file("/config/hallway-errors.log"))
 ```
 
 Save it. The add-on log shows the script loading, and the automation is live.

@@ -33,7 +33,7 @@ ha.on_state_change("binary_sensor.hallway_motion", function(data)
   end
 end)
 
-ha.on_exception(ha.exceptions.log_file("/addon_config/hallway-errors.log"))
+ha.on_exception(ha.exceptions.log_file("/config/hallway-errors.log"))
 ```
 
 ## Lua API
@@ -178,7 +178,7 @@ Other targets:
 The intended deployment is a Home Assistant add-on (repo root = add-on
 directory): the Supervisor injects `$SUPERVISOR_TOKEN` and the binary
 reads user options from `/data/options.json`, scripts from
-`/addon_config/scripts/` (that is `/config/ha-lua/scripts/` on the host),
+`/config/scripts/` (that is `/addon_configs/local_ha-lua/scripts/` on the host),
 and keeps its database at `/data/ha-lua.db`. The add-on packaging
 (`config.yaml`, `Dockerfile`, `run.sh`, `build.yaml`) is the last
 milestone and does not exist yet — until then, run the binary standalone
