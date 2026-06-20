@@ -330,7 +330,7 @@ function entryRow(entries, i, zone, card) {
   });
   daySelect.onchange = () => { entry.group = daySelect.value; };
   const time = $('<input type="time" value="' + esc(entry.time) + '">');
-  const temp = $('<input type="number" min="5" max="35" step="0.5" value="' + esc(entry.temp) + '">');
+  const temp = $('<input type="number" min="5" max="35" step="0.1" value="' + esc(entry.temp) + '">');
   time.onchange = () => { entry.time = time.value; };
   temp.onchange = () => { entry.temp = Number(temp.value); };
   const rm = $('<button class="rm">✕</button>');
