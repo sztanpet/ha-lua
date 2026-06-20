@@ -27,7 +27,7 @@ func newStdlibState(t testing.TB) (*lua.LState, string) {
 	if t != nil {
 		t.Cleanup(L.Close)
 	}
-	RegisterStdlib(L, dir)
+	RegisterStdlib(L, dir, nil)
 	return L, dir
 }
 
@@ -72,7 +72,7 @@ func newRequireState(t *testing.T, libs map[string]string) *lua.LState {
 	}
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	t.Cleanup(L.Close)
-	RegisterStdlib(L, dir)
+	RegisterStdlib(L, dir, nil)
 	return L
 }
 

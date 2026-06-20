@@ -18,6 +18,7 @@ linters:
         - (*database/sql.DB).Close
         - (*github.com/coder/websocket.Conn).CloseNow
         - (*github.com/fsnotify/fsnotify.Watcher).Close
+        - (*os.Root).Close
         - (io.Closer).Close
     staticcheck:
       checks: ["all"]

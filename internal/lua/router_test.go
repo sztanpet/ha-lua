@@ -34,7 +34,7 @@ func newUIRunner(t *testing.T, scriptID, src string) *Router {
 	reg := NewRegistry()
 	router := NewRouter(reg)
 
-	r := NewRunner(scriptID, dir, tracker, nil, kv, global)
+	r := NewRunner(scriptID, dir, nil, tracker, nil, kv, global)
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

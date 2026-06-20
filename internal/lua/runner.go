@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -34,7 +35,10 @@ type TimerFiredEvent struct {
 type Runner struct {
 	scriptID  string
 	scriptDir string
-	ch        chan Event
+	// root sandboxes the read-only fs module to scriptDir; shared (os.Root is
+	// goroutine-safe), may be nil in tests that don't exercise fs.
+	root *os.Root
+	ch   chan Event
 	// reqCh delivers UI HTTP requests. Unlike ch (lossy fan-out, dropped when
 	// full), requests block the sender up to the request timeout and are never
 	// dropped. reqCh is never closed, so the Router's send can only block
@@ -60,10 +64,11 @@ type Runner struct {
 }
 
 // NewRunner creates a Runner. Call Start to load and run the script.
-func NewRunner(scriptID, scriptDir string, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
+func NewRunner(scriptID, scriptDir string, root *os.Root, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
 	return &Runner{
 		scriptID:  scriptID,
 		scriptDir: scriptDir,
+		root:      root,
 		ch:        make(chan Event, 64),
 		reqCh:     make(chan *request),
 		LoadedCh:  make(chan struct{}),
@@ -334,7 +339,7 @@ func stringMapToLua(L *lua.LState, m map[string]string) *lua.LTable {
 // Full sandboxing (SkipOpenLibs + selective open) is applied in milestone 10.
 func (r *Runner) newLState(ctx context.Context) *lua.LState {
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
-	RegisterStdlib(L, r.scriptDir)
+	RegisterStdlib(L, r.scriptDir, r.root)
 	L.SetContext(ctx)
 	return L
 }

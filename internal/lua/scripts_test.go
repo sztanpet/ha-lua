@@ -62,7 +62,7 @@ func newScheduleState(t *testing.T) *lua.LState {
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	L.SetContext(context.Background())
 	t.Cleanup(L.Close)
-	RegisterStdlib(L, repoScriptsDir)
+	RegisterStdlib(L, repoScriptsDir, nil)
 	return L
 }
 
@@ -125,6 +125,19 @@ func TestSchedulePureLib(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// openTestRoot opens an os.Root over dir for the read-only fs module, closed
+// on test cleanup. Used by the thermostat tests, whose script reads its UI
+// page through fs.read.
+func openTestRoot(t *testing.T, dir string) *os.Root {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return root
 }
 
 func copyRepoFile(t *testing.T, src, dst string) {
@@ -264,7 +277,7 @@ func TestThermostatAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewRunner("thermostat", dir, tracker, sched, kv, global)
+	r := NewRunner("thermostat", dir, openTestRoot(t, dir), tracker, sched, kv, global)
 	r.SetCallService(cs)
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -364,7 +377,7 @@ func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore,
 	reg := NewRegistry()
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	r := NewRunner("thermostat", dir, tracker, sched, kv, global)
+	r := NewRunner("thermostat", dir, openTestRoot(t, dir), tracker, sched, kv, global)
 	r.SetCallService(func(context.Context, string, string, jsontext.Value) error { return nil })
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())

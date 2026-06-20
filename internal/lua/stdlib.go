@@ -1,6 +1,7 @@
 package lua
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -8,9 +9,10 @@ import (
 )
 
 // RegisterStdlib applies full sandboxing (SkipOpenLibs + selective open) and
-// registers all additional modules (strings, time, json, re, http, crypto)
-// and math augmentations.
-func RegisterStdlib(L *lua.LState, scriptsDir string) {
+// registers all additional modules (strings, time, json, re, http, crypto, fs)
+// and math augmentations. root is the os.Root backing the read-only fs module;
+// it may be nil (fs calls then error).
+func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
 	// 1. Selective open of standard libraries
 	for _, lib := range []struct {
 		name string
@@ -63,6 +65,7 @@ func RegisterStdlib(L *lua.LState, scriptsDir string) {
 	registerRE(L)
 	registerHTTP(L)
 	registerCrypto(L)
+	registerFS(L, root)
 }
 
 func installRestrictedRequire(L *lua.LState, scriptsDir string) {

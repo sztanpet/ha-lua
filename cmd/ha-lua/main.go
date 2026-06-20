@@ -106,10 +106,28 @@ func main() {
 		}
 	}()
 
+	// First run in a fresh add-on install: the scripts dir does not exist yet,
+	// and LoadAll, the watcher, and the fs sandbox all need it present.
+	if err := os.MkdirAll(cfg.ScriptsDir, 0o755); err != nil {
+		slog.Error("scripts dir create failed", "dir", cfg.ScriptsDir, "err", err)
+		os.Exit(1)
+	}
+
+	// One process-wide os.Root backing the read-only Lua fs module. It is
+	// goroutine-safe and shared across all script LStates; held for the
+	// process lifetime.
+	scriptsRoot, err := os.OpenRoot(cfg.ScriptsDir)
+	if err != nil {
+		slog.Error("scripts dir open failed", "dir", cfg.ScriptsDir, "err", err)
+		os.Exit(1)
+	}
+	defer scriptsRoot.Close()
+
 	sup := luapkg.NewSupervisor(reg, cfg.ScriptsDir, luapkg.Deps{
 		Tracker:   tracker,
 		Scheduler: sched,
 		Global:    globalStore,
+		Root:      scriptsRoot,
 		Router:    router,
 		NewKV: func(scriptID string) *store.Store {
 			return store.New(writeDB, readDB, scriptID)
@@ -147,13 +165,6 @@ func main() {
 			}
 		},
 	})
-
-	// First run in a fresh add-on install: the scripts dir does not exist
-	// yet, and both LoadAll and the watcher need it.
-	if err := os.MkdirAll(cfg.ScriptsDir, 0o755); err != nil {
-		slog.Error("scripts dir create failed", "dir", cfg.ScriptsDir, "err", err)
-		os.Exit(1)
-	}
 
 	// Watch before the initial load: a script created in between is then
 	// a queued event instead of a file nobody ever looks at.

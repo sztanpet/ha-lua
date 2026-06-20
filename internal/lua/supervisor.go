@@ -23,9 +23,12 @@ const stopTimeout = 5 * time.Second
 
 // Deps are the shared subsystems every script runner is wired with.
 type Deps struct {
-	Tracker     *state.Tracker
-	Scheduler   *scheduler.Scheduler
-	Global      *store.GlobalStore
+	Tracker   *state.Tracker
+	Scheduler *scheduler.Scheduler
+	Global    *store.GlobalStore
+	// Root sandboxes the read-only fs module to the scripts directory; one
+	// process-wide handle, shared across runners. May be nil (fs disabled).
+	Root        *os.Root
 	NewKV       func(scriptID string) *store.Store
 	CallService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	FireEvent   func(ctx context.Context, eventType string, data jsontext.Value) error
@@ -92,7 +95,7 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 		return
 	}
 
-	r := NewRunner(id, s.scriptDir, s.deps.Tracker, s.deps.Scheduler, s.deps.NewKV(id), s.deps.Global)
+	r := NewRunner(id, s.scriptDir, s.deps.Root, s.deps.Tracker, s.deps.Scheduler, s.deps.NewKV(id), s.deps.Global)
 	r.SetCallService(s.deps.CallService)
 	r.SetFireEvent(s.deps.FireEvent)
 
