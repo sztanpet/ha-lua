@@ -187,7 +187,7 @@ const DAY_GROUPS = [
   { value: "5", days: [5] },
   { value: "6", days: [6] },
 ];
-let editing = null;        // zone whose schedule editor is open (suppresses polling)
+const editing = new Set();  // zones with an open schedule editor (suppresses polling)
 let lastState = null;
 
 const $ = (html) => { const div = document.createElement("div"); div.innerHTML = html.trim(); return div.firstChild; };
@@ -210,7 +210,7 @@ async function send(path, method, payload) {
 }
 
 async function poll() {
-  if (editing) return;                 // don't clobber an open editor
+  if (editing.size) return;            // don't clobber an open editor
   try {
     const resp = await fetch("./api/state");
     if (resp.ok) { lastState = await resp.json(); render(lastState); }
@@ -224,7 +224,7 @@ function fmtCountdown(sec) {
 }
 
 function render(state) {
-  if (editing) return;
+  if (editing.size) return;
   const app = document.getElementById("app");
   app.innerHTML = "";
   Object.keys(state.zones).sort().forEach(zone => app.appendChild(zoneCard(zone, state.zones[zone])));
@@ -321,8 +321,21 @@ async function openEditor(zone, card) {
   const resp = await fetch("./api/schedule?zone=" + encodeURIComponent(zone));
   if (!resp.ok) { showErr(t("load_schedule_failed")); return; }
   const data = await resp.json();
-  editing = zone;
+  editing.add(zone);
   renderEditor(zone, entriesFromDays(normalizeDays(data.days)), card);
+}
+
+// Close one card's editor without touching the others: drop it from the
+// editing set and rebuild just this card from the given state. render()'s
+// full rebuild is suppressed while any other editor is still open.
+function closeEditor(zone, card, state) {
+  editing.delete(zone);
+  if (state && state.zones[zone]) {
+    card.replaceWith(zoneCard(zone, state.zones[zone]));
+  } else {
+    const ed = card.querySelector(".editor");
+    if (ed) ed.remove();
+  }
 }
 
 // Collapse the per-day schedule into editor entries, reusing the Mon–Fri
@@ -389,9 +402,9 @@ function renderEditor(zone, entries, card) {
   const cancel = $('<button class="cancel">' + esc(t("cancel")) + '</button>');
   save.onclick = async () => {
     const newState = await send("api/schedule", "PUT", { zone: zone, days: daysFromEntries(entries) });
-    if (newState) { editing = null; lastState = newState; render(newState); }
+    if (newState) { lastState = newState; closeEditor(zone, card, newState); }
   };
-  cancel.onclick = () => { editing = null; if (lastState) render(lastState); else poll(); };
+  cancel.onclick = () => { closeEditor(zone, card, lastState); };
   actions.appendChild(save); actions.appendChild(cancel);
   ed.appendChild(actions);
   card.appendChild(ed);
