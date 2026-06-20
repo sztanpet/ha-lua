@@ -3,6 +3,11 @@ description: "Lua scripting engine for Home Assistant"
 version: "1.2.1"
 slug: "ha-lua"
 init: false
+# Pull the prebuilt per-arch image from GHCR (pushed by .github/release.yml)
+# instead of building on-device. {arch} is substituted by the Supervisor; the
+# pulled tag matches version: above. Keep this in sync with the image name in
+# the release workflow (ghcr.io/<owner>/<arch>-<slug>).
+image: "ghcr.io/sztanpet/{arch}-ha-lua"
 arch:
   - aarch64
   - amd64
