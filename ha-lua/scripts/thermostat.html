@@ -236,6 +236,15 @@ function fmtCountdown(sec) {
   return minutes + ":" + String(seconds).padStart(2, "0");
 }
 
+// Render a stored "HH:MM" (24h) transition in the user's regional clock
+// convention (12h or 24h), following the browser default locale rather than
+// the chosen UI language.
+const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
+function fmtTime(hhmm) {
+  const parts = String(hhmm).split(":");
+  return timeFmt.format(new Date(2000, 0, 1, Number(parts[0]) || 0, Number(parts[1]) || 0));
+}
+
 function render(state) {
   if (editing.size) return;
   const app = document.getElementById("app");
@@ -317,7 +326,7 @@ function zoneCard(zone, status) {
   if (today.length) {
     const strip = today.map((step, i) =>
       '<span class="step' + (i === status.now_index ? " now" : "") + '">' +
-      (i === status.now_index ? "▶ " : "") + esc(step.time) + " " + esc(step.temp) + "°</span>"
+      (i === status.now_index ? "▶ " : "") + esc(fmtTime(step.time)) + " " + esc(step.temp) + "°</span>"
     ).join("");
     card.appendChild($('<div class="today">' + strip + '</div>'));
   } else {
