@@ -6,9 +6,13 @@ set -eu
 
 # Nothing Go-related staged? Nothing to check.
 if ! git diff --cached --name-only --diff-filter=ACMR |
-	grep -Eq '\.go$|^\.golangci\.yml$|^go\.(mod|sum)$|^Makefile$'; then
+	grep -Eq '\.go$|/\.golangci\.yml$|/go\.(mod|sum)$|/Makefile$'; then
 	exit 0
 fi
+
+# The Go project (go.mod, Makefile) lives in the add-on subfolder; run all
+# tooling from there.
+cd "$(git rev-parse --show-toplevel)/ha-lua"
 
 unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then

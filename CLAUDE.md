@@ -77,6 +77,9 @@ Full OpenAPI spec: `https://pkg.go.dev/v1beta/openapi.yaml`
 
 ## Key commands
 
+The Go project lives in the `ha-lua/` add-on subfolder — run all `make`/`go`
+commands from there (`cd ha-lua`).
+
 ```
 make build        # compile to ./ha-lua
 make check        # vet + staticcheck + lint + test (CI target)
@@ -97,7 +100,7 @@ make trace        # capture 5s execution trace
 
 ## Architecture summary
 
-See `plan.md` for the full design. Short version:
+See `ha-lua/plan.md` for the full design. Short version:
 
 - **One `*lua.LState` per script, owned exclusively by its goroutine.** Never pass an LState across goroutines — gopher-lua is not goroutine-safe.
 - **Two `*sql.DB` handles per DB file.** Write handle: `SetMaxOpenConns(1)` — serializes all writes, eliminates SQLITE_BUSY. Read handle: default pool — concurrent reads from multiple script goroutines proceed in parallel. WAL makes this safe.
@@ -125,6 +128,8 @@ See `plan.md` for the full design. Short version:
 
 ## Packages
 
+Paths below are relative to the `ha-lua/` add-on subfolder (Go module root).
+
 | Path | Responsibility |
 |------|---------------|
 | `cmd/ha-lua/` | Entry point, wires all subsystems |
@@ -140,7 +145,12 @@ See `plan.md` for the full design. Short version:
 
 ---
 
-## Add-on layout (repo root = add-on directory)
+## Repository layout (HA add-on repository)
+
+The git root is a Home Assistant **add-on repository**: `repository.yaml` at
+the root, and the add-on itself in the `ha-lua/` subfolder (= the Docker build
+context, which is why the Go source lives there too). Paths below are relative
+to `ha-lua/`.
 
 | File | Purpose |
 |------|---------|
@@ -156,4 +166,4 @@ In production the binary reads **`/data/options.json`** (written by Supervisor).
 
 ## AI working state
 
-Claude tracks current work state in **`AI.state`**. Read it at the start of every session before doing anything else. Update it after every completed milestone.
+Claude tracks current work state in **`ha-lua/AI.state`**. Read it at the start of every session before doing anything else. Update it after every completed milestone.

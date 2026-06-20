@@ -1,8 +1,8 @@
 name: Release
 
 # Build multi-arch add-on images and push them to GHCR on every version tag.
-# The image version comes from config.yaml; keep its `version:` field in sync
-# with the tag (and with CHANGELOG.md) before tagging.
+# The image version comes from ha-lua/config.yaml; keep its `version:` field in
+# sync with the tag (and with ha-lua/CHANGELOG.md) before tagging.
 #
 # Uses home-assistant/builder's composable actions (the monolithic
 # home-assistant/builder action is deprecated). Each arch builds natively on
@@ -59,6 +59,7 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           image: ${{ matrix.image }}
+          context: ha-lua          # add-on (and Docker build context) lives here
           image-tags: |
             ${{ needs.init.outputs.version }}
             latest
