@@ -151,6 +151,32 @@ func copyRepoFile(t *testing.T, src, dst string) {
 	}
 }
 
+// testZonesLua is a fixture mirroring the structure of scripts/lib/zones.lua
+// with stable entity ids the thermostat tests seed. The shipped zones.lua holds
+// the maintainer's real entities and is meant to be user-edited, so the tests
+// must not depend on its contents — they write this fixture instead.
+const testZonesLua = `local M = {}
+M.frost_temp = 15
+M.default_comfort = 21
+M.zones = {
+  bedroom    = { climate = "climate.bedroom",       windows = { "binary_sensor.bedroom_window" } },
+  livingroom = { climate = "climate.livingroom",    windows = { "binary_sensor.livingroom_window" } },
+  childrens  = { climate = "climate.childrens_room", windows = { "binary_sensor.childrens_room_window" } },
+}
+function M.desired_key(zone)
+  return "thermostat:desired:" .. zone
+end
+return M
+`
+
+// writeTestZones drops the zones fixture into a test's lib dir.
+func writeTestZones(t *testing.T, libDir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(libDir, "zones.lua"), []byte(testZonesLua), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestWindowHandoffRestoresPublishedDesired exercises the two-script contract
 // (spec §4.2): on a window close, the real heating_windows.lua must restore the
 // setpoint the controller published to global:thermostat:desired:<zone> — not a
@@ -162,7 +188,7 @@ func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
+	writeTestZones(t, libDir)
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "heating_windows.lua"), filepath.Join(dir, "heating_windows.lua"))
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
@@ -254,7 +280,7 @@ func TestThermostatAPI(t *testing.T) {
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
+	writeTestZones(t, libDir)
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
@@ -365,7 +391,7 @@ func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore,
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
+	writeTestZones(t, libDir)
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
