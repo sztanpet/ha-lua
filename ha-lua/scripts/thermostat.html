@@ -29,6 +29,9 @@
          font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
          padding:12px; max-width:600px; margin:0 auto; }
   h1 { font-size:1.3rem; margin:8px 4px 16px; }
+  .topbar { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  #lang { padding:6px 8px; border:1px solid var(--line); border-radius:8px;
+          background:var(--surface); color:var(--ink); cursor:pointer; }
   .card { background:var(--card); border-radius:14px; padding:14px;
           margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   .head { display:flex; justify-content:space-between; align-items:baseline;
@@ -88,7 +91,7 @@
 </style>
 </head>
 <body>
-<h1>Heating</h1>
+<header class="topbar"><h1>Heating</h1><select id="lang" aria-label="Language"></select></header>
 <div id="app">
   <div class="card placeholder">
     <div class="head"><span class="zone skel skel-text"></span><span class="status skel skel-text"></span></div>
@@ -149,6 +152,9 @@ const MESSAGES = {
     "day.3": "Csütörtök", "day.4": "Péntek", "day.5": "Szombat", "day.6": "Vasárnap",
   },
 };
+
+// Native names shown in the language picker, one per MESSAGES locale.
+const LANG_NAMES = { en: "English", hu: "Magyar" };
 
 // Resolve the locale once: ?lang= overrides and is remembered, otherwise the
 // stored choice, otherwise the browser language. Anything we can't serve
@@ -447,6 +453,21 @@ document.title = t("title");
 document.querySelector("h1").textContent = t("title");
 const placeholder = document.querySelector("#app .today");
 if (placeholder) placeholder.textContent = t("loading");
+
+// Build the language picker. Switching stores the choice and reloads to a
+// URL without ?lang= so the stored preference (not the param) takes effect.
+const langSelect = document.getElementById("lang");
+Object.keys(MESSAGES).forEach(code => {
+  const option = document.createElement("option");
+  option.value = code;
+  option.textContent = LANG_NAMES[code] || code;
+  if (code === LOCALE) option.selected = true;
+  langSelect.appendChild(option);
+});
+langSelect.onchange = () => {
+  localStorage.setItem("lang", langSelect.value);
+  location.assign(location.pathname);
+};
 
 poll();
 setInterval(poll, 5000);
