@@ -4,6 +4,29 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The add-on now uses the Home Assistant config directory.** `/config` is
+  mapped into the container; scripts live at `/config/ha-lua/scripts/` (next to
+  `configuration.yaml`) and the daemon log is mirrored to
+  `/config/ha-lua/logs/ha-lua.log`. The SQLite DB stays at `/data/ha-lua.db`.
+  Existing installs must move their scripts to the new path.
+
+### Thermostat example (assets only — no daemon change)
+- Internationalization: all UI strings go through a locale table, shipping
+  English and Hungarian, with an in-page language picker (also selectable via
+  `?lang=`, remembered across reloads).
+- Schedule editor reworked: each entry picks the days it applies to — Every
+  day, Mon–Fri, Sat–Sun, or an individual day (grouped in the dropdown) —
+  instead of a fixed per-day list; setpoints accept tenth-of-a-degree values;
+  open/close is animated; the edit button toggles the editor.
+- Schedule transition times are shown in the viewer's regional 12h/24h clock.
+- "Boost" is renamed **"Temporary override"** and its duration buttons and
+  target-temperature stepper are grouped on one line inside a labelled
+  outline; clearer custom-duration icon. Default override temperature raised
+  from 21 °C to 23 °C.
+
 ## 1.2.0
 
 ### Added
