@@ -18,9 +18,9 @@ M.default_comfort = 21
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
 M.zones = {
-  bedroom    = { climate = "climate.bedroom",        windows = { "binary_sensor.bedroom_window" } },
-  livingroom = { climate = "climate.livingroom",     windows = { "binary_sensor.livingroom_window" } },
-  childrens  = { climate = "climate.childrens_room",  windows = { "binary_sensor.childrens_room_window" } },
+  bedroom    = { climate = "climate.konyha_halo_futes",        windows = { "binary_sensor.ikea_door_5_contact" } },
+  livingroom = { climate = "climate.konyha_nappali_futes",     windows = { "binary_sensor.ikea_door_2_contact" } },
+  childrens  = { climate = "climate.konyha_gyerekszoba_futes",  windows = { "binary_sensor.ikea_door_3_contact" } },
 }
 
 -- The global key both scripts use to hand off the controller's desired
