@@ -62,7 +62,7 @@
               width:100%; margin-top:4px; padding:11px; font-size:.95rem; font-weight:600;
               border:1px solid var(--line); border-radius:10px; user-select:none;
               background:var(--btn); color:var(--btn-ink); cursor:pointer; }
-  .edit-btn .ico { font-size:1.15rem; line-height:1; }
+  .edit-btn .ico { font-size:1.4rem; line-height:1; }
   .editor { border-top:1px solid var(--line); margin-top:12px; padding-top:12px; }
   .row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
   .row select { padding:8px; border:1px solid var(--line); border-radius:8px;
@@ -307,7 +307,7 @@ function zoneCard(zone, status) {
     card.appendChild($('<div class="today">' + esc(t("no_schedule")) + '</div>'));
   }
 
-  const edit = $('<button class="edit-btn"><span class="ico" aria-hidden="true">✎</span><span>' +
+  const edit = $('<button class="edit-btn"><span class="ico" aria-hidden="true">✏️</span><span>' +
     esc(t("edit_schedule")) + '</span></button>');
   edit.onclick = () => openEditor(zone, card);
   card.appendChild(edit);
