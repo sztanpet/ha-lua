@@ -19,6 +19,10 @@ database: "./ha-lua.db"
 # debug | info | warn | error
 log_level: "info"
 
+# Directory for the daemon's own log file (ha-lua.log), written alongside
+# stderr. Empty = stderr only. Add-on mode forces /config/ha-lua/logs.
+log_dir: ""
+
 # LAN port for the script-driven UI server (ha.serve). 0 disables it.
 http_port: 8100
 

@@ -4,9 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -36,7 +38,24 @@ func main() {
 
 	var level slog.Level
 	_ = level.UnmarshalText([]byte(cfg.LogLevel))
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	// Log to stderr (the Supervisor add-on log) and, when configured, also to
+	// a file under the mounted config dir so the log survives restarts and is
+	// readable via the File Editor. File logging is best-effort: if the dir or
+	// file cannot be opened we warn and carry on with stderr only.
+	logWriter := io.Writer(os.Stderr)
+	var logFileErr error
+	if cfg.LogDir != "" {
+		if f, err := openLogFile(cfg.LogDir); err != nil {
+			logFileErr = err
+		} else {
+			defer f.Close()
+			logWriter = io.MultiWriter(os.Stderr, f)
+		}
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: level})))
+	if logFileErr != nil {
+		slog.Warn("file logging disabled", "dir", cfg.LogDir, "err", logFileErr)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -203,6 +222,17 @@ func main() {
 
 	<-ctx.Done()
 	sup.Wait()
+}
+
+// openLogFile creates dir if needed and opens (appending) the daemon's log
+// file inside it. The caller keeps the handle for the process lifetime and
+// closes it on exit; the return type is io.WriteCloser because that deferred
+// close is the only thing the caller does with it besides writing.
+func openLogFile(dir string) (io.WriteCloser, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(filepath.Join(dir, "ha-lua.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 }
 
 type serviceCallMsg struct {

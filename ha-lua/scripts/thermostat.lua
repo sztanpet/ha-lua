@@ -366,4 +366,4 @@ do
   end
 end
 
-ha.on_exception(ha.exceptions.log_file("/addon_config/thermostat-errors.log"))
+ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/thermostat-errors.log"))

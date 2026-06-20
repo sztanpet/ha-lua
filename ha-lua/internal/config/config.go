@@ -28,6 +28,12 @@ type Config struct {
 	Database   string `json:"database"    yaml:"database"`
 	LogLevel   string `json:"log_level"   yaml:"log_level"`
 	Timezone   string `json:"timezone"    yaml:"timezone"`
+	// LogDir is where the daemon writes its own log file (ha-lua.log), in
+	// addition to stderr (the Supervisor add-on log). Empty disables file
+	// logging. Not a user option: add-on mode forces /config/ha-lua/logs so
+	// the log sits beside the scripts and is readable via the File Editor;
+	// dev mode leaves it empty (stderr only) unless set in the YAML.
+	LogDir string `json:"log_dir" yaml:"log_dir"`
 	// HTTPPort is the LAN port for the script-driven UI server. 0 disables it.
 	HTTPPort int `json:"http_port" yaml:"http_port"`
 	// IngressPort is the internal port the HA Supervisor proxies for the
@@ -110,6 +116,9 @@ func load(path string, addon bool) (*Config, error) {
 		// listener (IngressPort stays 0). Keep this in sync with
 		// `ingress_port` in config.yaml.
 		cfg.IngressPort = ingressPort
+		// Persist the daemon log under the mounted config dir, beside the
+		// scripts, so users can open it in the File Editor / Studio Code.
+		cfg.LogDir = "/config/ha-lua/logs"
 	}
 	return &cfg, nil
 }

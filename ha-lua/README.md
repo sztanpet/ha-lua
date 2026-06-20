@@ -33,7 +33,7 @@ ha.on_state_change("binary_sensor.hallway_motion", function(data)
   end
 end)
 
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/hallway-errors.log"))
+ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/hallway-errors.log"))
 ```
 
 ## Lua API

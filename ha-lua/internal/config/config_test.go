@@ -47,6 +47,9 @@ func TestLoadAddonMode(t *testing.T) {
 	if cfg.ScriptsDir != "/config/ha-lua/scripts" {
 		t.Errorf("scripts_dir: got %q", cfg.ScriptsDir)
 	}
+	if cfg.LogDir != "/config/ha-lua/logs" {
+		t.Errorf("log_dir: got %q", cfg.LogDir)
+	}
 	if cfg.Database != "/data/ha-lua.db" {
 		t.Errorf("database: got %q", cfg.Database)
 	}

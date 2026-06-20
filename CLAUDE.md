@@ -171,7 +171,7 @@ to `ha-lua/`.
 | `run.sh` | Add-on entrypoint: passes `$SUPERVISOR_TOKEN` + fixed WS URL, execs binary |
 | `build.yaml` | Multi-arch targets for HA builder |
 
-In production the binary reads **`/data/options.json`** (written by Supervisor). The HA config directory is mounted at **`/config`** (via the `homeassistant_config` map with a `path: /config` override, like the ESPHome add-on), so scripts live at **`/config/ha-lua/scripts/`** — the same path inside the container and on the host, next to `configuration.yaml`. SQLite DB is at **`/data/ha-lua.db`**.
+In production the binary reads **`/data/options.json`** (written by Supervisor). The HA config directory is mounted at **`/config`** (via the `homeassistant_config` map with a `path: /config` override, like the ESPHome add-on), so scripts live at **`/config/ha-lua/scripts/`** — the same path inside the container and on the host, next to `configuration.yaml`. The daemon log is mirrored to **`/config/ha-lua/logs/ha-lua.log`** (and stderr). SQLite DB is at **`/data/ha-lua.db`**.
 
 ---
 

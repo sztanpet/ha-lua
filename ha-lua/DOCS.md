@@ -23,6 +23,7 @@ automatically.
 |-------------------------|-------------------------------------------|
 | `/config/ha-lua/scripts/`     | Your `*.lua` scripts                |
 | `/config/ha-lua/scripts/lib/` | Shared modules loaded with `require`|
+| `/config/ha-lua/logs/`        | Daemon log (`ha-lua.log`) + script error logs |
 | `/data/ha-lua.db`             | persistent add-on data (survives updates) |
 
 The add-on mounts your Home Assistant **config directory** (the one the File
@@ -52,7 +53,7 @@ ha.on_state_change("binary_sensor.hallway_motion", function(data)
 end)
 
 -- Route any error in this script to a log file you can open in Studio Code.
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/hallway-errors.log"))
+ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/hallway-errors.log"))
 ```
 
 Save it. The add-on log shows the script loading, and the automation is live.
@@ -73,6 +74,12 @@ debug:
 ### Option: `log_level`
 
 Daemon log verbosity: `debug`, `info`, `warn`, or `error`. Default `info`.
+
+The daemon writes its log to the **Log** tab in the add-on UI *and* to
+`/config/ha-lua/logs/ha-lua.log`, so it survives restarts and you can open it
+in the File Editor or Studio Code. Script error handlers registered with
+`ha.exceptions.log_file(path)` are independent — point them wherever you like;
+`/config/ha-lua/logs/` keeps everything together.
 
 ### Option: `timezone`
 

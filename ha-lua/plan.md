@@ -411,7 +411,7 @@ Script KV data in SQLite persists across reloads automatically.
 
 ### Production (HA add-on)
 
-When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup — this is the **only** production config channel; `run.sh` passes no flags. Connection details are not options: the URL is always `ws://supervisor/core/websocket`, the token comes from `$SUPERVISOR_TOKEN`, scripts are at `/config/ha-lua/scripts`, and the DB is at `/data/ha-lua.db`.
+When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup — this is the **only** production config channel; `run.sh` passes no flags. Connection details are not options: the URL is always `ws://supervisor/core/websocket`, the token comes from `$SUPERVISOR_TOKEN`, scripts are at `/config/ha-lua/scripts`, the daemon log is mirrored to `/config/ha-lua/logs/ha-lua.log` (and stderr), and the DB is at `/data/ha-lua.db`.
 
 ### Development (`config.dev.yaml`)
 
@@ -425,6 +425,7 @@ homeassistant:
 scripts_dir: "./scripts"
 database: "./ha-lua.db"
 log_level: "info"
+log_dir: ""            # daemon log file dir; empty = stderr only; add-on mode forces /config/ha-lua/logs
 timezone: ""           # IANA name for ha.at, e.g. "Europe/Budapest"; empty = $TZ, else UTC
 
 state_history:

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/smtp"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -123,6 +124,14 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 			}
 
 			body := buildEmailBody(scriptID, timestamp, callback, errMsg, traceback, eventJSON)
+			// Create the parent dir so paths under e.g. /config/ha-lua/logs
+			// work on a fresh install before anything else has written there.
+			if dir := filepath.Dir(path); dir != "" && dir != "." {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					L.RaiseError("ha.exceptions.log_file: %v", err)
+					return 0
+				}
+			}
 			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				L.RaiseError("ha.exceptions.log_file: %v", err)
