@@ -27,9 +27,18 @@ Filesystem plugin COMPLETE (see fs-plugin-spec.md); CHANGELOG staged as
   dir and open a test root over it (openTestRoot helper).
 - HOT-RELOAD CAVEAT: the watcher only watches .lua; editing the .html alone
   does NOT reload. Documented in the script comment + DOCS.md.
+- require loader migrated onto the same os.Root (spec §8/§9.4, 2026-06-20):
+  installRestrictedRequire now opens `lib/<mod>.lua` via root.Open + L.Load and
+  dropped the lexical filepath.Abs + HasPrefix double-check that could not see
+  through symlinks. The cheap `..`/abs guard stays (keeps the "outside
+  scripts/lib" error contract); os.Root closes the symlink-escape gap at the
+  syscall layer. nil root → require errors "filesystem unavailable".
+  TestRequireRejectsSymlinkEscape is the regression guard (lib/evil → outside
+  dir; the old lexical check passed it, os.Root rejects it). Test helpers that
+  exercise require (newRequireState, newScheduleState, the heating_windows
+  Supervisor in scripts_test) now pass a real openTestRoot instead of nil.
 - Deferred (in spec §9, do not add without a real use case): write support;
-  a dedicated scripts/assets/ root; asset hot reload; migrating the restricted
-  `require` loader onto the same os.Root (would close its symlink-escape gap).
+  a dedicated scripts/assets/ root; asset hot reload.
 
 ## Thermostat UI — Milestones 2–7 (2026-06-17)
 - M2 Packaging (commit ee7667a): config.yaml gained ingress/ingress_port/

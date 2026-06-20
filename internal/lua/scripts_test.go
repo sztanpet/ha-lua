@@ -62,7 +62,7 @@ func newScheduleState(t *testing.T) *lua.LState {
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	L.SetContext(context.Background())
 	t.Cleanup(L.Close)
-	RegisterStdlib(L, repoScriptsDir, nil)
+	RegisterStdlib(L, repoScriptsDir, openTestRoot(t, repoScriptsDir))
 	return L
 }
 
@@ -191,6 +191,7 @@ func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
 		Tracker:     tracker,
 		Scheduler:   sched,
 		Global:      global,
+		Root:        openTestRoot(t, dir),
 		NewKV:       func(id string) *store.Store { return store.New(writeDB, readDB, id) },
 		CallService: cs,
 	})

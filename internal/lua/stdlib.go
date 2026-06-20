@@ -55,7 +55,7 @@ func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
 	}
 
 	// 3. Install restricted require
-	installRestrictedRequire(L, scriptsDir)
+	installRestrictedRequire(L, scriptsDir, root)
 
 	// 4. Register custom modules
 	registerMath(L)
@@ -68,7 +68,7 @@ func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
 	registerFS(L, root)
 }
 
-func installRestrictedRequire(L *lua.LState, scriptsDir string) {
+func installRestrictedRequire(L *lua.LState, scriptsDir string, root *os.Root) {
 	libDir := filepath.Join(scriptsDir, "lib")
 	loaded := make(map[string]lua.LValue)
 	loading := make(map[string]bool)
@@ -76,17 +76,15 @@ func installRestrictedRequire(L *lua.LState, scriptsDir string) {
 	L.SetGlobal("require", L.NewFunction(func(L *lua.LState) int {
 		modName := L.CheckString(1)
 		clean := filepath.Clean(modName)
+		// Cheap lexical guard: keep require's "lib/ only" contract and the
+		// stable error message tests assert on. os.Root below handles the
+		// rest (symlinks, races) at the syscall layer.
 		if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
 			L.RaiseError("require: path outside scripts/lib not allowed: %q", modName)
 			return 0
 		}
-		luaPath := filepath.Join(libDir, clean+".lua")
-		// Double-check the resolved path is still under libDir
-		absLib, _ := filepath.Abs(libDir)
-		absPath, _ := filepath.Abs(luaPath)
-		if !strings.HasPrefix(absPath, absLib+string(filepath.Separator)) &&
-			absPath != absLib {
-			L.RaiseError("require: path outside scripts/lib not allowed: %q", modName)
+		if root == nil {
+			L.RaiseError("require %q: filesystem unavailable", modName)
 			return 0
 		}
 
@@ -101,7 +99,18 @@ func installRestrictedRequire(L *lua.LState, scriptsDir string) {
 		loading[clean] = true
 		defer delete(loading, clean)
 
-		fn, err := L.LoadFile(luaPath)
+		// Resolve through the shared *os.Root: it confines the open to the
+		// scripts directory and rejects symlink escapes that the old lexical
+		// filepath.Abs + HasPrefix check could not see through. The path is
+		// relative to the root; the chunk name keeps the lib path for
+		// readable tracebacks.
+		file, err := root.Open(filepath.Join("lib", clean+".lua"))
+		if err != nil {
+			L.RaiseError("require %q: %v", modName, err)
+			return 0
+		}
+		fn, err := L.Load(file, filepath.Join(libDir, clean+".lua"))
+		_ = file.Close()
 		if err != nil {
 			L.RaiseError("require %q: %v", modName, err)
 			return 0

@@ -72,7 +72,7 @@ func newRequireState(t *testing.T, libs map[string]string) *lua.LState {
 	}
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	t.Cleanup(L.Close)
-	RegisterStdlib(L, dir, nil)
+	RegisterStdlib(L, dir, openTestRoot(t, dir))
 	return L
 }
 
@@ -123,6 +123,37 @@ func TestRequireOutsideLibFails(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "outside scripts/lib") {
 			t.Errorf("require(%q): want path error, got %v", path, err)
 		}
+	}
+}
+
+// TestRequireRejectsSymlinkEscape is the regression guard for the os.Root
+// migration. The old lexical filepath.Abs + HasPrefix check passed a path
+// whose name stayed under lib/ even when a symlink redirected it out of the
+// scripts tree; os.Root resolves the symlink at the syscall layer and refuses.
+func TestRequireRejectsSymlinkEscape(t *testing.T) {
+	scriptsDir := t.TempDir()
+	libDir := filepath.Join(scriptsDir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A real module sitting OUTSIDE the scripts tree.
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.lua"), []byte(`return { stolen = true }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// lib/evil -> the outside directory. require("evil/secret") is lexically
+	// inside lib/ but resolves outside the root.
+	if err := os.Symlink(outside, filepath.Join(libDir, "evil")); err != nil {
+		t.Skipf("symlinks unsupported: %v", err)
+	}
+
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	t.Cleanup(L.Close)
+	RegisterStdlib(L, scriptsDir, openTestRoot(t, scriptsDir))
+
+	err := L.DoString(`require("evil/secret")`)
+	if err == nil {
+		t.Fatal("require followed a symlink out of the scripts root")
 	}
 }
 

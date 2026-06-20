@@ -18,6 +18,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `thermostat.lua`. Editing an asset alone does not hot-reload (the watcher
   watches `.lua` files); re-save the `.lua` or restart to pick it up.
 
+### Security
+- `require` now resolves modules through the same `os.Root` as the `fs` module.
+  The previous lexical path check could be fooled by a symlink under
+  `scripts/lib/` pointing outside the scripts tree; `os.Root` rejects such
+  escapes at the syscall layer. No change to how scripts call `require`.
+
 ## 1.1.0
 
 ### Added

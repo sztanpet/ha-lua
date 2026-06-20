@@ -190,8 +190,22 @@ revisit if a multi-author scenario ever appears.
 ### 9.3 Asset hot reload — **default: NO (load-time read only)**
 Document the "re-save the `.lua`" workflow. Watcher extension deferred (§6.1).
 
-### 9.4 Migrate `require` onto `os.Root` — **deferred, separate commit**
-Not part of v1; the design keeps it cheap to do later (§8).
+### 9.4 Migrate `require` onto `os.Root` — **DONE (2026-06-20, commit e1f4438)**
+Shipped as Milestone 3 (§10). `installRestrictedRequire` now opens
+`lib/<mod>.lua` through the shared `*os.Root` (`root.Open` + `L.Load`) and the
+lexical `filepath.Abs` + `HasPrefix` double-check is gone — `os.Root` closes the
+symlink-escape gap §8 described. The cheap leading-`..`/abs guard stays in front
+to preserve the "lib/ only" contract and the `outside scripts/lib` error
+message.
+
+### 9.6 Convert the remaining trusted-path filesystem IO — **deferred, default LOW priority**
+Consistency, not security: the daemon still has filesystem-IO sites that use
+plain `os` calls on *trusted, non-Lua* paths. They are safe as-is (`os.Root`
+buys no containment for a path the user never supplies), but converting the ones
+that sit under the scripts root keeps a single rooted-IO story. Tracked as
+Milestone 4 (§10). The `log_file` write is blocked on §9.1 (write support);
+`config`/`watcher` are genuinely out of scope (their paths live outside the
+root).
 
 ### 9.5 Locked defaults
 Read-only; root = `scriptsDir`; error style `nil, errmsg`; read cap 8 MiB;
@@ -208,3 +222,27 @@ relative `/`-separated paths; one shared `*os.Root` for the process.
    tests travel with the code.)
 2. **Docs.** DOCS.md `fs` module section + the hot-reload caveat (§6.1);
    CHANGELOG entry. Update the API table.
+3. **Migrate `require` onto the shared `os.Root`.** *(DONE, 2026-06-20, commit
+   e1f4438.)* `installRestrictedRequire` opens `lib/<mod>.lua` via `root.Open` +
+   `L.Load`; dropped the lexical `filepath.Abs` + `HasPrefix` double-check that
+   could not see through symlinks. Cheap `..`/abs guard kept (preserves the
+   "lib/ only" contract + `outside scripts/lib` message). `nil` root → require
+   errors instead of panicking. `TestRequireRejectsSymlinkEscape` is the
+   regression guard — the existing require tests pass against the old lexical
+   code too, so this is the only test that proves the change. (§8, §9.4.)
+4. **Consistency sweep: remaining rooted filesystem IO.** *(Deferred, low
+   priority — §9.6. Do for a single, uniform rooted-IO story, not for security:
+   these paths are trusted and never user-supplied.)*
+   - `supervisor.LoadAll` — replace `os.ReadDir(s.scriptDir)` with
+     `fs.ReadDir(s.deps.Root.FS(), ".")` (or equivalent), so script enumeration
+     goes through the same root as `fs`/`require`. Guard the `nil`-root case
+     (fall back to `os.ReadDir`, or treat as "no scripts"). Pure refactor; the
+     existing supervisor load tests are the regression guard.
+   - `exceptions.log_file` — **blocked on §9.1.** This is a *write* to a
+     Lua-supplied path; routing it through `os.Root` both needs write support
+     (currently a locked NO) and would *restrict* the path to the scripts dir,
+     a behavior change. Revisit only when §9.1 is revisited.
+   - **Out of scope (not candidates):** `config.go` (`/data/options.json`) and
+     `watcher.go` (fsnotify absolute paths) operate *outside* the scripts root;
+     `os.Root` cannot express their paths and buys nothing. Recorded here so a
+     future pass does not re-investigate them.
