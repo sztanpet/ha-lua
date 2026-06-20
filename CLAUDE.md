@@ -44,38 +44,6 @@ deletes the orphaned row rather than silently dropping it.
 - Rebase to fix up mistakes; never push a "fix previous commit" to main.
 - Use `git rebase -i` to squash or reorder before a milestone is declared done.
 
----
-
-## Code search (semble)
-
-semble is already installed. Prefer it over grep/glob for any question about where something is defined or how a pattern is used.
-
-```bash
-# Natural-language or code query against the local repo (index built on first run, cached)
-semble search "websocket auth flow" .
-semble search "lua callback dispatch" .
-
-# Limit results
-semble search "sqlite upsert states" . --top-k 5
-
-# Search docs/comments only
-semble search "retention days config" . --content docs
-
-# Search config files only
-semble search "pprof addr" . --content config
-
-# Search everything (code + docs + config)
-semble search "on_exception handler" . --content all
-
-# Find code semantically similar to a specific file location
-semble find-related internal/scheduler/scheduler.go 42 .
-semble find-related internal/lua/api_ha.go 1 .
-```
-
-The index invalidates automatically when files change. Run `semble savings` to see how many tokens the cache has saved.
-
----
-
 ## Go package documentation (pkg.go.dev API)
 
 Use the pkg.go.dev REST API to look up package docs, available versions, symbols, and vulnerabilities without leaving the terminal. The API is at `https://pkg.go.dev/v1beta/`.
