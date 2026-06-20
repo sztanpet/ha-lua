@@ -96,18 +96,70 @@
 <div id="err"></div>
 <script>
 const PRESETS = [10, 30, 60];
+
+// UI strings keyed by locale. {name} placeholders are filled in by t().
+const MESSAGES = {
+  en: {
+    "title": "Heating",
+    "loading": "loading…",
+    "not_controlled": "mode {mode} — not controlled",
+    "boosting_to": "boosting to {temp}°",
+    "stop_boost": "cancel",
+    "preset_minutes": "{n}m",
+    "custom_minutes_title": "custom minutes",
+    "custom_minutes_prompt": "Boost for how many minutes?",
+    "boost_to": "boost to",
+    "no_schedule": "no schedule set",
+    "edit_schedule": "✎ schedule",
+    "add_entry": "+ add entry",
+    "save": "Save",
+    "cancel": "Cancel",
+    "load_schedule_failed": "Could not load schedule",
+    "http_error": "Error {status}: {msg}",
+    "mode.heat": "heat", "mode.off": "off", "mode.cool": "cool",
+    "mode.auto": "auto", "mode.idle": "idle", "mode.unknown": "unknown",
+    "day.weekdays": "Mon–Fri", "day.weekend": "Sat–Sun",
+    "day.0": "Monday", "day.1": "Tuesday", "day.2": "Wednesday",
+    "day.3": "Thursday", "day.4": "Friday", "day.5": "Saturday", "day.6": "Sunday",
+  },
+};
+
+// Resolve the locale once: ?lang= overrides and is remembered, otherwise the
+// stored choice, otherwise the browser language. Anything we can't serve
+// falls back to English.
+const LOCALE = (() => {
+  const param = new URLSearchParams(location.search).get("lang");
+  if (param) localStorage.setItem("lang", param);
+  const pref = (param || localStorage.getItem("lang") || navigator.language || "en").toLowerCase();
+  return MESSAGES[pref.slice(0, 2)] ? pref.slice(0, 2) : "en";
+})();
+
+function t(key, params, fallback) {
+  const table = MESSAGES[LOCALE] || MESSAGES.en;
+  let str = table[key];
+  if (str == null) str = MESSAGES.en[key];
+  if (str == null) str = (fallback != null ? fallback : key);
+  if (params) str = str.replace(/\{(\w+)\}/g, (whole, name) => params[name] != null ? params[name] : whole);
+  return str;
+}
+
+// hvac modes come straight from Home Assistant; show the raw value when we
+// have no translation for it.
+const modeLabel = (mode) => t("mode." + mode, null, mode);
+
 // Each editor entry targets one of these day groups; .days lists the
-// underlying 0=Mon..6=Sun indices the entry expands to on save.
+// underlying 0=Mon..6=Sun indices the entry expands to on save. Labels are
+// resolved through t() under the "day.<value>" keys.
 const DAY_GROUPS = [
-  { value: "weekdays", label: "Mon–Fri", days: [0, 1, 2, 3, 4] },
-  { value: "weekend",  label: "Sat–Sun", days: [5, 6] },
-  { value: "0", label: "Monday",    days: [0] },
-  { value: "1", label: "Tuesday",   days: [1] },
-  { value: "2", label: "Wednesday", days: [2] },
-  { value: "3", label: "Thursday",  days: [3] },
-  { value: "4", label: "Friday",    days: [4] },
-  { value: "5", label: "Saturday",  days: [5] },
-  { value: "6", label: "Sunday",    days: [6] },
+  { value: "weekdays", days: [0, 1, 2, 3, 4] },
+  { value: "weekend",  days: [5, 6] },
+  { value: "0", days: [0] },
+  { value: "1", days: [1] },
+  { value: "2", days: [2] },
+  { value: "3", days: [3] },
+  { value: "4", days: [4] },
+  { value: "5", days: [5] },
+  { value: "6", days: [6] },
 ];
 let editing = null;        // zone whose schedule editor is open (suppresses polling)
 let lastState = null;
@@ -127,7 +179,7 @@ async function send(path, method, payload) {
     method, headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!resp.ok) { showErr("Error " + resp.status + ": " + (await resp.text())); return null; }
+  if (!resp.ok) { showErr(t("http_error", { status: resp.status, msg: await resp.text() })); return null; }
   return resp.json();
 }
 
@@ -159,17 +211,18 @@ function zoneCard(zone, status) {
   const current = (status.current_temp != null) ? status.current_temp.toFixed(1) + "°" : "";
   card.appendChild($(
     '<div class="head"><span class="zone">' + esc(title(zone)) + '</span>' +
-    '<span class="status"><b>' + esc(status.mode) + '</b> ' + current + '</span></div>'
+    '<span class="status"><b>' + esc(modeLabel(status.mode)) + '</b> ' + current + '</span></div>'
   ));
 
   const controllable = status.mode === "heat";
   if (!controllable) {
-    card.appendChild($('<div class="muted">mode ' + esc(status.mode) + ' — not controlled</div>'));
+    card.appendChild($('<div class="muted">' + esc(t("not_controlled", { mode: modeLabel(status.mode) })) + '</div>'));
   } else if (status.boost && status.boost.active) {
     const ends = Date.now() + (status.boost.remaining_s || 0) * 1000;
     const row = $('<div class="boosting"><span class="cd" data-ends="' + ends + '">' +
-      fmtCountdown(status.boost.remaining_s || 0) + '</span><span>boosting to ' +
-      esc(status.comfort_temp) + '°</span><button>cancel</button></div>');
+      fmtCountdown(status.boost.remaining_s || 0) + '</span><span>' +
+      esc(t("boosting_to", { temp: status.comfort_temp })) + '</span><button>' +
+      esc(t("stop_boost")) + '</button></div>');
     row.querySelector("button").onclick = () =>
       send("api/boost/cancel", "POST", { zone: zone }).then(newState => newState && (lastState = newState, render(newState)));
     card.appendChild(row);
@@ -177,14 +230,15 @@ function zoneCard(zone, status) {
     const row = document.createElement("div");
     row.className = "boost-row";
     PRESETS.forEach(min => {
-      const btn = $('<button>' + min + 'm</button>');
+      const btn = $('<button>' + esc(t("preset_minutes", { n: min })) + '</button>');
       btn.onclick = () => send("api/boost", "POST", { zone: zone, minutes: min })
         .then(newState => newState && (lastState = newState, render(newState)));
       row.appendChild(btn);
     });
-    const custom = $('<button class="alt" title="custom minutes">⌨</button>');
+    const custom = $('<button class="alt">⌨</button>');
+    custom.title = t("custom_minutes_title");
     custom.onclick = () => {
-      const minutesInput = prompt("Boost for how many minutes?", "45");
+      const minutesInput = prompt(t("custom_minutes_prompt"), "45");
       const mins = parseInt(minutesInput, 10);
       if (mins > 0) send("api/boost", "POST", { zone: zone, minutes: mins })
         .then(newState => newState && (lastState = newState, render(newState)));
@@ -196,7 +250,7 @@ function zoneCard(zone, status) {
   if (controllable) {
     const step = document.createElement("div");
     step.className = "stepper";
-    step.appendChild($('<span class="lbl">boost to</span>'));
+    step.appendChild($('<span class="lbl">' + esc(t("boost_to")) + '</span>'));
     const minus = $('<button>−</button>'), plus = $('<button>+</button>');
     const val = $('<span class="val">' + esc(status.comfort_temp) + '°</span>');
     const setComfort = (delta) => {
@@ -218,10 +272,10 @@ function zoneCard(zone, status) {
     ).join("");
     card.appendChild($('<div class="today">' + strip + '</div>'));
   } else {
-    card.appendChild($('<div class="today">no schedule set</div>'));
+    card.appendChild($('<div class="today">' + esc(t("no_schedule")) + '</div>'));
   }
 
-  const edit = $('<span class="editlink">✎ schedule</span>');
+  const edit = $('<span class="editlink">' + esc(t("edit_schedule")) + '</span>');
   edit.onclick = () => openEditor(zone, card);
   card.appendChild(edit);
   return card;
@@ -238,7 +292,7 @@ function normalizeDays(days) {
 
 async function openEditor(zone, card) {
   const resp = await fetch("./api/schedule?zone=" + encodeURIComponent(zone));
-  if (!resp.ok) { showErr("Could not load schedule"); return; }
+  if (!resp.ok) { showErr(t("load_schedule_failed")); return; }
   const data = await resp.json();
   editing = zone;
   renderEditor(zone, entriesFromDays(normalizeDays(data.days)), card);
@@ -298,14 +352,14 @@ function renderEditor(zone, entries, card) {
 
   entries.forEach((entry, i) => ed.appendChild(entryRow(entries, i, zone, card)));
 
-  const add = $('<button class="add">+ add entry</button>');
+  const add = $('<button class="add">' + esc(t("add_entry")) + '</button>');
   add.onclick = () => { entries.push({ group: "weekdays", time: "07:00", temp: 21 }); renderEditor(zone, entries, card); };
   ed.appendChild(add);
 
   const actions = document.createElement("div");
   actions.className = "editor-actions";
-  const save = $('<button class="save">Save</button>');
-  const cancel = $('<button class="cancel">Cancel</button>');
+  const save = $('<button class="save">' + esc(t("save")) + '</button>');
+  const cancel = $('<button class="cancel">' + esc(t("cancel")) + '</button>');
   save.onclick = async () => {
     const newState = await send("api/schedule", "PUT", { zone: zone, days: daysFromEntries(entries) });
     if (newState) { editing = null; lastState = newState; render(newState); }
@@ -324,7 +378,7 @@ function entryRow(entries, i, zone, card) {
   DAY_GROUPS.forEach(group => {
     const option = document.createElement("option");
     option.value = group.value;
-    option.textContent = group.label;
+    option.textContent = t("day." + group.value);
     if (group.value === entry.group) option.selected = true;
     daySelect.appendChild(option);
   });
@@ -345,6 +399,14 @@ setInterval(() => {
     el.textContent = fmtCountdown((Number(el.dataset.ends) - Date.now()) / 1000);
   });
 }, 1000);
+
+// Localize the static document chrome that ships in the HTML before the
+// first poll replaces #app.
+document.documentElement.lang = LOCALE;
+document.title = t("title");
+document.querySelector("h1").textContent = t("title");
+const placeholder = document.querySelector("#app .today");
+if (placeholder) placeholder.textContent = t("loading");
 
 poll();
 setInterval(poll, 5000);
