@@ -256,6 +256,7 @@ func TestThermostatAPI(t *testing.T) {
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -366,6 +367,7 @@ func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore,
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "zones.lua"), filepath.Join(libDir, "zones.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
