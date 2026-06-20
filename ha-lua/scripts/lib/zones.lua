@@ -14,7 +14,7 @@ M.frost_temp = 15
 
 -- Seed value (°C) for a zone's comfort/boost temperature, used the first time
 -- before the user touches that zone's stepper in the UI.
-M.default_comfort = 21
+M.default_comfort = 23
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
 M.zones = {
