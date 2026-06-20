@@ -55,8 +55,11 @@
            color:var(--muted); margin-bottom:8px; }
   .today .step.now { color:var(--accent); font-weight:700; }
   .muted { color:var(--muted); font-style:italic; margin-bottom:8px; }
-  .editlink { display:block; text-align:right; font-size:.9rem; color:var(--link);
-              cursor:pointer; user-select:none; }
+  .edit-btn { display:flex; align-items:center; justify-content:center; gap:8px;
+              width:100%; margin-top:4px; padding:11px; font-size:.95rem; font-weight:600;
+              border:1px solid var(--line); border-radius:10px; user-select:none;
+              background:var(--btn); color:var(--btn-ink); cursor:pointer; }
+  .edit-btn .ico { font-size:1.15rem; line-height:1; }
   .editor { border-top:1px solid var(--line); margin-top:12px; padding-top:12px; }
   .row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
   .row select { padding:8px; border:1px solid var(--line); border-radius:8px;
@@ -110,7 +113,7 @@ const MESSAGES = {
     "custom_minutes_prompt": "Boost for how many minutes?",
     "boost_to": "boost to",
     "no_schedule": "no schedule set",
-    "edit_schedule": "✎ schedule",
+    "edit_schedule": "Edit schedule",
     "add_entry": "+ add entry",
     "save": "Save",
     "cancel": "Cancel",
@@ -133,7 +136,7 @@ const MESSAGES = {
     "custom_minutes_prompt": "Hány percig segítsen rá?",
     "boost_to": "rásegítés",
     "no_schedule": "nincs beállított ütemezés",
-    "edit_schedule": "✎ ütemezés",
+    "edit_schedule": "Ütemezés szerkesztése",
     "add_entry": "+ új bejegyzés",
     "save": "Mentés",
     "cancel": "Mégse",
@@ -298,7 +301,8 @@ function zoneCard(zone, status) {
     card.appendChild($('<div class="today">' + esc(t("no_schedule")) + '</div>'));
   }
 
-  const edit = $('<span class="editlink">' + esc(t("edit_schedule")) + '</span>');
+  const edit = $('<button class="edit-btn"><span class="ico" aria-hidden="true">✎</span><span>' +
+    esc(t("edit_schedule")) + '</span></button>');
   edit.onclick = () => openEditor(zone, card);
   card.appendChild(edit);
   return card;
