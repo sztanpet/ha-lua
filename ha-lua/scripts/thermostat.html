@@ -269,7 +269,7 @@ function zoneCard(zone, status) {
         .then(newState => newState && (lastState = newState, render(newState)));
       row.appendChild(btn);
     });
-    const custom = $('<button class="alt">⌨</button>');
+    const custom = $('<button class="alt">⏱️</button>');
     custom.title = t("custom_minutes_title");
     custom.onclick = () => {
       const minutesInput = prompt(t("custom_minutes_prompt"), "45");
