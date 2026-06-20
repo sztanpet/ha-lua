@@ -5,14 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Heating</title>
 <style>
+  /* Neutrals share one hue (262); the ramp is pure lightness steps. The
+     accent is the only standalone chromatic anchor, and --now is derived
+     from it so the highlight tint tracks the accent's hue automatically. */
   :root { color-scheme: light dark;
-          --bg:#f4f5f7; --card:#fff; --ink:#1c1e21; --muted:#76787d;
-          --accent:#e8543f; --accent-ink:#fff; --line:#e3e5e8; --now:#fff1ee;
-          --btn:#f0f1f3; --btn-ink:#1c1e21; --surface:#fff; --link:#2b6cff; }
+          --bg:oklch(0.970 0.003 262); --card:oklch(1 0 0);
+          --ink:oklch(0.234 0.007 262); --muted:oklch(0.573 0.008 262);
+          --accent:oklch(0.642 0.187 31); --accent-ink:oklch(1 0 0);
+          --line:oklch(0.921 0.005 262); --btn:oklch(0.958 0.003 262);
+          --link:oklch(0.581 0.229 263);
+          --now:oklch(from var(--accent) 0.968 0.016 h);
+          --btn-ink:var(--ink); --surface:var(--card); }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#15171a; --card:#212429; --ink:#e6e7e9; --muted:#9a9da3;
-            --accent:#e8543f; --accent-ink:#fff; --line:#34373d; --now:#3a2723;
-            --btn:#2c2f35; --btn-ink:#e6e7e9; --surface:#2c2f35; --link:#6ea8ff; }
+    :root { --bg:oklch(0.204 0.007 262); --card:oklch(0.259 0.010 262);
+            --ink:oklch(0.928 0.003 262); --muted:oklch(0.695 0.009 262);
+            --line:oklch(0.336 0.011 262); --btn:oklch(0.305 0.012 262);
+            --link:oklch(0.729 0.141 258);
+            --now:oklch(from var(--accent) 0.294 0.030 h);
+            --surface:var(--btn); }
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
