@@ -124,6 +124,7 @@ const MESSAGES = {
     "http_error": "Error {status}: {msg}",
     "mode.heat": "heat", "mode.off": "off", "mode.cool": "cool",
     "mode.auto": "auto", "mode.idle": "idle", "mode.unknown": "unknown",
+    "daygroup.combined": "Day groups", "daygroup.individual": "Single days",
     "day.weekdays": "Mon–Fri", "day.weekend": "Sat–Sun",
     "day.0": "Monday", "day.1": "Tuesday", "day.2": "Wednesday",
     "day.3": "Thursday", "day.4": "Friday", "day.5": "Saturday", "day.6": "Sunday",
@@ -147,6 +148,7 @@ const MESSAGES = {
     "http_error": "Hiba {status}: {msg}",
     "mode.heat": "fűtés", "mode.off": "off", "mode.cool": "hűtés",
     "mode.auto": "automatikus", "mode.idle": "tétlen", "mode.unknown": "ismeretlen",
+    "daygroup.combined": "Napcsoportok", "daygroup.individual": "Egyes napok",
     "day.weekdays": "Hétköznap", "day.weekend": "Hétvége",
     "day.0": "Hétfő", "day.1": "Kedd", "day.2": "Szerda",
     "day.3": "Csütörtök", "day.4": "Péntek", "day.5": "Szombat", "day.6": "Vasárnap",
@@ -421,12 +423,22 @@ function entryRow(entries, i, zone, card) {
   const row = document.createElement("div");
   row.className = "row";
   const daySelect = document.createElement("select");
-  DAY_GROUPS.forEach(group => {
-    const option = document.createElement("option");
-    option.value = group.value;
-    option.textContent = t("day." + group.value);
-    if (group.value === entry.group) option.selected = true;
-    daySelect.appendChild(option);
+  // Multi-day groups (Mon–Fri, Sat–Sun) and individual days go in separate
+  // optgroups so the two kinds of choice read as distinct.
+  [
+    { label: t("daygroup.combined"), items: DAY_GROUPS.filter(group => group.days.length > 1) },
+    { label: t("daygroup.individual"), items: DAY_GROUPS.filter(group => group.days.length === 1) },
+  ].forEach(section => {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = section.label;
+    section.items.forEach(group => {
+      const option = document.createElement("option");
+      option.value = group.value;
+      option.textContent = t("day." + group.value);
+      if (group.value === entry.group) option.selected = true;
+      optgroup.appendChild(option);
+    });
+    daySelect.appendChild(optgroup);
   });
   daySelect.onchange = () => { entry.group = daySelect.value; };
   const time = $('<input type="time" value="' + esc(entry.time) + '">');
