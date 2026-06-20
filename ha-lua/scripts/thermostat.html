@@ -335,7 +335,10 @@ function zoneCard(zone, status) {
 
   const edit = $('<button class="edit-btn"><span class="ico" aria-hidden="true">✏️</span><span>' +
     esc(t("edit_schedule")) + '</span></button>');
-  edit.onclick = () => openEditor(zone, card);
+  edit.onclick = () => {
+    if (editing.has(zone)) closeEditor(zone, card, lastState);
+    else openEditor(zone, card);
+  };
   card.appendChild(edit);
   return card;
 }
