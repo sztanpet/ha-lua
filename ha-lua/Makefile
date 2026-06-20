@@ -69,12 +69,12 @@ update-deps:
 	go mod tidy
 	@echo "Dependencies updated. Review 'git diff go.mod' and run 'make check'."
 
-# Cut a release: bump the config.yaml version, commit it, and create the
-# annotated vX.Y.Z tag. Pushing the tag (which is what triggers the GHCR
-# build in .github/workflows/release.yml) is left to you on purpose:
+# Cut a release: bump the config.yaml version, commit it, create the
+# annotated vX.Y.Z tag, and — after a 10-second abort window — push the
+# tag to every configured remote (which triggers the GHCR build in
+# .github/workflows/release.yml):
 #
 #   make release VERSION=1.2.0
-#   git push --follow-tags
 #
 # Update CHANGELOG.md with the new version's section before running this.
 release:
@@ -88,8 +88,12 @@ release:
 	git add config.yaml
 	git commit -m "release: v$(VERSION)"
 	git tag -a "v$(VERSION)" -m "v$(VERSION)"
-	@echo "Tagged v$(VERSION). Push it to trigger the GHCR build:"
-	@echo "    git push --follow-tags"
+	@echo "Tagged v$(VERSION). Pushing to all remotes in 10s — Ctrl-C to abort."
+	@for sec in 10 9 8 7 6 5 4 3 2 1; do printf '\r  pushing in %2ds... ' $$sec; sleep 1; done; echo
+	@for remote in $$(git remote); do \
+		echo "==> git push --follow-tags $$remote"; \
+		git push --follow-tags "$$remote" || exit 1; \
+	done
 
 profile-cpu:
 	go tool pprof -http=:8080 "http://localhost:6060/debug/pprof/profile?seconds=30"
