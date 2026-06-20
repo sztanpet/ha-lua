@@ -47,6 +47,7 @@ ha.on_exception(ha.exceptions.log_file("/addon_config/hallway-errors.log"))
 | `ha.get_history(entity_id, since, limit)` | State history from the local mirror |
 | `ha.call_service(domain, service, data)` | Call any HA service |
 | `ha.fire_event(type, data)` | Fire a custom HA event |
+| `ha.serve(method, prefix, fn)` | Serve an HTTP route from a script for a web UI; handler runs on the script's goroutine (pcall'd, 503 on timeout), reachable via an ingress panel and a LAN port |
 | `ha.every(spec, fn)` / `ha.at(time, fn)` / `ha.after(delay, fn)` | Recurring, daily, and one-shot timers (SQLite-persisted, fire-once catch-up after restart) |
 | `ha.log(level, msg)` | Log through the daemon's logger |
 | `ha.on_exception(handler)` | Script-level error handler; gets `{script_id, error, traceback, callback, event, timestamp}` |
@@ -55,10 +56,11 @@ ha.on_exception(ha.exceptions.log_file("/addon_config/hallway-errors.log"))
 | `store.state(defaults)` | Proxy table — reads cached, writes auto-persist |
 | `global.get/set/delete/get_all` | KV shared across all scripts |
 | `require "mod"` | Restricted to `scripts/lib/` only, with module caching and cycle detection |
+| `fs.read/exists/list/stat` | Read-only access to files in the scripts dir (`os.Root`-sandboxed against `..`/symlink escapes); e.g. loading a UI's HTML |
 
 Sandboxed stdlib modules are available too: `strings`, `time`, `json`, `re`
-(cached regex), `http`, `crypto`, plus an augmented `math` (`round`, `clamp`,
-`log2`, `sign`). See `plan.md` for the full design.
+(cached regex), `http`, `crypto`, `fs`, plus an augmented `math` (`round`,
+`clamp`, `log2`, `sign`). See `plan.md` for the full design.
 
 ## Architecture
 
