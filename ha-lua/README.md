@@ -134,9 +134,10 @@ must say so.
 
 ## Development
 
-Requires Go (see `go.mod` for the version), plus `staticcheck` and
-`golangci-lint` for `make check` (golangci-lint must be installed as a
-release binary, not via `go install`).
+Requires Go (see `go.mod` for the version). The analyzers used by
+`make check` — `staticcheck`, `benchstat`, and `golangci-lint` — are pinned
+as `tool` dependencies in `go.mod`, so `go tool` builds them on demand; there
+is nothing extra to install.
 
 ```sh
 git clone https://github.com/sztanpet/ha-lua
@@ -145,6 +146,9 @@ make hooks    # install the pre-commit hook (gofmt + vet + staticcheck + lint)
 make build    # compile to ./ha-lua
 make check    # vet + staticcheck + lint + race tests — the CI gate
 ```
+
+From a fresh checkout, `make install` (at the repo root) runs `install-tools`
+(pre-fetches the tool sources via `go mod download`) and `hooks` in one step.
 
 Run it outside Home Assistant with a YAML config:
 

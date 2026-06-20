@@ -84,8 +84,7 @@ ha-lua/
 │   ├── baseline.txt          # committed; updated with `make bench-update`
 │   └── .gitignore            # ignores current.txt
 ├── scripts/                  # user Lua scripts, edited via Studio Code Server
-├── tools.go                  # //go:build tools — pins staticcheck + golangci-lint
-├── Makefile
+├── Makefile                  # analyzers pinned via go.mod `tool` directives
 ├── .golangci.yml
 ├── config.yaml               # HA add-on manifest (options schema, arch, maps)
 ├── config.dev.yaml           # standalone config for development outside HA
@@ -459,36 +458,42 @@ Do **not** build the cutoff with `datetime('now', '-N days')` in SQL. SQLite ren
 
 ## Go Tooling
 
-### `tools.go`
+### Tool dependencies (`tool` directive)
 
-Pins pure-Go tool versions in `go.sum` via the `//go:build tools` pattern:
+All three analyzers are pinned as `tool` dependencies in `go.mod` (the Go 1.24+
+idiom; the older `//go:build tools` `tools.go` file is gone). Add them with
+`go get -tool`:
 
-```go
-//go:build tools
+```bash
+go get -tool honnef.co/go/tools/cmd/staticcheck
+go get -tool golang.org/x/perf/cmd/benchstat
+go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+```
 
-package tools
+which records:
 
-import (
-    _ "honnef.co/go/tools/cmd/staticcheck"
-    _ "golang.org/x/perf/cmd/benchstat"
+```
+tool (
+    github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+    golang.org/x/perf/cmd/benchstat
+    honnef.co/go/tools/cmd/staticcheck
 )
 ```
 
-`golangci-lint` is **not** pinned here. Not because of C dependencies — it is pure Go — but because upstream explicitly does not support `go install`/source builds: version metadata is baked in at release time, and source builds produce mismatched-version warnings and unreproducible analyzer behavior. Install the official release binary:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
-    | sh -s -- -b $(go env GOPATH)/bin v2.6.0   # pin the current v2 release
-```
-
-In CI use the official `golangci/golangci-lint-action` GitHub Action, which caches the binary for the correct platform automatically. Pin the same version in both places.
+`go tool <name>` builds and runs each at its pinned version, so there is
+nothing to install into a bin directory and no version-skew between local and
+CI runs. `golangci-lint` is included despite its history of discouraging
+source builds: as a tool dependency it is built from the exact pinned module,
+not an arbitrary `go install` of latest, so the mismatched-version concern does
+not apply. Root `make install-tools` only runs `go mod download` to pre-fetch
+sources; `make update-deps` bumps the tools via the `go get -u tool`
+meta-pattern.
 
 ### `Makefile`
 
 ```makefile
 BIN     := ha-lua
 GOFLAGS := -trimpath -ldflags="-s -w"
-GOPATH  := $(shell go env GOPATH)
 
 BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
@@ -510,7 +515,7 @@ bench:
 # Show benchmark delta vs committed baseline (informational, does not fail the build)
 bench-compare: bench
 	@if [ -f $(BENCH_BASELINE) ]; then \
-	    benchstat $(BENCH_BASELINE) $(BENCH_CURRENT); \
+	    go tool benchstat $(BENCH_BASELINE) $(BENCH_CURRENT); \
 	else \
 	    echo "WARN: no benchmark baseline; run 'make bench-update' to create one."; \
 	fi
@@ -523,10 +528,10 @@ vet:
 	go vet ./...
 
 staticcheck:
-	$(GOPATH)/bin/staticcheck ./...
+	go tool staticcheck ./...
 
 lint:
-	$(GOPATH)/bin/golangci-lint run
+	go tool golangci-lint run
 
 fmt:
 	gofmt -l -w .

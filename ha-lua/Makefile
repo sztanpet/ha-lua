@@ -1,6 +1,5 @@
 BIN     := ha-lua
 GOFLAGS := -trimpath -ldflags="-s -w"
-GOPATH  := $(shell go env GOPATH)
 
 BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
@@ -31,7 +30,7 @@ bench:
 
 bench-compare: bench
 	@if [ -f $(BENCH_BASELINE) ]; then \
-	    $(GOPATH)/bin/benchstat $(BENCH_BASELINE) $(BENCH_CURRENT); \
+	    go tool benchstat $(BENCH_BASELINE) $(BENCH_CURRENT); \
 	else \
 	    echo "WARN: no benchmark baseline; run 'make bench-update' to create one."; \
 	fi
@@ -43,10 +42,10 @@ vet:
 	go vet ./...
 
 staticcheck:
-	$(GOPATH)/bin/staticcheck ./...
+	go tool staticcheck ./...
 
 lint:
-	$(GOPATH)/bin/golangci-lint run
+	go tool golangci-lint run
 
 fmt:
 	gofmt -l -w .
@@ -60,12 +59,13 @@ hooks:
 tidy:
 	go mod tidy
 
-# Update all Go dependencies (including test and tool deps), then tidy.
-# Review the go.mod diff and run 'make check' before committing.
-# golangci-lint is NOT managed here — it is installed as a release binary,
-# never via go install (see AI.state).
+# Update all Go dependencies, then tidy. The analyzers (staticcheck,
+# benchstat, golangci-lint) are tool dependencies, so the `tool` meta-pattern
+# bumps them too. Review the go.mod diff and run 'make check' before
+# committing.
 update-deps:
 	go get -u -t ./...
+	go get -u tool
 	go mod tidy
 	@echo "Dependencies updated. Review 'git diff go.mod' and run 'make check'."
 

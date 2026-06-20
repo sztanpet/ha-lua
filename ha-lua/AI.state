@@ -329,14 +329,15 @@ websocket lib is github.com/coder/websocket.
 - **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited
 - **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC
 - **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
-- **golangci-lint**: v2.12.2 (config format version "2"); installed via release binary / official action, never go install; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow, fsnotify Watcher.Close) — configure the tool, don't litter the code with `_ =`
+- **golangci-lint**: v2.12.2 (config format version "2"); a `tool` dependency in go.mod alongside staticcheck and benchstat — run via `go tool golangci-lint run`, never go install or a release binary (the old install.sh checksum concern is moot — no script is involved); errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow, fsnotify Watcher.Close) — configure the tool, don't litter the code with `_ =`
+- **Tool dependencies**: staticcheck, benchstat, golangci-lint are `tool` directives in go.mod (Go 1.24+ idiom; tools.go removed). `make` targets call them as `go tool <name>`. Root `make install-tools` only runs `go mod download`; nothing lands in a bin dir
 - **SQLite DSN**: modernc.org/sqlite pragmas use `_pragma=name(value)` — mattn-style params are silently ignored; any new DB open site must use the modernc form (TestOpenDBEnablesWAL is the canary)
 - **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
 - **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie)
 - **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect
 - **Lua VM stays gopher-lua**: arnodel/golua (Lua 5.4/5.5) evaluated 2026-06-13 and rejected — v0.x single-maintainer vs battle-tested v1.x; CPS binding API is more verbose than LState stack API across ~30 bindings; M6 stop semantics depend on SetContext; 5.3+ integers would split the number type through the whole JSON layer. Reasons documented in README. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real script-author problem
 - **No vendoring**: vendor/ measures 241MB (226MB = modernc.org); go.sum + module proxy pin and preserve everything; `go mod vendor` is one command away if hermetic offline builds are ever needed
-- **Dependency updates**: `make update-deps` (go get -u -t ./... + tidy); golangci-lint excluded — release binary only
+- **Dependency updates**: `make update-deps` (go get -u -t ./... + go get -u tool + tidy); analyzers update via the tool meta-pattern
 
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables
