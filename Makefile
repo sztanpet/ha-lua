@@ -6,10 +6,17 @@ BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt
 BENCH_FLAGS    := -run='^$$' -bench=. -benchmem -count=5
 
-.PHONY: build run test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps release
+.PHONY: build run test bench bench-update bench-compare vet staticcheck lint check tidy fmt hooks profile-cpu trace update-deps release push
 
 build:
 	go build $(GOFLAGS) -o $(BIN) ./cmd/ha-lua
+
+# Push the current branch to every configured remote.
+push:
+	@for remote in $$(git remote); do \
+	    echo "==> pushing to $$remote"; \
+	    git push $$remote HEAD || exit $$?; \
+	done
 
 # Run the daemon in development mode against the standalone dev config
 # (config.dev.yaml), outside Home Assistant. Ctrl-C to stop.
