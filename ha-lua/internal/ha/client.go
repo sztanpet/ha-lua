@@ -16,6 +16,11 @@ import (
 	"github.com/go-json-experiment/json"
 )
 
+// readLimit caps the size of a single inbound WebSocket message. get_states
+// returns every entity's full state in one frame, which on a large install
+// runs to several megabytes — far past coder/websocket's 32 KiB default.
+const readLimit = 64 << 20 // 64 MiB
+
 // Client connects to the HA WebSocket API. It handles auth, seeding, and
 // subscription management. Consumers receive events on the Events channel.
 type Client struct {
@@ -139,6 +144,12 @@ func (c *Client) connect(ctx context.Context) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.CloseNow()
+
+	// coder/websocket caps reads at 32 KiB by default. A full get_states
+	// snapshot from a real HA install dwarfs that, so raise the limit.
+	// The connection is to a trusted local Supervisor, so a generous cap
+	// is fine; it only guards against a runaway message.
+	conn.SetReadLimit(readLimit)
 
 	if err := c.auth(ctx, conn); err != nil {
 		return fmt.Errorf("auth: %w", err)
