@@ -23,7 +23,16 @@ ports:
 ports_description:
   "8100/tcp": "Script-driven UI (e.g. thermostat). Unauthenticated — keep on the LAN only."
 map:
-  - addon_config:rw            # /config inside container = /addon_configs/local_ha-lua on host
+  # Mount the Home Assistant config directory (the one the File Editor and
+  # Samba expose as "config") at /config inside the container, so scripts
+  # live in the user's main config tree under ha-lua/ — the same place the
+  # ESPHome add-on keeps its YAML. The modern homeassistant_config type
+  # defaults to /homeassistant; the path override pins it back to /config.
+  # (addon_config would instead bind a private /addon_configs/<slug> folder
+  # that users cannot easily find or edit.)
+  - type: homeassistant_config
+    read_only: false
+    path: /config
 options:
   log_level: "info"
   timezone: ""

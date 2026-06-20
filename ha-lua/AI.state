@@ -121,7 +121,8 @@ None — milestones 1–7 complete.
 
 ## Milestone 12 — Add-on packaging (2026-06-15)
 - config.yaml: HA add-on manifest (slug ha-lua, arch aarch64/amd64,
-  homeassistant_api, addon_config:rw map, options + schema). Options/schema
+  homeassistant_api, homeassistant_config map with path:/config override,
+  options + schema). Options/schema
   deliberately omit url/token/scripts_dir/database — add-on mode forces those.
 - config.dev.yaml: standalone dev config; the ONE file that must carry
   homeassistant.url + token (dev mode reads them straight from YAML; only
@@ -312,7 +313,7 @@ websocket lib is github.com/coder/websocket.
 - **ha.after persistence**: best-effort — survives restart only if called at load time; callback-registered timers are dropped and logged on restart
 - **Catch-up semantics**: fire at most once per missed timer (not replay all missed intervals)
 - **Scheduler coupling**: scheduler sends TimerFiredEvent via onFire callback → script channel; scheduler does not hold *lua.LFunction references
-- **HA add-on**: repo root = add-on directory; supervisor injects SUPERVISOR_TOKEN + ws://supervisor/core/websocket; scripts at /addon_config/scripts/; DB at /data/ha-lua.db; user options from /data/options.json
+- **HA add-on**: repo root = add-on directory; supervisor injects SUPERVISOR_TOKEN + ws://supervisor/core/websocket; scripts at /config/ha-lua/scripts/ (HA config dir mounted at /config via homeassistant_config + path:/config, like ESPHome — NOT addon_config, which hides files in a private /addon_configs/<slug> folder); DB at /data/ha-lua.db; user options from /data/options.json
 - **Config**: production reads /data/options.json; development uses --config flag pointing to config.dev.yaml
 - **Lua sandbox**: SkipOpenLibs=true; open base/math/string/table/os/coroutine selectively; nil out load/loadfile/dofile/io/debug/package/os.execute/os.exit; replace require with restricted loader (scripts/lib/ only)
 - **Error handling**: every callback dispatch wrapped in pcall; on error build exception info table {script_id, error, traceback, callback, event, timestamp} and call registered on_exception handler; slog.Error fallback if no handler; ha.exceptions.email uses net/smtp, ha.exceptions.log_file uses os.OpenFile append
@@ -350,6 +351,6 @@ websocket lib is github.com/coder/websocket.
 ## User preferences observed
 - Studio Code Server is the editor; scripts live at /config/ha-lua/scripts/
 - Pure Go only — modernc.org/sqlite (no CGO), gopher-lua (no CGO)
-- Deployment target: HA add-on (single static binary + /data + /addon_config volumes)
+- Deployment target: HA add-on (single static binary + /data + HA config dir mounted at /config)
 - Prefers planning to be done before any code is written
 - Wants code written in the persona of Linus Torvalds; avoid needless complexity
