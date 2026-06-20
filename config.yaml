@@ -1,6 +1,6 @@
 name: "HA Lua"
 description: "Lua scripting engine for Home Assistant"
-version: "1.1.0"
+version: "1.2.1"
 slug: "ha-lua"
 init: false
 arch:
