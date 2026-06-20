@@ -129,7 +129,7 @@ const MESSAGES = {
     "mode.heat": "heat", "mode.off": "off", "mode.cool": "cool",
     "mode.auto": "auto", "mode.idle": "idle", "mode.unknown": "unknown",
     "daygroup.combined": "Day groups", "daygroup.individual": "Single days",
-    "day.weekdays": "Mon–Fri", "day.weekend": "Sat–Sun",
+    "day.everyday": "Every day", "day.weekdays": "Mon–Fri", "day.weekend": "Sat–Sun",
     "day.0": "Monday", "day.1": "Tuesday", "day.2": "Wednesday",
     "day.3": "Thursday", "day.4": "Friday", "day.5": "Saturday", "day.6": "Sunday",
   },
@@ -153,7 +153,7 @@ const MESSAGES = {
     "mode.heat": "fűtés", "mode.off": "off", "mode.cool": "hűtés",
     "mode.auto": "automatikus", "mode.idle": "tétlen", "mode.unknown": "ismeretlen",
     "daygroup.combined": "Napcsoportok", "daygroup.individual": "Egyes napok",
-    "day.weekdays": "Hétköznap", "day.weekend": "Hétvége",
+    "day.everyday": "Minden nap", "day.weekdays": "Hétköznap", "day.weekend": "Hétvége",
     "day.0": "Hétfő", "day.1": "Kedd", "day.2": "Szerda",
     "day.3": "Csütörtök", "day.4": "Péntek", "day.5": "Szombat", "day.6": "Vasárnap",
   },
@@ -189,6 +189,7 @@ const modeLabel = (mode) => t("mode." + mode, null, mode);
 // underlying 0=Mon..6=Sun indices the entry expands to on save. Labels are
 // resolved through t() under the "day.<value>" keys.
 const DAY_GROUPS = [
+  { value: "everyday", days: [0, 1, 2, 3, 4, 5, 6] },
   { value: "weekdays", days: [0, 1, 2, 3, 4] },
   { value: "weekend",  days: [5, 6] },
   { value: "0", days: [0] },
@@ -424,6 +425,10 @@ function entriesFromDays(days) {
   order.forEach(key => {
     const { time, temp, presentDays } = byTransition.get(key);
     const remaining = new Set(presentDays);
+    if ([0, 1, 2, 3, 4, 5, 6].every(d => remaining.has(d))) {
+      entries.push({ group: "everyday", time, temp });
+      remaining.clear();
+    }
     if ([0, 1, 2, 3, 4].every(d => remaining.has(d))) {
       entries.push({ group: "weekdays", time, temp });
       [0, 1, 2, 3, 4].forEach(d => remaining.delete(d));
