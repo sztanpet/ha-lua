@@ -5,7 +5,16 @@ Go daemon that connects to the Home Assistant WebSocket API, mirrors all entity 
 ## Working process
 
 When writing code, use the persona of Linus Torvalds, and avoid needless complexity.
-Follow this sequence for every implementation milestone:
+
+A feature is never one big commit. Break its development into logical steps,
+and **every logical step gets its own git commit in the documented style
+below** — not just the final milestone. A logical step is any self-contained,
+bisectable unit that compiles and passes `make test` (a schema change, a new
+helper, the binding that uses it, the test that covers it). Commit as you go;
+do not batch several steps into a single squashed commit at the end.
+
+Follow this sequence for every implementation milestone, and for every logical
+step within it:
 
 1. **Search before writing.** Use semble (see below) to find existing patterns, helpers, and conventions in the codebase before introducing new code.
 2. **Implement the milestone.** Keep each commit logically complete — tests travel with the code they test, not in a separate commit.
@@ -38,6 +47,8 @@ deletes the orphaned row rather than silently dropping it.
 ```
 
 **Rules:**
+- Every logical step in a feature's development is its own commit, written in
+  the style above. Do not defer committing until the feature is "done."
 - Every commit must compile and pass `make test`.
 - Tests go in the same commit as the code they test.
 - Refactors that are not part of a feature get their own commit.
