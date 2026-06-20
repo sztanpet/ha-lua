@@ -39,21 +39,25 @@
   .zone { font-weight:600; font-size:1.1rem; }
   .status { color:var(--muted); font-size:.95rem; }
   .status b { color:var(--ink); }
-  .boost-row { display:flex; gap:8px; margin-bottom:12px; }
+  .boost { border:1px solid var(--line); border-radius:12px; margin:0 0 12px;
+          padding:6px 12px 12px; min-width:0; }
+  .boost legend { padding:0 6px; color:var(--muted); font-size:.8rem; font-weight:600;
+          text-transform:uppercase; letter-spacing:.04em; }
+  .boost-controls { display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; }
+  .boost-row { display:flex; gap:8px; flex:1 1 180px; }
   .boost-row button { flex:1; padding:11px 0; font-size:.95rem; font-weight:600;
           border:none; border-radius:10px; background:var(--accent);
           color:var(--accent-ink); cursor:pointer; }
-  .boost-row button.alt { background:var(--btn); color:var(--btn-ink); flex:0 0 56px; }
-  .boosting { display:flex; align-items:center; gap:12px; margin-bottom:12px;
-          background:var(--now); border-radius:10px; padding:12px; }
+  .boost-row button.alt { background:var(--btn); color:var(--btn-ink); flex:0 0 48px; }
+  .boosting { display:flex; align-items:center; gap:12px; flex:1 1 180px;
+          background:var(--now); border-radius:10px; padding:8px 12px; }
   .boosting .cd { font-size:1.4rem; font-weight:700; font-variant-numeric:tabular-nums; }
   .boosting button { margin-left:auto; padding:10px 16px; border:none;
           border-radius:8px; background:var(--surface); color:var(--ink); cursor:pointer; }
-  .stepper { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
-  .stepper .lbl { color:var(--muted); }
-  .stepper button { width:44px; height:44px; font-size:1.4rem; border:1px solid var(--line);
+  .stepper { display:flex; align-items:center; gap:8px; }
+  .stepper button { width:42px; height:42px; font-size:1.4rem; border:1px solid var(--line);
           border-radius:10px; background:var(--surface); color:var(--ink); cursor:pointer; }
-  .stepper .val { font-size:1.3rem; font-weight:600; min-width:60px; text-align:center; }
+  .stepper .val { font-size:1.3rem; font-weight:600; min-width:52px; text-align:center; }
   .today { display:flex; flex-wrap:wrap; gap:6px 10px; font-size:.9rem;
            color:var(--muted); margin-bottom:8px; }
   .today .step.now { color:var(--accent); font-weight:700; }
@@ -114,7 +118,7 @@ const MESSAGES = {
     "preset_minutes": "{n}m",
     "custom_minutes_title": "custom minutes",
     "custom_minutes_prompt": "Boost for how many minutes?",
-    "boost_to": "boost to",
+    "boost": "Boost",
     "no_schedule": "no schedule set",
     "edit_schedule": "Edit schedule",
     "add_entry": "+ add entry",
@@ -138,7 +142,7 @@ const MESSAGES = {
     "preset_minutes": "{n}p",
     "custom_minutes_title": "egyéni időtartam",
     "custom_minutes_prompt": "Hány percig segítsen rá?",
-    "boost_to": "rásegítés",
+    "boost": "Rásegítés",
     "no_schedule": "nincs beállított ütemezés",
     "edit_schedule": "Ütemezés szerkesztése",
     "add_entry": "+ új bejegyzés",
@@ -251,40 +255,47 @@ function zoneCard(zone, status) {
   const controllable = status.mode === "heat";
   if (!controllable) {
     card.appendChild($('<div class="muted">' + esc(t("not_controlled", { mode: modeLabel(status.mode) })) + '</div>'));
-  } else if (status.boost && status.boost.active) {
-    const ends = Date.now() + (status.boost.remaining_s || 0) * 1000;
-    const row = $('<div class="boosting"><span class="cd" data-ends="' + ends + '">' +
-      fmtCountdown(status.boost.remaining_s || 0) + '</span><span>' +
-      esc(t("boosting_to", { temp: status.comfort_temp })) + '</span><button>' +
-      esc(t("stop_boost")) + '</button></div>');
-    row.querySelector("button").onclick = () =>
-      send("api/boost/cancel", "POST", { zone: zone }).then(newState => newState && (lastState = newState, render(newState)));
-    card.appendChild(row);
   } else {
-    const row = document.createElement("div");
-    row.className = "boost-row";
-    PRESETS.forEach(min => {
-      const btn = $('<button>' + esc(t("preset_minutes", { n: min })) + '</button>');
-      btn.onclick = () => send("api/boost", "POST", { zone: zone, minutes: min })
-        .then(newState => newState && (lastState = newState, render(newState)));
-      row.appendChild(btn);
-    });
-    const custom = $('<button class="alt">⏱️</button>');
-    custom.title = t("custom_minutes_title");
-    custom.onclick = () => {
-      const minutesInput = prompt(t("custom_minutes_prompt"), "45");
-      const mins = parseInt(minutesInput, 10);
-      if (mins > 0) send("api/boost", "POST", { zone: zone, minutes: mins })
-        .then(newState => newState && (lastState = newState, render(newState)));
-    };
-    row.appendChild(custom);
-    card.appendChild(row);
-  }
+    // Duration controls (or the live countdown) and the target-temp stepper
+    // share one row inside a labelled "boost" outline.
+    const box = document.createElement("fieldset");
+    box.className = "boost";
+    box.appendChild($('<legend>' + esc(t("boost")) + '</legend>'));
+    const controls = document.createElement("div");
+    controls.className = "boost-controls";
 
-  if (controllable) {
+    if (status.boost && status.boost.active) {
+      const ends = Date.now() + (status.boost.remaining_s || 0) * 1000;
+      const row = $('<div class="boosting"><span class="cd" data-ends="' + ends + '">' +
+        fmtCountdown(status.boost.remaining_s || 0) + '</span><span>' +
+        esc(t("boosting_to", { temp: status.comfort_temp })) + '</span><button>' +
+        esc(t("stop_boost")) + '</button></div>');
+      row.querySelector("button").onclick = () =>
+        send("api/boost/cancel", "POST", { zone: zone }).then(newState => newState && (lastState = newState, render(newState)));
+      controls.appendChild(row);
+    } else {
+      const row = document.createElement("div");
+      row.className = "boost-row";
+      PRESETS.forEach(min => {
+        const btn = $('<button>' + esc(t("preset_minutes", { n: min })) + '</button>');
+        btn.onclick = () => send("api/boost", "POST", { zone: zone, minutes: min })
+          .then(newState => newState && (lastState = newState, render(newState)));
+        row.appendChild(btn);
+      });
+      const custom = $('<button class="alt">⏱️</button>');
+      custom.title = t("custom_minutes_title");
+      custom.onclick = () => {
+        const minutesInput = prompt(t("custom_minutes_prompt"), "45");
+        const mins = parseInt(minutesInput, 10);
+        if (mins > 0) send("api/boost", "POST", { zone: zone, minutes: mins })
+          .then(newState => newState && (lastState = newState, render(newState)));
+      };
+      row.appendChild(custom);
+      controls.appendChild(row);
+    }
+
     const step = document.createElement("div");
     step.className = "stepper";
-    step.appendChild($('<span class="lbl">' + esc(t("boost_to")) + '</span>'));
     const minus = $('<button>−</button>'), plus = $('<button>+</button>');
     const val = $('<span class="val">' + esc(status.comfort_temp) + '°</span>');
     const setComfort = (delta) => {
@@ -295,7 +306,10 @@ function zoneCard(zone, status) {
     minus.onclick = () => setComfort(-0.5);
     plus.onclick = () => setComfort(0.5);
     step.appendChild(minus); step.appendChild(val); step.appendChild(plus);
-    card.appendChild(step);
+    controls.appendChild(step);
+
+    box.appendChild(controls);
+    card.appendChild(box);
   }
 
   const today = Array.isArray(status.today) ? status.today : [];
