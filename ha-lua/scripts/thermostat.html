@@ -398,60 +398,46 @@ async function openEditor(zone, card) {
 }
 
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const CAN_ANIMATE = (el) => !REDUCED_MOTION && el && typeof el.animate === "function";
 
-// Animate an element from zero to its natural height (and fade in), then
-// clear the inline styles so it reflows normally afterwards.
+// Keyframes that fully collapse the box: max-height *and* the top margin,
+// border, and padding (which sit outside max-height), so the element reaches a
+// true zero height with nothing left to snap away. Endpoints are read from the
+// element's resolved style so the open/close motion always starts and ends at
+// the real stylesheet values.
+function collapseFrames(el) {
+  const cs = getComputedStyle(el);
+  return [
+    { maxHeight: el.scrollHeight + "px", opacity: 1,
+      marginTop: cs.marginTop, paddingTop: cs.paddingTop, borderTopWidth: cs.borderTopWidth },
+    { maxHeight: "0px", opacity: 0,
+      marginTop: "0px", paddingTop: "0px", borderTopWidth: "0px" },
+  ];
+}
+
+// Grow an element from collapsed to its natural height (and fade in). The Web
+// Animations API doesn't depend on style-commit timing the way a max-height
+// transition does, so the motion is reliable; overflow is clipped only for the
+// duration so mid-animation content can't spill.
 function slideOpen(el) {
-  if (REDUCED_MOTION || !el) return;
-  const target = el.scrollHeight;
+  if (!CAN_ANIMATE(el)) return;
   el.style.overflow = "hidden";
-  el.style.maxHeight = "0";
-  el.style.opacity = "0";
-  requestAnimationFrame(() => {
-    el.style.transition = "max-height .22s ease, opacity .22s ease";
-    el.style.maxHeight = target + "px";
-    el.style.opacity = "1";
-  });
-  el.addEventListener("transitionend", function done(ev) {
-    if (ev.propertyName !== "max-height") return;
-    el.style.transition = el.style.maxHeight = el.style.overflow = el.style.opacity = "";
-    el.removeEventListener("transitionend", done);
-  });
+  const anim = el.animate(collapseFrames(el).reverse(), { duration: 220, easing: "ease" });
+  anim.onfinish = anim.oncancel = () => { el.style.overflow = ""; };
 }
 
 // Collapse an element to zero height (and fade out), then run after() exactly
-// once. after() advances the editor state machine, so it must fire even when
-// the transition never does: an already-collapsed element (scrollHeight 0)
-// produces no max-height change and thus no transitionend, and a dropped
-// transitionend would otherwise strand the zone in `busy` forever — hence the
-// guard and the timeout fallback.
+// once. after() advances the editor state machine, so onfinish/oncancel both
+// route to it; fill:"forwards" holds the collapsed frame until after() swaps
+// the element out, so it never flashes back to full height at the end.
 function slideClose(el, after) {
-  if (REDUCED_MOTION || !el || !el.scrollHeight) { after(); return; }
+  if (!CAN_ANIMATE(el) || !el.scrollHeight) { after(); return; }
   el.style.overflow = "hidden";
-  el.style.maxHeight = el.scrollHeight + "px";
-  el.style.opacity = "1";
-  requestAnimationFrame(() => {
-    // Collapse the whole box, not just max-height: the editor's top margin,
-    // border, and padding sit outside max-height, so animating only the
-    // content would leave ~25px that snaps away when the card is rebuilt.
-    el.style.transition = "max-height .2s ease, opacity .2s ease, " +
-      "margin-top .2s ease, padding-top .2s ease, border-top-width .2s ease";
-    el.style.maxHeight = "0";
-    el.style.opacity = "0";
-    el.style.marginTop = "0";
-    el.style.paddingTop = "0";
-    el.style.borderTopWidth = "0";
-  });
-  let finished = false;
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    el.removeEventListener("transitionend", onEnd);
-    after();
-  };
-  const onEnd = (ev) => { if (ev.propertyName === "max-height") finish(); };
-  el.addEventListener("transitionend", onEnd);
-  setTimeout(finish, 300);
+  const anim = el.animate(collapseFrames(el), { duration: 200, easing: "ease", fill: "forwards" });
+  let done = false;
+  const finish = () => { if (!done) { done = true; after(); } };
+  anim.onfinish = finish;
+  anim.oncancel = finish;
 }
 
 // Close one card's editor without touching the others: collapse the editor,
