@@ -1,9 +1,10 @@
 -- lib/zones.lua
 --
--- Shared zone definitions for thermostat.lua and heating_windows.lua. Both
--- scripts MUST agree on the zone keys: a key is the <zone> in the published
--- desired setpoint that hands control off between the two scripts. Keeping the
--- table (and the key builder) here is what stops the two scripts from drifting.
+-- Shared zone definitions for thermostat.lua, heating_windows.lua and
+-- valve_watch.lua. All scripts MUST agree on the zone keys: a key is the
+-- <zone> in the published desired setpoint that hands control off between the
+-- thermostat and the window script. Keeping the table (and the key builder)
+-- here is what stops the scripts from drifting.
 --
 -- Edit the entity ids below to match your Home Assistant setup.
 
@@ -17,10 +18,13 @@ M.frost_temp = 15
 M.default_comfort = 23
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
+-- `radiator` is the temperature sensor strapped to that zone's radiator; only
+-- valve_watch.lua reads it (to spot a stuck/dead valve), the thermostat and
+-- window scripts ignore it.
 M.zones = {
-  bedroom    = { climate = "climate.konyha_halo_futes",        windows = { "binary_sensor.ikea_door_5_contact" } },
-  livingroom = { climate = "climate.konyha_nappali_futes",     windows = { "binary_sensor.ikea_door_2_contact" } },
-  childrens  = { climate = "climate.konyha_gyerekszoba_futes",  windows = { "binary_sensor.ikea_door_3_contact" } },
+  bedroom    = { climate = "climate.konyha_halo_futes",        windows = { "binary_sensor.ikea_door_5_contact" }, radiator = "sensor.konyha_halo_radiator_temp" },
+  livingroom = { climate = "climate.konyha_nappali_futes",     windows = { "binary_sensor.ikea_door_2_contact" }, radiator = "sensor.konyha_nappali_radiator_temp" },
+  childrens  = { climate = "climate.konyha_gyerekszoba_futes",  windows = { "binary_sensor.ikea_door_3_contact" }, radiator = "sensor.konyha_gyerekszoba_radiator_temp" },
 }
 
 -- The global key both scripts use to hand off the controller's desired
