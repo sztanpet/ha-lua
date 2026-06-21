@@ -61,7 +61,7 @@
   .stepper .val { font-size:1.3rem; font-weight:600; min-width:52px; text-align:center; }
   .today { display:flex; flex-wrap:wrap; gap:6px 10px; font-size:.9rem;
            color:var(--muted); margin-bottom:8px; }
-  .today .step.now { color:var(--accent); font-weight:700; }
+  .today .step.now { color:var(--accent); font-weight:700; cursor:help; }
   .muted { color:var(--muted); font-style:italic; margin-bottom:8px; }
   .edit-btn { display:flex; align-items:center; justify-content:center; gap:8px;
               width:100%; margin-top:4px; padding:11px; font-size:.95rem; font-weight:600;
@@ -121,6 +121,7 @@ const MESSAGES = {
     "custom_minutes_prompt": "Override for how many minutes?",
     "boost": "Temporary override",
     "no_schedule": "no schedule set",
+    "now_period": "currently active period",
     "edit_schedule": "Edit schedule",
     "add_entry": "+ add entry",
     "save": "Save",
@@ -147,6 +148,7 @@ const MESSAGES = {
     "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
     "boost": "Ideiglenes felülbírálás",
     "no_schedule": "nincs beállított ütemezés",
+    "now_period": "jelenleg aktív időszak",
     "edit_schedule": "Ütemezés szerkesztése",
     "add_entry": "+ új bejegyzés",
     "save": "Mentés",
@@ -336,10 +338,18 @@ function zoneCard(zone, status) {
 
   const today = Array.isArray(status.today) ? status.today : [];
   if (today.length) {
-    const strip = today.map((step, i) =>
-      '<span class="step' + (i === status.now_index ? " now" : "") + '">' +
-      (i === status.now_index ? "▶ " : "") + esc(fmtTime(step.time)) + " " + esc(step.temp) + "°</span>"
-    ).join("");
+    const strip = today.map((step, i) => {
+      const isNow = i === status.now_index;
+      // The accent-coloured ▶ marks the period in effect right now; the title
+      // explains the highlight on hover and aria-label gives screen readers
+      // the meaning instead of reading the glyph as "play".
+      const marker = isNow
+        ? '<span class="now-marker" aria-label="' + esc(t("now_period")) + '">▶ </span>'
+        : "";
+      return '<span class="step' + (isNow ? " now" : "") + '"' +
+        (isNow ? ' title="' + esc(t("now_period")) + '"' : "") + '>' +
+        marker + esc(fmtTime(step.time)) + " " + esc(step.temp) + "°</span>";
+    }).join("");
     card.appendChild($('<div class="today">' + strip + '</div>'));
   } else {
     card.appendChild($('<div class="today">' + esc(t("no_schedule")) + '</div>'));
