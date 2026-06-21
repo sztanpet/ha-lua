@@ -205,6 +205,7 @@ const DAY_GROUPS = [
   { value: "6", days: [6] },
 ];
 const editing = new Set();  // zones with an open schedule editor (suppresses polling)
+const opening = new Set();   // zones whose editor fetch is in flight (re-entrancy guard)
 let lastState = null;
 
 const $ = (html) => { const div = document.createElement("div"); div.innerHTML = html.trim(); return div.firstChild; };
@@ -342,6 +343,7 @@ function zoneCard(zone, status) {
   const edit = $('<button class="edit-btn"><span class="ico" aria-hidden="true">✏️</span><span>' +
     esc(t("edit_schedule")) + '</span></button>');
   edit.onclick = () => {
+    if (opening.has(zone)) return;       // ignore extra clicks while the editor is opening
     if (editing.has(zone)) closeEditor(zone, card, lastState);
     else openEditor(zone, card);
   };
@@ -358,13 +360,20 @@ function normalizeDays(days) {
   return out;
 }
 
+// Guarded by `opening` so a rapid second click can't fire a second fetch (and
+// a second open animation) before the first one has marked the zone editing.
 async function openEditor(zone, card) {
-  const resp = await fetch("./api/schedule?zone=" + encodeURIComponent(zone));
-  if (!resp.ok) { showErr(t("load_schedule_failed")); return; }
-  const data = await resp.json();
-  editing.add(zone);
-  renderEditor(zone, entriesFromDays(normalizeDays(data.days)), card);
-  slideOpen(card.querySelector(".editor"));
+  opening.add(zone);
+  try {
+    const resp = await fetch("./api/schedule?zone=" + encodeURIComponent(zone));
+    if (!resp.ok) { showErr(t("load_schedule_failed")); return; }
+    const data = await resp.json();
+    editing.add(zone);
+    renderEditor(zone, entriesFromDays(normalizeDays(data.days)), card);
+    slideOpen(card.querySelector(".editor"));
+  } finally {
+    opening.delete(zone);
+  }
 }
 
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
