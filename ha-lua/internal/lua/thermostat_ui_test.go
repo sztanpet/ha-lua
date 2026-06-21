@@ -411,11 +411,10 @@ func TestThermostatUIScheduleSaveRoundTrip(t *testing.T) {
 }
 
 // TestThermostatUIScheduleTempTenths checks that the editor's temp field accepts
-// and preserves tenth-of-a-degree precision. The comfort stepper quantises to
-// 0.5° (ComfortStepper covers that), but the schedule editor's number input is
-// step="0.1", so a typed 21.3 must survive daysFromEntries → PUT → GET →
-// entriesFromDays unrounded. Typing then clicking save blurs the input, firing
-// its onchange (entry.temp = Number(value)) before save reads the entries.
+// and preserves tenth-of-a-degree precision: the number input is step="0.1", so
+// a typed 21.3 must survive daysFromEntries → PUT → GET → entriesFromDays
+// unrounded. Typing then clicking save blurs the input, firing its onchange
+// (entry.temp = Number(value)) before save reads the entries.
 func TestThermostatUIScheduleTempTenths(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveThermostatUI(t)

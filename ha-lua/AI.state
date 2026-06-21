@@ -21,6 +21,16 @@ Last updated: 2026-06-21
   Mon–Fri entry. Only test covering the DOM editor across both PUT and GET.
   Like the editor-toggle test, must Poll(editorAnimationsDone) before clicking
   add/save — the open animation max-height-clips them and clicks miss.
+- NotControlledCard (2c9fb53) + LanguagePicker (60fafd6): seed one zone "off"
+  → its card shows the .muted "not controlled" notice with no controls while
+  the two heat cards keep .boost (serveThermostatUI gained a seed-taking variant
+  serveThermostatUISeed). Picker: switch #lang to hu, which persists to
+  localStorage and reloads WITHOUT ?lang=; fire the change from setTimeout(...,0)
+  so the Evaluate returns before location.assign destroys the JS context (else
+  chromedp reports the nav as an eval error). Error-banner test SKIPPED per user.
+- COMFORT STEPPER IS NOW 0.1° (57a1a1d, user request): setComfort steps ±0.1 and
+  rounds to the 0.1 grid; server already accepts any 5..35 so no backend change.
+  ComfortStepper test updated (21.0→21.1→20.9). User-facing => CHANGELOG/release.
 - ScheduleTempTenths (77aca25): the comfort stepper quantises to 0.5° but the
   editor temp input is step="0.1"; type 21.3 into a new entry, save, reopen, and
   assert it reloads unrounded. Clear+SendKeys then a save click blurs the input
