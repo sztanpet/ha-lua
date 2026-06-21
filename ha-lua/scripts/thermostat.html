@@ -208,7 +208,7 @@ const DAY_GROUPS = [
   { value: "6", days: [6] },
 ];
 const editing = new Set();  // zones with an open schedule editor (suppresses polling)
-const opening = new Set();   // zones whose editor fetch is in flight (re-entrancy guard)
+const busy = new Set();      // zones mid-transition: open fetch in flight or close animating
 let lastState = null;
 
 const $ = (html) => { const div = document.createElement("div"); div.innerHTML = html.trim(); return div.firstChild; };
@@ -233,7 +233,7 @@ async function send(path, method, payload) {
 }
 
 async function poll() {
-  if (editing.size) return;            // don't clobber an open editor
+  if (editing.size || busy.size) return;   // don't clobber an open or transitioning editor
   try {
     const resp = await fetch("./api/state");
     if (resp.ok) { lastState = await resp.json(); render(lastState); }
@@ -256,7 +256,7 @@ function fmtTime(hhmm) {
 }
 
 function render(state) {
-  if (editing.size) return;
+  if (editing.size || busy.size) return;
   const app = document.getElementById("app");
   app.innerHTML = "";
   Object.keys(state.zones).sort().forEach(zone => app.appendChild(zoneCard(zone, state.zones[zone])));
@@ -361,7 +361,7 @@ function zoneCard(zone, status) {
     '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>' +
     '</svg></span><span>' + esc(t("edit_schedule")) + '</span></button>');
   edit.onclick = () => {
-    if (opening.has(zone)) return;       // ignore extra clicks while the editor is opening
+    if (busy.has(zone)) return;          // ignore clicks while opening or closing
     if (editing.has(zone)) closeEditor(zone, card, lastState);
     else openEditor(zone, card);
   };
@@ -378,10 +378,13 @@ function normalizeDays(days) {
   return out;
 }
 
-// Guarded by `opening` so a rapid second click can't fire a second fetch (and
-// a second open animation) before the first one has marked the zone editing.
+// Mark the zone busy for the whole open: this both blocks a second click and,
+// crucially, suppresses poll()/render() during the fetch gap — without it a
+// poll could rebuild every card mid-fetch and detach the `card` this editor is
+// appended to, desyncing the open/close toggle. editing is set before the busy
+// flag clears so polling stays suppressed once the editor is on screen.
 async function openEditor(zone, card) {
-  opening.add(zone);
+  busy.add(zone);
   try {
     const resp = await fetch("./api/schedule?zone=" + encodeURIComponent(zone));
     if (!resp.ok) { showErr(t("load_schedule_failed")); return; }
@@ -390,7 +393,7 @@ async function openEditor(zone, card) {
     renderEditor(zone, entriesFromDays(normalizeDays(data.days)), card);
     slideOpen(card.querySelector(".editor"));
   } finally {
-    opening.delete(zone);
+    busy.delete(zone);
   }
 }
 
@@ -416,9 +419,14 @@ function slideOpen(el) {
   });
 }
 
-// Collapse an element to zero height (and fade out), then run after().
+// Collapse an element to zero height (and fade out), then run after() exactly
+// once. after() advances the editor state machine, so it must fire even when
+// the transition never does: an already-collapsed element (scrollHeight 0)
+// produces no max-height change and thus no transitionend, and a dropped
+// transitionend would otherwise strand the zone in `busy` forever — hence the
+// guard and the timeout fallback.
 function slideClose(el, after) {
-  if (REDUCED_MOTION || !el) { after(); return; }
+  if (REDUCED_MOTION || !el || !el.scrollHeight) { after(); return; }
   el.style.overflow = "hidden";
   el.style.maxHeight = el.scrollHeight + "px";
   el.style.opacity = "1";
@@ -427,11 +435,16 @@ function slideClose(el, after) {
     el.style.maxHeight = "0";
     el.style.opacity = "0";
   });
-  el.addEventListener("transitionend", function done(ev) {
-    if (ev.propertyName !== "max-height") return;
-    el.removeEventListener("transitionend", done);
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    el.removeEventListener("transitionend", onEnd);
     after();
-  });
+  };
+  const onEnd = (ev) => { if (ev.propertyName === "max-height") finish(); };
+  el.addEventListener("transitionend", onEnd);
+  setTimeout(finish, 300);
 }
 
 // Close one card's editor without touching the others: collapse the editor,
@@ -440,9 +453,11 @@ function slideClose(el, after) {
 // poll from rebuilding (and snapping away) the card mid-collapse. render()'s
 // full rebuild is suppressed while any editor is still open.
 function closeEditor(zone, card, state) {
+  busy.add(zone);
   const ed = card.querySelector(".editor");
   slideClose(ed, () => {
     editing.delete(zone);
+    busy.delete(zone);
     if (state && state.zones[zone]) {
       card.replaceWith(zoneCard(zone, state.zones[zone]));
     } else if (ed) {
