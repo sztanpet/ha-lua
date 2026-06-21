@@ -23,10 +23,13 @@ Last updated: 2026-06-21
 - The ONLY remaining state is a per-zone "alerted:<zone>" boolean (cleared when
   demand stops) so a dead valve alerts once per episode, not once a minute --
   episode dedup is irreducibly stateful for a per-minute job.
-- `since` for get_history MUST be UTC: changed_at is HA's last_changed (UTC) and
-  get_history compares it LEXICALLY; main sets time.Local to the configured tz
-  so a local offset would mis-sort. Added time `t:utc()` method (re-zones to UTC,
-  instant unchanged) for this; script uses now:add(-WARMUP):utc():format(RFC3339).
+- `since` for get_history is now a time VALUE, not a string (2026-06-21 refactor).
+  GetHistory takes time.Time and renders the bound itself: UTC, truncated to whole
+  seconds, no zone suffix -- a lexical prefix of any same-second changed_at, so the
+  compare is correct for any caller tz/HA precision. Killed the old foot gun where a
+  hand-formatted local-tz string mis-sorted lexically and dropped rows. Script just
+  passes now:add(-WARMUP); the utc_since helper is gone. The time `t:utc()` method
+  stays as a general "re-zone to UTC for external output" helper.
 
 
 ## Phase

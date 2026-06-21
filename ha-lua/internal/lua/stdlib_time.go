@@ -194,8 +194,8 @@ func luaTimeToString(L *lua.LState) int {
 
 // luaTimeUTC returns the same instant with its location set to UTC, so
 // formatting yields a UTC RFC3339 string regardless of the configured local
-// timezone. Needed when a timestamp must sort lexically against UTC values
-// (e.g. the changed_at column ha.get_history compares against).
+// timezone -- handy when emitting a timestamp for an external system that
+// expects UTC.
 func luaTimeUTC(L *lua.LState) int {
 	t := getTime(L, 1)
 	pushTime(L, t.UTC())

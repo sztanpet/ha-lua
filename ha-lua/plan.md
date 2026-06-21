@@ -246,7 +246,7 @@ The loader implements real `require` semantics, not just sandboxed `dofile`: a p
 | `ha.get_state(entity_id)` | Returns `{state, attributes}` table from the `states` mirror. |
 | `ha.get_entities(pattern)` | Returns array of `{entity_id, state, attributes}` for all entities whose ID matches the glob. Queries the `states` mirror. |
 | `ha.get_entity_ids(pattern)` | Returns array of entity ID strings matching the glob. Cheaper than `get_entities` when attributes are not needed. |
-| `ha.get_history(entity_id, since, limit)` | Returns array of `{state, attributes, changed_at}` from `state_history`. `since` is ISO8601 string, `limit` is int. |
+| `ha.get_history(entity_id, since, limit)` | Returns array of `{state, attributes, changed_at}` from `state_history`. `since` is a `time` value (any timezone), `limit` is int. |
 | `ha.call_service(domain, service, data)` | Calls a HA service. `data` is a Lua table, serialized to JSON. |
 | `ha.fire_event(event_type, data)` | Fires a HA event. |
 | `ha.log(level, message)` | Logs at level `"debug"`, `"info"`, `"warn"`, `"error"`. |

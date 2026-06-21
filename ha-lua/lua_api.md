@@ -99,10 +99,10 @@ Returns an array of entity-id strings matching the glob `pattern`. Cheaper than
 
 #### `ha.get_history(entity_id, since, limit)`
 
-Returns up to `limit` historical state tables for `entity_id` with
-`changed_at >= since`, oldest first, read from the local mirror. `since` is a
-timestamp string compared lexically against the stored RFC3339 `changed_at`
-(e.g. `"2026-06-20T00:00:00+00:00"`). `limit` is an integer. Raises on error.
+Returns up to `limit` historical state tables for `entity_id` changed at or
+after `since`, oldest first, read from the local mirror. `since` is a `time`
+value (e.g. `time.now():add(-time.hour)`); its timezone does not matter, the
+instant is compared. `limit` is an integer. Raises on error.
 
 History depth is bounded by the `state_history.retention_days` option — older
 rows are purged.
