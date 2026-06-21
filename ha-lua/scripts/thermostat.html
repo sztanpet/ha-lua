@@ -132,6 +132,8 @@ const MESSAGES = {
     "day.everyday": "Every day", "day.weekdays": "Mon–Fri", "day.weekend": "Sat–Sun",
     "day.0": "Monday", "day.1": "Tuesday", "day.2": "Wednesday",
     "day.3": "Thursday", "day.4": "Friday", "day.5": "Saturday", "day.6": "Sunday",
+    "zone.bedroom": "Bedroom", "zone.livingroom": "Living room",
+    "zone.childrens": "Children's",
   },
   hu: {
     "title": "Fűtés",
@@ -156,6 +158,8 @@ const MESSAGES = {
     "day.everyday": "Minden nap", "day.weekdays": "Hétköznap", "day.weekend": "Hétvége",
     "day.0": "Hétfő", "day.1": "Kedd", "day.2": "Szerda",
     "day.3": "Csütörtök", "day.4": "Péntek", "day.5": "Szombat", "day.6": "Vasárnap",
+    "zone.bedroom": "Hálószoba", "zone.livingroom": "Nappali",
+    "zone.childrens": "Gyerekszoba",
   },
 };
 
@@ -205,7 +209,9 @@ let lastState = null;
 
 const $ = (html) => { const div = document.createElement("div"); div.innerHTML = html.trim(); return div.firstChild; };
 const esc = (value) => String(value).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
-const title = (zone) => zone.charAt(0).toUpperCase() + zone.slice(1).replace(/_/g, " ");
+// Zone display names are translated under "zone.<key>"; zones with no
+// translation fall back to the capitalised, de-underscored key.
+const title = (zone) => t("zone." + zone, null, zone.charAt(0).toUpperCase() + zone.slice(1).replace(/_/g, " "));
 
 function showErr(msg) {
   const errEl = document.getElementById("err");
