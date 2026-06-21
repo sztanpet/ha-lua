@@ -1,5 +1,25 @@
 # AI Working State
-Last updated: 2026-06-20
+Last updated: 2026-06-21
+
+## Valve watchdog (2026-06-21, scripts/valve_watch.lua)
+- New script catches a seized/dead radiator valve (the user's valves fail
+  ~every 2 years): the thermostat keeps calling for heat but no hot water
+  reaches the radiator, so the radiator sensor stays at room temp.
+- lib/zones.lua gained a per-zone `radiator` sensor entity id (placeholder ids,
+  user edits to match HA). thermostat/heating_windows ignore the new field.
+- Per-zone state machine in store ("watch:<zone>" = {since, base, notified}):
+  baseline radiator temp recorded when heat demand starts, judged once WARMUP
+  (15m) elapses, torn down when demand clears so each heating episode re-arms
+  (=> one alert per episode, naturally repeats daily while the valve stays dead
+  because the night setback clears demand).
+- Alert rule: calling-for-heat AND radiator rise < MIN_RISE (3°C) over the
+  window AND NOT already-hot (rad-room < HOT_MARGIN 8°C). The hot guard is what
+  prevents a false alarm when the radiator was already hot before the window.
+- Heat demand prefers climate `hvac_action == "heating"`, falls back to
+  current_temperature < temperature - 0.1 when the entity has no hvac_action.
+- Notify target NOTIFY_TARGET default "notify.pixel_9a", parsed "<domain>.<svc>"
+  and sent via ha.call_service with title+message.
+
 
 ## Phase
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
