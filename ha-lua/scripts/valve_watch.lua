@@ -67,14 +67,6 @@ local function alerted_key(zone)
   return "alerted:" .. zone
 end
 
--- utc_since formats a UTC RFC3339 timestamp `seconds` before the given instant.
--- ha.get_history compares `since` LEXICALLY against the stored changed_at, which
--- HA records in UTC; a configured-local offset would mis-sort, so re-zone to UTC
--- with :utc() before formatting.
-local function utc_since(now, seconds)
-  return now:add(-seconds):utc():format(time.RFC3339)
-end
-
 -- demand_active reports whether a climate state table (live or a history row)
 -- means the valve *should* be open. Prefer the entity's own hvac_action
 -- ("heating" vs "idle"); fall back to current-vs-target for entities without it.
@@ -172,7 +164,7 @@ local function check_zone(zone, now)
 
   if store.get(alerted_key(zone)) then return end -- already alerted this episode
 
-  local since = utc_since(now, WARMUP)
+  local since = now:add(-WARMUP)
   if not demand_continuous(zone, since) then return end -- not heating long enough
 
   local current_rad = radiator_temp(zone)
