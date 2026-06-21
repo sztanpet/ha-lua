@@ -4,6 +4,14 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.1.0 - 2026-06-21
+
+### Changed
+- The thermostat comfort-temperature stepper now adjusts in 0.1° steps
+  instead of 0.5°, matching the precision the per-zone schedule editor
+  already allows. Comfort values previously set on the 0.5° grid keep
+  working unchanged.
+
 ## 2.0.0 - 2026-06-21
 
 ### Changed
