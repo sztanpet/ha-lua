@@ -1,6 +1,27 @@
 # AI Working State
 Last updated: 2026-06-21
 
+## Browser UI tests — boost/stepper/i18n/schedule (2026-06-21)
+- Extended internal/lua/thermostat_ui_test.go (chromedp) beyond the initial 3
+  tests with 4 more DOM-driven tests, each its own commit (61f42a7, 9371664,
+  cd93b6e, e99d96f), all reusing serveThermostatUI/newBrowserCtx and skipping
+  cleanly when no browser is found.
+- BoostFlow: click a preset → POST /api/boost → card body swaps to .boosting
+  countdown → cancel → preset row returns. Covers the applyState() body swap.
+- ComfortStepper: +/− → PUT /api/settings in 0.5° steps; the 0.5 quantisation
+  lives in the page (setComfort), so only a browser test covers it. Poll on the
+  rendered .stepper .val settling at each step.
+- LocalizesHungarian: ?lang=hu rewrites the shipped <h1> and translates zone
+  names + boost legend via t(). GOTCHA: the boost legend is CSS
+  text-transform:uppercase, so chromedp.Text (innerText) returns the upper-cased
+  form — read textContent via Evaluate instead.
+- ScheduleSaveRoundTrip: seeded zones ship NO schedule (testZonesLua has no
+  schedule field; load_schedule returns {}), so the editor opens with 0 rows.
+  Add one entry → save (PUT) → reopen (GET) → regroups 5 weekday rows to one
+  Mon–Fri entry. Only test covering the DOM editor across both PUT and GET.
+  Like the editor-toggle test, must Poll(editorAnimationsDone) before clicking
+  add/save — the open animation max-height-clips them and clicks miss.
+
 ## Valve watchdog (2026-06-21, scripts/valve_watch.lua)
 - New script catches a seized/dead radiator valve (the user's valves fail
   ~every 2 years): the thermostat keeps calling for heat but no hot water
