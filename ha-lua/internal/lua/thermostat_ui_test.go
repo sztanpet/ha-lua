@@ -218,6 +218,43 @@ func TestThermostatUIBoostFlow(t *testing.T) {
 	}
 }
 
+// TestThermostatUILocalizesHungarian loads the page with ?lang=hu and checks
+// the whole localization path resolves in a real browser: the static document
+// chrome the HTML ships (the <h1>/<title>) is rewritten after load, and the
+// dynamically rendered cards translate both the zone names and the boost
+// fieldset legend through t(). en is covered by RendersZones; this guards that
+// a non-default locale actually takes effect rather than silently falling back.
+func TestThermostatUILocalizesHungarian(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	var heading, legend string
+	var zoneNames []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=hu"),
+		chromedp.WaitVisible(".card .boost legend", chromedp.ByQuery),
+		chromedp.Text("h1", &heading, chromedp.ByQuery),
+		// textContent, not Text: the legend is CSS text-transform:uppercase, so
+		// innerText would report the visually upper-cased form.
+		chromedp.Evaluate(`document.querySelector(".card .boost legend").textContent`, &legend),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll(".card .zone")).map(node => node.textContent)`, &zoneNames),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if heading != "Fűtés" {
+		t.Errorf("h1 = %q, want Hungarian \"Fűtés\"", heading)
+	}
+	if legend != "Ideiglenes felülbírálás" {
+		t.Errorf("boost legend = %q, want Hungarian", legend)
+	}
+	got := strings.Join(zoneNames, ", ")
+	for _, want := range []string{"Hálószoba", "Nappali", "Gyerekszoba"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("zone %q not rendered in Hungarian; got %q", want, got)
+		}
+	}
+}
+
 // firstCardComfort reads the bedroom card's stepper value ("21.5°" -> 21.5).
 const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val").textContent)`
 
