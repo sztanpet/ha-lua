@@ -23,10 +23,27 @@ import (
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
+// defaultZoneSeed is the three-heating-zone fixture the UI tests render: one
+// climate entity per zone in the testZonesLua fixture, all in heat mode. Tests
+// that need a different mode copy it and tweak one entry.
+func defaultZoneSeed() []ha.StateData {
+	return []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":19.5,"temperature":18}`)},
+		{EntityID: "climate.livingroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":21.0,"temperature":20}`)},
+		{EntityID: "climate.childrens_room", State: "heat", Attributes: jsontext.Value(`{"current_temperature":20.0,"temperature":19}`)},
+	}
+}
+
 // serveThermostatUI boots the real thermostat.lua (libs, scheduler, router) the
 // same way TestThermostatAPI does, seeds three heating zones so cards render,
 // and exposes it over a real listening server for a browser to drive.
 func serveThermostatUI(t *testing.T) *httptest.Server {
+	return serveThermostatUISeed(t, defaultZoneSeed())
+}
+
+// serveThermostatUISeed is serveThermostatUI with a caller-supplied seed, so a
+// test can render a zone in a non-heat mode without disturbing the others.
+func serveThermostatUISeed(t *testing.T, seed []ha.StateData) *httptest.Server {
 	t.Helper()
 	dir := t.TempDir()
 	libDir := filepath.Join(dir, "lib")
@@ -49,11 +66,7 @@ func serveThermostatUI(t *testing.T) *httptest.Server {
 	router := NewRouter(reg)
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	if err := tracker.Seed(context.Background(), []ha.StateData{
-		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":19.5,"temperature":18}`)},
-		{EntityID: "climate.livingroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":21.0,"temperature":20}`)},
-		{EntityID: "climate.childrens_room", State: "heat", Attributes: jsontext.Value(`{"current_temperature":20.0,"temperature":19}`)},
-	}); err != nil {
+	if err := tracker.Seed(context.Background(), seed); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,6 +157,55 @@ func TestThermostatUIRendersZones(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("zone %q not rendered; got %q", want, got)
 		}
+	}
+}
+
+// TestThermostatUINotControlledCard seeds one zone in a non-heat hvac mode and
+// checks its card degrades to the "not controlled" notice with no boost or
+// stepper controls, while the heat zones keep theirs. The card body branches on
+// status.mode in zoneCard, so only a rendered DOM exercises it.
+func TestThermostatUINotControlledCard(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	seed := defaultZoneSeed()
+	seed[1].State = "off" // livingroom is switched off, not heating
+	srv := serveThermostatUISeed(t, seed)
+
+	// One card shows the .muted notice; the off card carries no controls; the
+	// two heat cards keep their .boost fieldset.
+	const script = `(() => {
+		const cards = Array.from(document.querySelectorAll(".card"));
+		const muted = cards.filter(card => card.querySelector(".muted"));
+		return {
+			mutedCount: muted.length,
+			mutedText: muted[0] ? muted[0].querySelector(".muted").textContent : "",
+			mutedHasControls: muted.some(card => card.querySelector(".boost, .stepper, .boost-row")),
+			controlledCards: cards.filter(card => card.querySelector(".boost")).length,
+		};
+	})()`
+	var res struct {
+		MutedCount       int    `json:"mutedCount"`
+		MutedText        string `json:"mutedText"`
+		MutedHasControls bool   `json:"mutedHasControls"`
+		ControlledCards  int    `json:"controlledCards"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .muted", chromedp.ByQuery),
+		chromedp.Evaluate(script, &res),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if res.MutedCount != 1 {
+		t.Errorf("not-controlled cards = %d, want 1", res.MutedCount)
+	}
+	if !strings.Contains(res.MutedText, "off") || !strings.Contains(res.MutedText, "not controlled") {
+		t.Errorf("notice = %q, want it to name the mode and \"not controlled\"", res.MutedText)
+	}
+	if res.MutedHasControls {
+		t.Error("not-controlled card still shows boost/stepper controls")
+	}
+	if res.ControlledCards != 2 {
+		t.Errorf("heat cards with controls = %d, want 2", res.ControlledCards)
 	}
 }
 
