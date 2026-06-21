@@ -143,13 +143,21 @@ is nothing extra to install.
 ```sh
 git clone https://github.com/sztanpet/ha-lua
 cd ha-lua
-make hooks    # install the pre-commit hook (gofmt + vet + staticcheck + lint)
+make install  # one-shot setup for a fresh checkout (run at the repo root)
 make build    # compile to ./ha-lua
 make check    # vet + staticcheck + lint + race tests — the CI gate
 ```
 
-From a fresh checkout, `make install` (at the repo root) runs `install-tools`
-(pre-fetches the tool sources via `go mod download`) and `hooks` in one step.
+From a fresh checkout, `make install` (at the repo root) does the one-time
+setup in one step:
+
+- `install-tools` — pre-fetches the analyzer sources via `go mod download`.
+- `hooks` — installs the pre-commit hook (gofmt + vet + staticcheck + lint).
+- `check-browser` — checks for the Chrome/Chromium binary the browser-driven
+  UI tests (`internal/lua`, chromedp) need. Those tests skip cleanly when no
+  browser is found, so this only **warns**; it never fails the build. Set
+  `CHROMEDP_BROWSER=/path/to/chrome` to point the tests at a specific binary,
+  otherwise the usual `google-chrome`/`chromium` names on `$PATH` are used.
 
 Run it outside Home Assistant with a YAML config:
 
