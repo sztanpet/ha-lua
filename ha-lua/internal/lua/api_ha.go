@@ -151,7 +151,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 
 	L.SetField(haTable, "get_history", L.NewFunction(func(L *lua.LState) int {
 		entityID := L.CheckString(1)
-		since := L.CheckString(2)
+		since := getTime(L, 2)
 		limit := L.CheckInt(3)
 		states, err := api.tracker.GetHistory(L.Context(), entityID, since, limit)
 		if err != nil {

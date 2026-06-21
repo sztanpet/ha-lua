@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
@@ -170,14 +171,23 @@ func (t *Tracker) GetEntityIDs(ctx context.Context, pattern string) ([]string, e
 	return ids, rows.Err()
 }
 
-// GetHistory returns state history for an entity since a given timestamp.
-func (t *Tracker) GetHistory(ctx context.Context, entityID, since string, limit int) ([]ha.StateData, error) {
+// sinceLayout renders the get_history `since` bound. changed_at holds HA's
+// last_changed verbatim — an ISO8601 UTC instant like
+// "2026-06-21T10:30:00.123456+00:00" — and the WHERE clause compares it as a
+// plain string. Rendering `since` in UTC, truncated to whole seconds and with
+// no zone suffix, makes it a lexical prefix of any same-second changed_at, so
+// "changed_at >= since" is correct for every caller timezone and HA precision.
+// Callers pass a time.Time; they never hand-format a comparable string.
+const sinceLayout = "2006-01-02T15:04:05"
+
+// GetHistory returns state history for an entity since a given instant.
+func (t *Tracker) GetHistory(ctx context.Context, entityID string, since time.Time, limit int) ([]ha.StateData, error) {
 	rows, err := t.readDB.QueryContext(ctx,
 		`SELECT entity_id, state, attributes, changed_at, changed_at
 		 FROM state_history
 		 WHERE entity_id = ? AND changed_at >= ?
 		 ORDER BY changed_at
-		 LIMIT ?`, entityID, since, limit)
+		 LIMIT ?`, entityID, since.UTC().Format(sinceLayout), limit)
 	if err != nil {
 		return nil, err
 	}

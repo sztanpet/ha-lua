@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-json-experiment/json/jsontext"
 	"github.com/sztanpet/ha-lua/internal/ha"
@@ -57,7 +58,7 @@ func TestSeedSkipsUnchangedHistory(t *testing.T) {
 	}
 
 	historyCount := func(entity string) int {
-		h, err := tr.GetHistory(ctx, entity, "2020-01-01T00:00:00Z", 100)
+		h, err := tr.GetHistory(ctx, entity, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), 100)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,12 +138,46 @@ func TestStateHistoryAppended(t *testing.T) {
 		"new_state": {"entity_id":"light.living","state":"on","attributes":{},"last_changed":"2026-01-01T01:00:00Z","last_updated":"2026-01-01T01:00:00Z"}
 	}`))
 
-	history, err := tr.GetHistory(ctx, "light.living", "2026-01-01T00:00:00Z", 10)
+	history, err := tr.GetHistory(ctx, "light.living", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(history) < 2 {
 		t.Errorf("expected at least 2 history rows, got %d", len(history))
+	}
+}
+
+// TestGetHistorySinceTimezone guards the old foot gun: `since` used to be a
+// raw string compared lexically, so a non-UTC instant ("…+02:00") sorted
+// wrong against the UTC changed_at and silently dropped rows. A time.Time in
+// any zone must now select by the actual instant.
+func TestGetHistorySinceTimezone(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	_ = tr.Seed(ctx, []ha.StateData{
+		{EntityID: "sensor.temp", State: "21", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T12:00:00Z", LastUpdated: "2026-01-01T12:00:00Z"},
+	})
+
+	// 14:00+02:00 is 12:00Z — the same instant as the row, so it must match.
+	plus2 := time.FixedZone("+02:00", 2*3600)
+	since := time.Date(2026, 1, 1, 14, 0, 0, 0, plus2)
+	h, err := tr.GetHistory(ctx, "sensor.temp", since, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h) != 1 {
+		t.Errorf("since at the same instant in +02:00: want 1 row, got %d", len(h))
+	}
+
+	// One second later there is no row at or after it.
+	h, err = tr.GetHistory(ctx, "sensor.temp", since.Add(time.Second), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h) != 0 {
+		t.Errorf("since one second after the row: want 0 rows, got %d", len(h))
 	}
 }
 
