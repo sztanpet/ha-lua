@@ -4,6 +4,17 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.0.0 - 2026-06-21
+
+### Changed
+- **BREAKING: `ha.get_history(entity_id, since, limit)` now takes `since` as a
+  `time` value, not a string.** It used to be an ISO8601 string compared
+  *lexically* against the stored `changed_at`, so callers had to hand-format it
+  in UTC — forget the timezone and rows were silently dropped. Pass a `time`
+  value instead (e.g. `time.now():add(-time.hour)`); its timezone no longer
+  matters, the instant is compared. Scripts that passed a string must be
+  updated. The bundled `valve_watch.lua` example already is.
+
 ## 1.3.0 - 2026-06-20
 
 ### Changed
