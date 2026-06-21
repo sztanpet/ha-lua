@@ -21,6 +21,10 @@ Last updated: 2026-06-21
   Mon–Fri entry. Only test covering the DOM editor across both PUT and GET.
   Like the editor-toggle test, must Poll(editorAnimationsDone) before clicking
   add/save — the open animation max-height-clips them and clicks miss.
+- ScheduleTempTenths (77aca25): the comfort stepper quantises to 0.5° but the
+  editor temp input is step="0.1"; type 21.3 into a new entry, save, reopen, and
+  assert it reloads unrounded. Clear+SendKeys then a save click blurs the input
+  so its onchange (entry.temp = Number(value)) fires before save serialises.
 
 ## Valve watchdog (2026-06-21, scripts/valve_watch.lua)
 - New script catches a seized/dead radiator valve (the user's valves fail
