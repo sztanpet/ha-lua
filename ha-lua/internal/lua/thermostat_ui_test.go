@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -214,6 +215,51 @@ func TestThermostatUIBoostFlow(t *testing.T) {
 	}
 	if !rowBack {
 		t.Error("preset boost-row did not return after cancel")
+	}
+}
+
+// firstCardComfort reads the bedroom card's stepper value ("21.5°" -> 21.5).
+const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val").textContent)`
+
+// TestThermostatUIComfortStepper exercises the target-temp stepper round-trip:
+// the + and − buttons PUT /api/settings in half-degree steps and the returned
+// state re-renders the displayed value. The half-degree quantisation lives in
+// the page (setComfort rounds to the nearest 0.5), so only a browser test
+// covers it.
+func TestThermostatUIComfortStepper(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	var start, afterPlus, afterMinus float64
+	settled := func(want float64) chromedp.QueryAction {
+		return chromedp.Poll(firstCardComfort+` === `+strconv.FormatFloat(want, 'f', -1, 64),
+			nil, chromedp.WithPollingTimeout(5*time.Second))
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .stepper .val", chromedp.ByQuery),
+		chromedp.Evaluate(firstCardComfort, &start),
+		// + raises the seeded 21.0 to 21.5; the re-render must reflect it.
+		chromedp.Click(".card .stepper button:last-child", chromedp.ByQuery),
+		settled(21.5),
+		chromedp.Evaluate(firstCardComfort, &afterPlus),
+		// − drops it back below the start to 20.5 (two effective steps).
+		chromedp.Click(".card .stepper button:first-child", chromedp.ByQuery),
+		settled(21),
+		chromedp.Click(".card .stepper button:first-child", chromedp.ByQuery),
+		settled(20.5),
+		chromedp.Evaluate(firstCardComfort, &afterMinus),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if start != 21 {
+		t.Errorf("start comfort = %v, want 21", start)
+	}
+	if afterPlus != 21.5 {
+		t.Errorf("after + = %v, want 21.5", afterPlus)
+	}
+	if afterMinus != 20.5 {
+		t.Errorf("after two − = %v, want 20.5", afterMinus)
 	}
 }
 
