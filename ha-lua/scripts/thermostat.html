@@ -431,9 +431,16 @@ function slideClose(el, after) {
   el.style.maxHeight = el.scrollHeight + "px";
   el.style.opacity = "1";
   requestAnimationFrame(() => {
-    el.style.transition = "max-height .2s ease, opacity .2s ease";
+    // Collapse the whole box, not just max-height: the editor's top margin,
+    // border, and padding sit outside max-height, so animating only the
+    // content would leave ~25px that snaps away when the card is rebuilt.
+    el.style.transition = "max-height .2s ease, opacity .2s ease, " +
+      "margin-top .2s ease, padding-top .2s ease, border-top-width .2s ease";
     el.style.maxHeight = "0";
     el.style.opacity = "0";
+    el.style.marginTop = "0";
+    el.style.paddingTop = "0";
+    el.style.borderTopWidth = "0";
   });
   let finished = false;
   const finish = () => {
