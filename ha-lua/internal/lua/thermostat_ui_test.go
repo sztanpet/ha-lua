@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -179,6 +180,40 @@ func TestThermostatUIEditorToggle(t *testing.T) {
 	}
 	if closedEditor {
 		t.Error("editor still present after cancel")
+	}
+}
+
+// TestThermostatUIBoostFlow drives the boost mutate→render cycle through the
+// real backend: clicking a preset duration POSTs /api/boost, and the returned
+// state re-renders the card's boost-row into a live countdown with a cancel
+// button; clicking cancel POSTs /api/boost/cancel and restores the preset row.
+// The first sorted card is bedroom (cards render in zone-key order).
+func TestThermostatUIBoostFlow(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	var countdown string
+	var rowBack bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .boost-row button", chromedp.ByQuery),
+		// First preset is "10m"; clicking it boosts bedroom.
+		chromedp.Click(".card .boost-row button", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .boosting", chromedp.ByQuery),
+		chromedp.Text(".card .boosting .cd", &countdown, chromedp.ByQuery),
+		// Cancel is the only button inside .boosting; it restores the preset row.
+		chromedp.Click(".card .boosting button", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .boost-row button", chromedp.ByQuery),
+		chromedp.Evaluate(`!!document.querySelector(".card .boost-row")`, &rowBack),
+	); err != nil {
+		t.Fatal(err)
+	}
+	// The countdown started under the 10-minute cap and above zero.
+	if !regexp.MustCompile(`^\d+:[0-5]\d$`).MatchString(countdown) {
+		t.Errorf("countdown = %q, want mm:ss", countdown)
+	}
+	if !rowBack {
+		t.Error("preset boost-row did not return after cancel")
 	}
 }
 
