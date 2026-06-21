@@ -135,8 +135,9 @@ temporarily — it exposes an unauthenticated debug server.
 | `fs.read(path)` / `fs.exists` / `fs.list` / `fs.stat` | Read-only access to files in the scripts directory — see *Reading files* below |
 | stdlib | `strings`, `time`, `json`, `re`, `http`, `crypto`, `fs`; augmented `math` |
 
-For the full design and rationale, see `README.md` and `plan.md` in the
-repository.
+For the complete API reference — every function's arguments, return values, and
+error behaviour — see [`lua_api.md`](./lua_api.md). For the design rationale, see
+`README.md` and `plan.md`.
 
 ## Web UIs
 

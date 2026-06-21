@@ -38,29 +38,30 @@ ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/hallway-errors.log")
 
 ## Lua API
 
-| Function | Purpose |
-|----------|---------|
-| `ha.on_state_change(pattern, fn, opts)` | Callback on matching entity changes (glob patterns; `opts.initial = true` replays current state on load) |
-| `ha.on_event(type, fn)` | Callback on any HA event type (subscribed on demand, even after reload) |
-| `ha.get_state(entity_id)` | Current state of one entity |
-| `ha.get_entities(pattern)` / `ha.get_entity_ids(pattern)` | Bulk state / ID lookup by glob |
-| `ha.get_history(entity_id, since, limit)` | State history from the local mirror |
-| `ha.call_service(domain, service, data)` | Call any HA service |
-| `ha.fire_event(type, data)` | Fire a custom HA event |
-| `ha.serve(method, prefix, fn)` | Serve an HTTP route from a script for a web UI; handler runs on the script's goroutine (pcall'd, 503 on timeout), reachable via an ingress panel and a LAN port |
-| `ha.every(spec, fn)` / `ha.at(time, fn)` / `ha.after(delay, fn)` | Recurring, daily, and one-shot timers (SQLite-persisted, fire-once catch-up after restart) |
-| `ha.log(level, msg)` | Log through the daemon's logger |
-| `ha.on_exception(handler)` | Script-level error handler; gets `{script_id, error, traceback, callback, event, timestamp}` |
-| `ha.exceptions.email(cfg)` / `ha.exceptions.log_file(path)` | Built-in exception handlers (email has a per-script cooldown, 15m default) |
-| `store.get/set/delete/get_all` | Per-script persistent KV (JSON round-trip, types preserved) |
-| `store.state(defaults)` | Proxy table — reads cached, writes auto-persist |
-| `global.get/set/delete/get_all` | KV shared across all scripts |
-| `require "mod"` | Restricted to `scripts/lib/` only, with module caching and cycle detection |
-| `fs.read/exists/list/stat` | Read-only access to files in the scripts dir (`os.Root`-sandboxed against `..`/symlink escapes); e.g. loading a UI's HTML |
+Scripts get a small, deliberate surface: a core `ha` module (entity state,
+service calls, events, callbacks, timers, HTTP serving, logging, exceptions),
+two SQLite-backed key-value stores (`store` per-script, `global` shared),
+restricted `require`, and a sandboxed standard library (`strings`, `time`,
+`json`, `re`, `http`, `crypto`, `fs`, plus an augmented `math`).
 
-Sandboxed stdlib modules are available too: `strings`, `time`, `json`, `re`
-(cached regex), `http`, `crypto`, `fs`, plus an augmented `math` (`round`,
-`clamp`, `log2`, `sign`). See `plan.md` for the full design.
+**[`lua_api.md`](./lua_api.md) is the complete reference** — every function,
+its arguments, return values, and error behaviour. A taste:
+
+```lua
+ha.on_state_change("binary_sensor.*_motion", function(data)
+  if data.new_state.state == "on" then
+    ha.call_service("light", "turn_on", { entity_id = "light.hallway" })
+    store.set("last_motion", data.new_state.last_changed)
+  end
+end)
+
+ha.every("5m", function() ... end)                 -- persisted timer
+ha.serve("GET", "/", function(req) return 200, html end)  -- a web UI
+
+ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/lights.log"))
+```
+
+See `plan.md` for the full design rationale behind the API.
 
 ## Architecture
 
