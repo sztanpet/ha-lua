@@ -42,6 +42,7 @@ var timeMethods = map[string]lua.LGFunction{
 	"second":     luaTimeSecond,
 	"weekday":    luaTimeWeekday,
 	"is_zero":    luaTimeIsZero,
+	"utc":        luaTimeUTC,
 	"__tostring": luaTimeToString,
 }
 
@@ -188,5 +189,15 @@ func luaTimeIsZero(L *lua.LState) int {
 func luaTimeToString(L *lua.LState) int {
 	t := getTime(L, 1)
 	L.Push(lua.LString(t.Format(time.RFC3339)))
+	return 1
+}
+
+// luaTimeUTC returns the same instant with its location set to UTC, so
+// formatting yields a UTC RFC3339 string regardless of the configured local
+// timezone. Needed when a timestamp must sort lexically against UTC values
+// (e.g. the changed_at column ha.get_history compares against).
+func luaTimeUTC(L *lua.LState) int {
+	t := getTime(L, 1)
+	pushTime(L, t.UTC())
 	return 1
 }

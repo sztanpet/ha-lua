@@ -397,6 +397,7 @@ constant).
 | `t:day()` | day of month |
 | `t:hour()` / `t:minute()` / `t:second()` | number |
 | `t:weekday()` | number, 0 = Sunday |
+| `t:utc()` | same instant re-zoned to UTC (so `:format` emits a `…Z` UTC string) |
 | `t:is_zero()` | bool |
 | `tostring(t)` | RFC3339 string |
 

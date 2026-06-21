@@ -225,6 +225,12 @@ func TestTimeModule(t *testing.T) {
 		
 		assert(time.parse_duration("1h5m") == 3900)
 		assert(time.minute == 60)
+
+		-- utc() re-zones to UTC without moving the instant
+		local off = time.parse(time.RFC3339, "2026-06-15T12:00:00+02:00")
+		local utc = off:utc()
+		assert(utc:unix() == off:unix())
+		assert(utc:format(time.RFC3339) == "2026-06-15T10:00:00Z")
 	`)
 	if err != nil {
 		t.Error(err)
