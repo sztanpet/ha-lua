@@ -347,14 +347,13 @@ func TestThermostatUIScheduleTempTenths(t *testing.T) {
 	}
 }
 
-// firstCardComfort reads the bedroom card's stepper value ("21.5°" -> 21.5).
+// firstCardComfort reads the bedroom card's stepper value ("21.1°" -> 21.1).
 const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val").textContent)`
 
 // TestThermostatUIComfortStepper exercises the target-temp stepper round-trip:
-// the + and − buttons PUT /api/settings in half-degree steps and the returned
-// state re-renders the displayed value. The half-degree quantisation lives in
-// the page (setComfort rounds to the nearest 0.5), so only a browser test
-// covers it.
+// the + and − buttons PUT /api/settings in tenth-degree steps and the returned
+// state re-renders the displayed value. The 0.1° quantisation lives in the page
+// (setComfort rounds to the nearest 0.1), so only a browser test covers it.
 func TestThermostatUIComfortStepper(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveThermostatUI(t)
@@ -368,15 +367,15 @@ func TestThermostatUIComfortStepper(t *testing.T) {
 		chromedp.Navigate(srv.URL+"/?lang=en"),
 		chromedp.WaitVisible(".card .stepper .val", chromedp.ByQuery),
 		chromedp.Evaluate(firstCardComfort, &start),
-		// + raises the seeded 21.0 to 21.5; the re-render must reflect it.
+		// + raises the seeded 21.0 to 21.1; the re-render must reflect it.
 		chromedp.Click(".card .stepper button:last-child", chromedp.ByQuery),
-		settled(21.5),
+		settled(21.1),
 		chromedp.Evaluate(firstCardComfort, &afterPlus),
-		// − drops it back below the start to 20.5 (two effective steps).
+		// − drops it back below the start to 20.9 (two effective steps).
 		chromedp.Click(".card .stepper button:first-child", chromedp.ByQuery),
 		settled(21),
 		chromedp.Click(".card .stepper button:first-child", chromedp.ByQuery),
-		settled(20.5),
+		settled(20.9),
 		chromedp.Evaluate(firstCardComfort, &afterMinus),
 	); err != nil {
 		t.Fatal(err)
@@ -384,11 +383,11 @@ func TestThermostatUIComfortStepper(t *testing.T) {
 	if start != 21 {
 		t.Errorf("start comfort = %v, want 21", start)
 	}
-	if afterPlus != 21.5 {
-		t.Errorf("after + = %v, want 21.5", afterPlus)
+	if afterPlus != 21.1 {
+		t.Errorf("after + = %v, want 21.1", afterPlus)
 	}
-	if afterMinus != 20.5 {
-		t.Errorf("after two − = %v, want 20.5", afterMinus)
+	if afterMinus != 20.9 {
+		t.Errorf("after two − = %v, want 20.9", afterMinus)
 	}
 }
 

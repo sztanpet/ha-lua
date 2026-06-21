@@ -334,13 +334,15 @@ function zoneCard(zone, status) {
     }
 
     const setComfort = (delta) => {
-      const newVal = Math.round((Number(status.comfort_temp) + delta) * 2) / 2;
+      // Step by a tenth of a degree; round to the 0.1 grid so floating-point
+      // drift never leaks a 21.30000001 into the payload or the display.
+      const newVal = Math.round((Number(status.comfort_temp) + delta) * 10) / 10;
       send("api/settings", "PUT", { zone, comfort_temp: newVal }).then(applyState);
     };
     const stepper = h("div", { class: "stepper" },
-      h("button", { onclick: () => setComfort(-0.5) }, "−"),
+      h("button", { onclick: () => setComfort(-0.1) }, "−"),
       h("span", { class: "val" }, status.comfort_temp + "°"),
-      h("button", { onclick: () => setComfort(0.5) }, "+"));
+      h("button", { onclick: () => setComfort(0.1) }, "+"));
 
     body = h("fieldset", { class: "boost" },
       h("legend", null, t("boost")),
