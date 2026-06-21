@@ -211,9 +211,6 @@ const editing = new Set();  // zones with an open schedule editor (suppresses po
 const busy = new Set();      // zones mid-transition: open fetch in flight or close animating
 let lastState = null;
 
-const $ = (html) => { const div = document.createElement("div"); div.innerHTML = html.trim(); return div.firstChild; };
-const esc = (value) => String(value).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
-
 // Tiny hyperscript builder: h(tag, attrs?, ...children) returns a DOM node.
 // Text children become auto-escaped text nodes; element children are appended
 // as-is; null/false children are skipped (so `cond ? node : null` works). In
@@ -516,62 +513,41 @@ function daysFromEntries(entries) {
 }
 
 function renderEditor(zone, entries, card) {
-  let ed = card.querySelector(".editor");
-  if (ed) ed.remove();
-  ed = document.createElement("div");
-  ed.className = "editor";
-
-  entries.forEach((entry, i) => ed.appendChild(entryRow(entries, i, zone, card)));
-
-  const add = $('<button class="add">' + esc(t("add_entry")) + '</button>');
-  add.onclick = () => { entries.push({ group: "weekdays", time: "07:00", temp: 21 }); renderEditor(zone, entries, card); };
-  ed.appendChild(add);
-
-  const actions = document.createElement("div");
-  actions.className = "editor-actions";
-  const save = $('<button class="save">' + esc(t("save")) + '</button>');
-  const cancel = $('<button class="cancel">' + esc(t("cancel")) + '</button>');
-  save.onclick = async () => {
-    const newState = await send("api/schedule", "PUT", { zone: zone, days: daysFromEntries(entries) });
-    if (newState) { lastState = newState; closeEditor(zone, card, newState); }
-  };
-  cancel.onclick = () => { closeEditor(zone, card, lastState); };
-  actions.appendChild(save); actions.appendChild(cancel);
-  ed.appendChild(actions);
-  card.appendChild(ed);
+  const existing = card.querySelector(".editor");
+  if (existing) existing.remove();
+  card.append(h("div", { class: "editor" },
+    ...entries.map((entry, i) => entryRow(entries, i, zone, card)),
+    h("button", { class: "add", onclick: () => {
+      entries.push({ group: "weekdays", time: "07:00", temp: 21 });
+      renderEditor(zone, entries, card);
+    } }, t("add_entry")),
+    h("div", { class: "editor-actions" },
+      h("button", { class: "save", onclick: async () => {
+        const newState = await send("api/schedule", "PUT", { zone, days: daysFromEntries(entries) });
+        if (newState) { lastState = newState; closeEditor(zone, card, newState); }
+      } }, t("save")),
+      h("button", { class: "cancel", onclick: () => closeEditor(zone, card, lastState) }, t("cancel")))));
 }
 
 function entryRow(entries, i, zone, card) {
   const entry = entries[i];
-  const row = document.createElement("div");
-  row.className = "row";
-  const daySelect = document.createElement("select");
   // Multi-day groups (Mon–Fri, Sat–Sun) and individual days go in separate
   // optgroups so the two kinds of choice read as distinct.
-  [
+  const sections = [
     { label: t("daygroup.combined"), items: DAY_GROUPS.filter(group => group.days.length > 1) },
     { label: t("daygroup.individual"), items: DAY_GROUPS.filter(group => group.days.length === 1) },
-  ].forEach(section => {
-    const optgroup = document.createElement("optgroup");
-    optgroup.label = section.label;
-    section.items.forEach(group => {
-      const option = document.createElement("option");
-      option.value = group.value;
-      option.textContent = t("day." + group.value);
-      if (group.value === entry.group) option.selected = true;
-      optgroup.appendChild(option);
-    });
-    daySelect.appendChild(optgroup);
-  });
-  daySelect.onchange = () => { entry.group = daySelect.value; };
-  const time = $('<input type="time" value="' + esc(entry.time) + '">');
-  const temp = $('<input type="number" min="5" max="35" step="0.1" value="' + esc(entry.temp) + '">');
-  time.onchange = () => { entry.time = time.value; };
-  temp.onchange = () => { entry.temp = Number(temp.value); };
-  const rm = $('<button class="rm">✕</button>');
-  rm.onclick = () => { entries.splice(i, 1); renderEditor(zone, entries, card); };
-  row.appendChild(daySelect); row.appendChild(time); row.appendChild(temp); row.appendChild(rm);
-  return row;
+  ];
+  const daySelect = h("select", { onchange: (ev) => { entry.group = ev.target.value; } },
+    ...sections.map(section => h("optgroup", { label: section.label },
+      ...section.items.map(group =>
+        h("option", { value: group.value, selected: group.value === entry.group }, t("day." + group.value))))));
+  const time = h("input", { type: "time", value: entry.time,
+    onchange: (ev) => { entry.time = ev.target.value; } });
+  const temp = h("input", { type: "number", min: "5", max: "35", step: "0.1", value: entry.temp,
+    onchange: (ev) => { entry.temp = Number(ev.target.value); } });
+  const rm = h("button", { class: "rm",
+    onclick: () => { entries.splice(i, 1); renderEditor(zone, entries, card); } }, "✕");
+  return h("div", { class: "row" }, daySelect, time, temp, rm);
 }
 
 // Tick the live boost countdowns once a second between polls.
@@ -592,13 +568,8 @@ if (placeholder) placeholder.textContent = t("loading");
 // Build the language picker. Switching stores the choice and reloads to a
 // URL without ?lang= so the stored preference (not the param) takes effect.
 const langSelect = document.getElementById("lang");
-Object.keys(MESSAGES).forEach(code => {
-  const option = document.createElement("option");
-  option.value = code;
-  option.textContent = LANG_NAMES[code] || code;
-  if (code === LOCALE) option.selected = true;
-  langSelect.appendChild(option);
-});
+Object.keys(MESSAGES).forEach(code =>
+  langSelect.append(h("option", { value: code, selected: code === LOCALE }, LANG_NAMES[code] || code)));
 langSelect.onchange = () => {
   localStorage.setItem("lang", langSelect.value);
   location.assign(location.pathname);
