@@ -317,6 +317,50 @@ func TestThermostatUILocalizesHungarian(t *testing.T) {
 	}
 }
 
+// TestThermostatUILanguagePicker drives the #lang dropdown: selecting Magyar
+// must persist the choice and reload to a URL without ?lang=, so the page comes
+// back localized from the stored preference rather than the query param. The
+// change is fired from a deferred timer so the Evaluate returns before the
+// reload tears the execution context down (otherwise chromedp reports it as an
+// error); the subsequent waits run against the freshly loaded page.
+func TestThermostatUILanguagePicker(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	var langBefore, langAfter, heading string
+	var zoneNames []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .zone", chromedp.ByQuery),
+		chromedp.Value("#lang", &langBefore, chromedp.ByQuery),
+		// Select Magyar exactly as a user would: set the value and fire change,
+		// which stores "hu" and reloads to location.pathname (no ?lang=).
+		chromedp.Evaluate(`setTimeout(() => {
+			const picker = document.getElementById("lang");
+			picker.value = "hu";
+			picker.dispatchEvent(new Event("change"));
+		}, 0)`, nil),
+		chromedp.WaitVisible(".card .zone", chromedp.ByQuery),
+		chromedp.Value("#lang", &langAfter, chromedp.ByQuery),
+		chromedp.Text("h1", &heading, chromedp.ByQuery),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll(".card .zone")).map(node => node.textContent)`, &zoneNames),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if langBefore != "en" {
+		t.Errorf("initial picker value = %q, want en", langBefore)
+	}
+	if langAfter != "hu" {
+		t.Errorf("picker value after switch = %q, want hu (preference not persisted)", langAfter)
+	}
+	if heading != "Fűtés" {
+		t.Errorf("h1 after switch = %q, want Hungarian \"Fűtés\"", heading)
+	}
+	if got := strings.Join(zoneNames, ", "); !strings.Contains(got, "Hálószoba") {
+		t.Errorf("zones not re-rendered in Hungarian after switch; got %q", got)
+	}
+}
+
 // TestThermostatUIScheduleSaveRoundTrip closes the editor loop through the real
 // backend: the seeded zones ship no schedule, so the editor opens empty; adding
 // one entry (defaulting to Mon–Fri 07:00 21°) and clicking save PUTs
