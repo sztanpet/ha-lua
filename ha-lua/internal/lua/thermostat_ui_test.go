@@ -304,6 +304,49 @@ func TestThermostatUIScheduleSaveRoundTrip(t *testing.T) {
 	}
 }
 
+// TestThermostatUIScheduleTempTenths checks that the editor's temp field accepts
+// and preserves tenth-of-a-degree precision. The comfort stepper quantises to
+// 0.5° (ComfortStepper covers that), but the schedule editor's number input is
+// step="0.1", so a typed 21.3 must survive daysFromEntries → PUT → GET →
+// entriesFromDays unrounded. Typing then clicking save blurs the input, firing
+// its onchange (entry.temp = Number(value)) before save reads the entries.
+func TestThermostatUIScheduleTempTenths(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	const tempSel = ".card .editor .row input[type=number]"
+	var step, savedTemp string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .edit-btn", chromedp.ByQuery),
+		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .editor", chromedp.ByQuery),
+		// The open animation max-height-clips the controls; clicking add before
+		// it settles would miss.
+		chromedp.Poll(editorAnimationsDone, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Click(".card .editor .add", chromedp.ByQuery),
+		chromedp.WaitVisible(tempSel, chromedp.ByQuery),
+		chromedp.AttributeValue(tempSel, "step", &step, nil, chromedp.ByQuery),
+		// Replace the default 21 with a tenth-degree value, then save.
+		chromedp.Clear(tempSel, chromedp.ByQuery),
+		chromedp.SendKeys(tempSel, "21.3", chromedp.ByQuery),
+		chromedp.Click(".card .editor .save", chromedp.ByQuery),
+		chromedp.WaitNotPresent(".card .editor", chromedp.ByQuery),
+		// Re-open and read back the persisted value.
+		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
+		chromedp.WaitVisible(tempSel, chromedp.ByQuery),
+		chromedp.Value(tempSel, &savedTemp, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if step != "0.1" {
+		t.Errorf("temp input step = %q, want 0.1", step)
+	}
+	if savedTemp != "21.3" {
+		t.Errorf("persisted temp = %q, want 21.3 (0.1 precision not preserved)", savedTemp)
+	}
+}
+
 // firstCardComfort reads the bedroom card's stepper value ("21.5°" -> 21.5).
 const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val").textContent)`
 
