@@ -255,6 +255,55 @@ func TestThermostatUILocalizesHungarian(t *testing.T) {
 	}
 }
 
+// TestThermostatUIScheduleSaveRoundTrip closes the editor loop through the real
+// backend: the seeded zones ship no schedule, so the editor opens empty; adding
+// one entry (defaulting to Mon–Fri 07:00 21°) and clicking save PUTs
+// /api/schedule, and re-opening the editor must GET the persisted schedule back
+// and regroup it to the single Mon–Fri row. This is the only test that drives
+// the DOM editor through both PUT and GET /api/schedule.
+func TestThermostatUIScheduleSaveRoundTrip(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	const rowCount = `document.querySelectorAll(".card .editor .row").length`
+	var initialRows, savedRows int
+	var group, hhmm, temp string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .edit-btn", chromedp.ByQuery),
+		// Open the editor; with no stored schedule it has no rows.
+		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .editor", chromedp.ByQuery),
+		// Wait out the open animation: while it runs the editor is max-height
+		// clipped, so the add/save buttons are clipped and clicks miss them.
+		chromedp.Poll(editorAnimationsDone, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rowCount, &initialRows),
+		// Add an entry (defaults to Mon–Fri 07:00 21°) and save it.
+		chromedp.Click(".card .editor .add", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .editor .row", chromedp.ByQuery),
+		chromedp.Click(".card .editor .save", chromedp.ByQuery),
+		chromedp.WaitNotPresent(".card .editor", chromedp.ByQuery),
+		// Re-open: the editor must load the persisted schedule from the backend.
+		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .editor .row", chromedp.ByQuery),
+		chromedp.Evaluate(rowCount, &savedRows),
+		chromedp.Value(".card .editor .row select", &group, chromedp.ByQuery),
+		chromedp.Value(".card .editor .row input[type=time]", &hhmm, chromedp.ByQuery),
+		chromedp.Value(".card .editor .row input[type=number]", &temp, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if initialRows != 0 {
+		t.Errorf("seeded editor had %d rows, want 0 (no schedule)", initialRows)
+	}
+	if savedRows != 1 {
+		t.Errorf("reopened editor had %d rows, want 1", savedRows)
+	}
+	if group != "weekdays" || hhmm != "07:00" || temp != "21" {
+		t.Errorf("persisted entry = group %q %s %s°, want weekdays 07:00 21", group, hhmm, temp)
+	}
+}
+
 // firstCardComfort reads the bedroom card's stepper value ("21.5°" -> 21.5).
 const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val").textContent)`
 
