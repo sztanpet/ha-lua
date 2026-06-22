@@ -50,6 +50,9 @@ func TestLoadAddonMode(t *testing.T) {
 	if cfg.LogDir != "/config/ha-lua/logs" {
 		t.Errorf("log_dir: got %q", cfg.LogDir)
 	}
+	if cfg.ExamplesDir != "/config/ha-lua/examples" {
+		t.Errorf("examples_dir: got %q", cfg.ExamplesDir)
+	}
 	if cfg.Database != "/data/ha-lua.db" {
 		t.Errorf("database: got %q", cfg.Database)
 	}
@@ -83,6 +86,10 @@ http_port: 8100
 	// Dev mode binds no ingress listener.
 	if cfg.IngressPort != 0 {
 		t.Errorf("ingress_port: got %d, want 0 in dev mode", cfg.IngressPort)
+	}
+	// Dev mode does not materialize examples unless examples_dir is set.
+	if cfg.ExamplesDir != "" {
+		t.Errorf("examples_dir: got %q, want empty in dev mode", cfg.ExamplesDir)
 	}
 }
 

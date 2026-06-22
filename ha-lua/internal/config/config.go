@@ -42,6 +42,12 @@ type Config struct {
 	// it 0. The spec (§5.5) lists it only as a manifest field, but the Go daemon
 	// must actually bind it for ingress to work.
 	IngressPort int `json:"ingress_port" yaml:"ingress_port"`
+	// ExamplesDir is where the bundled reference examples are materialized
+	// (overwritten, read-only) on boot. Not a user option: add-on mode forces
+	// /config/ha-lua/examples so the set sits beside the scripts dir and is
+	// readable in the File Editor; dev mode leaves it empty (no materialization)
+	// unless set in the YAML. Empty disables materialization entirely.
+	ExamplesDir string `json:"examples_dir" yaml:"examples_dir"`
 
 	StateHistory struct {
 		RetentionDays int    `json:"retention_days" yaml:"retention_days"`
@@ -119,6 +125,9 @@ func load(path string, addon bool) (*Config, error) {
 		// Persist the daemon log under the mounted config dir, beside the
 		// scripts, so users can open it in the File Editor / Studio Code.
 		cfg.LogDir = "/config/ha-lua/logs"
+		// Drop the bundled reference examples beside the scripts dir, refreshed
+		// to this add-on version on every boot. Read-only reference, never run.
+		cfg.ExamplesDir = "/config/ha-lua/examples"
 	}
 	return &cfg, nil
 }
