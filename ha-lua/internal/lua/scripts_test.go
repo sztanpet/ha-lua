@@ -23,9 +23,9 @@ import (
 )
 
 // repoScriptsDir is the shipped example/script tree, relative to this package.
-const repoScriptsDir = "../../scripts"
+const repoScriptsDir = "../../examples"
 
-// TestShippedScriptsCompile loads every *.lua under scripts/ (compile only, no
+// TestShippedScriptsCompile loads every *.lua under examples/ (compile only, no
 // execution) so a syntax error in a shipped script is caught by `make test`
 // rather than at runtime inside the daemon. ha.*/store.*/require references are
 // fine here: LoadFile compiles but never runs the chunk.
@@ -56,7 +56,7 @@ func TestShippedScriptsCompile(t *testing.T) {
 }
 
 // newScheduleState boots an LState whose require resolves into the repo's
-// scripts/lib, so tests exercise the actual shipped lib/schedule.lua.
+// examples/lib, so tests exercise the actual shipped lib/schedule.lua.
 func newScheduleState(t *testing.T) *lua.LState {
 	t.Helper()
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
@@ -151,7 +151,7 @@ func copyRepoFile(t *testing.T, src, dst string) {
 	}
 }
 
-// testZonesLua is a fixture mirroring the structure of scripts/lib/zones.lua
+// testZonesLua is a fixture mirroring the structure of examples/lib/zones.lua
 // with stable entity ids the thermostat tests seed. The shipped zones.lua holds
 // the maintainer's real entities and is meant to be user-edited, so the tests
 // must not depend on its contents — they write this fixture instead.
