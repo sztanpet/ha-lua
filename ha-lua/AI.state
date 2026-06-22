@@ -1,5 +1,30 @@
 # AI Working State
-Last updated: 2026-06-21
+Last updated: 2026-06-22
+
+## Bundled reference examples (2026-06-22, load-examples-spec.md, v2.2.0)
+- The repo's example/script tree doubled as the author's personal heating
+  deployment (real konyha_* entity ids). Split the two concerns: the scripts
+  are now a generic REFERENCE set, the author's real config lives only in their
+  /config (recoverable from git history if needed).
+- `git mv scripts/ -> examples/` (history preserved). Sanitized lib/zones.lua to
+  placeholder ids (climate.living_room, ...). The ONLY code coupling was the
+  test const repoScriptsDir ("../../scripts" -> "../../examples"); tests use an
+  inline testZonesLua fixture, so renaming/sanitizing was ~zero test churn.
+- Examples are REFERENCE-ONLY: never loaded or run. Rejected an earlier
+  load_examples runnable-second-source design (Supervisor multi-source +
+  precedence + watcher fallback) as needless complexity — running examples
+  against entities a stranger lacks is useless, and "run my own scripts from the
+  bundle" is a deployment concern (git), not the add-on's job.
+- New `examples/embed.go` (package bundled): `//go:embed *.lua lib/*.lua *.html`
+  + `Materialize(destDir)` (overwrites every file each boot, writes a generated
+  README pointing at ../scripts/). embed.go excluded by the patterns.
+- config: `ExamplesDir` forced to /config/ha-lua/examples in add-on mode (like
+  LogDir/IngressPort); NO user option, NO schema change. Dev leaves it empty =>
+  no materialization (don't write into a /config that may not exist).
+- main: Materialize runs BEFORE the blocking HA seed wait, so the reference
+  appears even when HA is unreachable; best-effort (warn, never fatal).
+- Supervisor/watcher/Registry/Scheduler/Router/store UNTOUCHED. Only scripts/
+  is loaded and hot-watched, exactly as before.
 
 ## Browser UI tests — boost/stepper/i18n/schedule (2026-06-21)
 - Extended internal/lua/thermostat_ui_test.go (chromedp) beyond the initial 3
@@ -70,7 +95,9 @@ Last updated: 2026-06-21
 ## Phase
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
 (milestones 1–7, see thermostat-ui-spec.md). Filesystem plugin COMPLETE
-(see fs-plugin-spec.md). Released as add-on 2.1.0 (2026-06-21, tag v2.1.0):
+(see fs-plugin-spec.md). Bundled reference examples COMPLETE (see
+load-examples-spec.md). Released as add-on 2.2.0 (2026-06-22, tag v2.2.0):
+minor bump shipping the read-only examples dir. 2.1.0 (2026-06-21) was the
 minor bump for the comfort stepper 0.5°->0.1° change. 2.0.0 was the major bump
 for the get_history `since` string->time BC break (see note above); 1.3.0
 moved scripts to the /config dir, 1.2.0 added the fs plugin.
