@@ -6,7 +6,9 @@
 -- thermostat and the window script. Keeping the table (and the key builder)
 -- here is what stops the scripts from drifting.
 --
--- Edit the entity ids below to match your Home Assistant setup.
+-- REPLACE the entity ids below with your own Home Assistant entities. The
+-- ids here are placeholders and will not match anything in your setup. Add or
+-- remove zones freely; only the keys have to stay consistent across scripts.
 
 local M = {}
 
@@ -22,9 +24,9 @@ M.default_comfort = 23
 -- valve_watch.lua reads it (to spot a stuck/dead valve), the thermostat and
 -- window scripts ignore it.
 M.zones = {
-  bedroom    = { climate = "climate.konyha_halo_futes",        windows = { "binary_sensor.ikea_door_5_contact" }, radiator = "sensor.konyha_halo_radiator_temp" },
-  livingroom = { climate = "climate.konyha_nappali_futes",     windows = { "binary_sensor.ikea_door_2_contact" }, radiator = "sensor.konyha_nappali_radiator_temp" },
-  childrens  = { climate = "climate.konyha_gyerekszoba_futes",  windows = { "binary_sensor.ikea_door_3_contact" }, radiator = "sensor.konyha_gyerekszoba_radiator_temp" },
+  livingroom = { climate = "climate.living_room", windows = { "binary_sensor.living_room_window" }, radiator = "sensor.living_room_radiator_temp" },
+  bedroom    = { climate = "climate.bedroom",     windows = { "binary_sensor.bedroom_window" },     radiator = "sensor.bedroom_radiator_temp" },
+  kitchen    = { climate = "climate.kitchen",     windows = { "binary_sensor.kitchen_window" },     radiator = "sensor.kitchen_radiator_temp" },
 }
 
 -- The global key both scripts use to hand off the controller's desired
