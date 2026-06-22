@@ -15,6 +15,7 @@ import (
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 
+	bundled "github.com/sztanpet/ha-lua/examples"
 	"github.com/sztanpet/ha-lua/internal/config"
 	"github.com/sztanpet/ha-lua/internal/debug"
 	"github.com/sztanpet/ha-lua/internal/ha"
@@ -97,6 +98,19 @@ func main() {
 		os.Exit(1)
 	}
 	purge.New(writeDB, cfg.StateHistory.RetentionDays, purgeInterval).Start(ctx)
+
+	// Drop the bundled reference examples beside the scripts dir, refreshed to
+	// this build on every boot. Read-only reference, never loaded or run; the
+	// user copies what they want into the scripts dir. Done before the HA
+	// connect so the reference appears regardless of connectivity. Best-effort:
+	// a failure must not stop the daemon, and an empty ExamplesDir (dev) skips it.
+	if cfg.ExamplesDir != "" {
+		if err := os.MkdirAll(cfg.ExamplesDir, 0o755); err != nil {
+			slog.Warn("examples dir create failed", "dir", cfg.ExamplesDir, "err", err)
+		} else if err := bundled.Materialize(cfg.ExamplesDir); err != nil {
+			slog.Warn("examples materialize failed", "dir", cfg.ExamplesDir, "err", err)
+		}
+	}
 
 	client := ha.New(cfg.HomeAssistant.URL, cfg.HomeAssistant.Token)
 	client.Start(ctx)

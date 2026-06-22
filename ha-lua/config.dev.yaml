@@ -13,6 +13,11 @@ homeassistant:
 # Where your *.lua scripts live (add-on mode forces /config/ha-lua/scripts).
 scripts_dir: "./scripts"
 
+# Where the bundled reference examples are materialized, read-only, on boot
+# (add-on mode forces /config/ha-lua/examples). Empty = skip. The examples are
+# never loaded or run; copy what you want into scripts_dir and edit it there.
+examples_dir: ""
+
 # SQLite database path (add-on mode forces /data/ha-lua.db).
 database: "./ha-lua.db"
 
