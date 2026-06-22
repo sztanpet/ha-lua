@@ -11,7 +11,8 @@ reload, so saving a script reloads it without restarting the add-on.
    (via Samba or SSH), or add it as a custom repository.
 2. Go to **Settings → Add-ons → Add-on Store**, find **HA Lua** under
    *Local add-ons*, and install it.
-3. Start the add-on. On first start it creates the scripts directory for you.
+3. Start the add-on. On first start it creates the scripts directory and drops
+   a set of read-only examples in `/config/ha-lua/examples/` to copy from.
 
 No URL or token configuration is required: the add-on talks to Home Assistant
 through the Supervisor, which provides the connection and an access token
@@ -23,6 +24,7 @@ automatically.
 |-------------------------|-------------------------------------------|
 | `/config/ha-lua/scripts/`     | Your `*.lua` scripts                |
 | `/config/ha-lua/scripts/lib/` | Shared modules loaded with `require`|
+| `/config/ha-lua/examples/`    | Bundled reference examples, refreshed every boot — **read-only**, copy into `scripts/` to use |
 | `/config/ha-lua/logs/`        | Daemon log (`ha-lua.log`) + script error logs |
 | `/data/ha-lua.db`             | persistent add-on data (survives updates) |
 
@@ -193,10 +195,28 @@ local info = fs.stat("dashboard.html")        -- { size, mtime, is_dir }
   an asset alone will not reload the script — re-save the `.lua` (or restart the
   add-on) to pick up the change.
 
+## Examples
+
+The add-on ships a set of ready-to-read example scripts. On every start it
+writes them into `/config/ha-lua/examples/`, refreshed to the installed
+version. That directory is a **read-only reference**: nothing in it is loaded or
+run, and your edits there are overwritten on the next start. To use an example,
+**copy it into `/config/ha-lua/scripts/`** (helper modules and companion files
+included) and edit it there — only `scripts/` is loaded and hot-reloaded.
+
+```sh
+cp /config/ha-lua/examples/thermostat.lua   /config/ha-lua/scripts/
+cp /config/ha-lua/examples/thermostat.html  /config/ha-lua/scripts/
+cp -r /config/ha-lua/examples/lib           /config/ha-lua/scripts/
+```
+
+The entity ids in the examples (e.g. in `lib/zones.lua`) are placeholders — edit
+them to match your Home Assistant.
+
 ## Thermostat example
 
-The add-on ships a complete worked example — a heating controller with a web UI
-— in the scripts directory:
+The flagship example — a heating controller with a web UI — lives in
+`/config/ha-lua/examples/`:
 
 | File | Role |
 |------|------|
@@ -206,9 +226,10 @@ The add-on ships a complete worked example — a heating controller with a web U
 | `lib/zones.lua` | Shared zone definitions (climate + window entity ids) used by both scripts. **Edit this to match your setup.** |
 | `lib/schedule.lua` | Pure schedule math (no I/O). |
 
-To use it, copy all of these into your scripts directory — **`thermostat.html`
-must sit next to `thermostat.lua`** (the script reads it with `fs.read` at load
-and will error without it) — edit the entity ids in `lib/zones.lua`, then open
+To use it, copy all of these from `examples/` into your scripts directory —
+**`thermostat.html` must sit next to `thermostat.lua`** (the script reads it with
+`fs.read` at load and will error without it) — edit the entity ids in
+`lib/zones.lua`, then open
 **Heating** from the sidebar (ingress) or add a Webpage card pointing at
 `http://<ha-host>:8100/`. Schedules, boosts, and comfort temperatures are
 persisted per zone, so they survive restarts. The controller writes a zone's
