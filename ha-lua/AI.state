@@ -1,6 +1,27 @@
 # AI Working State
 Last updated: 2026-06-23
 
+## VOCAB RENAME boost->override, override->manual (2026-06-23, 28a15b9)
+- The UI "boost" (timed 10/30/60-min hold) never boosted -- it is a timed
+  manual override; the UI already said "Temporary override". Renamed to
+  "override" everywhere. That collided with the existing dial-change override
+  (detected setpoint change held to next schedule transition), so THAT is now
+  "manual". desired() priority: override (UI, timed) > manual (dial) > schedule.
+- IMPORTANT for reading older notes below: any pre-2026-06-23 mention of "boost"
+  means today's "override"; "comfort"/"comfort_temp"/"default_comfort" mean
+  "override_temp"/"default_override_temp"; the old "override" (dial) is "manual".
+- Renamed: store keys boost:->override:, override:->manual:,
+  comfort:->override_temp:; HTTP /api/boost->/api/override (+/cancel),
+  comfort_temp->override_temp; CSS .boost*/.boosting->.override*/.overriding;
+  i18n boost/boosting_to/stop_boost/edit_comfort -> override/overriding_to/
+  stop_override/edit_override_temp; lua active_boost->active_override,
+  active_override->active_manual, comfort()->override_temp(); test ids
+  overrideTemp->manualTemp, TestThermostat{ManualOverrideDetected->ManualHold
+  Detected, BoostSuppressesOverride->OverrideSuppressesManual}, UI Boost
+  Flow->OverrideFlow, ComfortStepper->OverrideTempStepper.
+- Examples-only + tests + DOCS. Historical specs/CHANGELOG keep old words. NOT
+  released. Store-key rename orphans live values (revert to default once).
+
 ## Drag-to-reorder thermostat cards (2026-06-23, examples/thermostat.{lua,html})
 - REQUEST: make the thermostat cards re-orderable and persist the order on the
   backend so other browsers/users see the same arrangement.
