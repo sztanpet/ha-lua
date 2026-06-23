@@ -7,13 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## 2.3.0 - 2026-06-23
 
 ### Fixed
+- `ha.call_service` now waits for Home Assistant's result and raises an error
+  (routed to `ha.on_exception`) when HA rejects the call. It was previously
+  fire-and-forget, so a rejected service call — such as a `set_temperature`
+  above a device's `max_temp` — failed silently with nothing logged.
 - The example thermostat's boost set the climate setpoint to the zone's
   comfort temperature, but the comfort stepper accepted values up to 35°
   while many climate entities only accept up to their advertised `max_temp`
   (commonly 30°). Home Assistant silently drops a `set_temperature` above
   `max_temp`, so a high comfort temp made boost appear to do nothing. The
-  controller now reads each entity's `min_temp`/`max_temp` and bounds the
-  comfort temperature to that range.
+  controller now reads each entity's `min_temp`/`max_temp` and bounds both the
+  comfort temperature and the schedule editor's temperatures to that range.
 
 ### Added
 - The example thermostat UI lets you tap the target temperature between the

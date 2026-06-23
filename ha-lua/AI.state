@@ -19,11 +19,24 @@ Last updated: 2026-06-23
 - Tests: TestThermostatAPI re-seeds bedroom with max_temp=30 and asserts a 31.3
   PUT -> 400, 29 -> 200 + echoed max_temp. ComfortStepper browser test still
   green (seed has no max_temp -> 5..35 fallback, 21.x in range).
-- NOT a daemon change -- only the REFERENCE examples. The user's LIVE scripts in
-  /config/ha-lua/scripts/thermostat.{lua,html} need the same edit (the examples
-  dir is reference-only, never loaded). Did NOT touch the silent-rejection root
-  cause (CallService awaiting HA's result) -- out of scope, flagged to user.
-- Changelog 2.3.0 added; config.yaml NOT yet bumped / NOT tagged (awaiting user).
+- ROOT CAUSE NOW FIXED (daemon change): CallService was fire-and-forget. Added
+  Client.SendCommandWaitResult -- registers a waiter by msg id in a `pending`
+  map, readLoop/getStates route "result" frames to it, success:false -> error
+  carrying HA's message. 10s liveness timeout + drain-on-disconnect so a script
+  goroutine never hangs. main wires CallService through it; the Lua binding
+  already raises call_service errors to on_exception. FireEvent left fire-and-
+  forget (not requested). Tested in ha/client_test.go TestSendCommandWaitResult.
+  NOTE: call_service is now SYNCHRONOUS (waits for HA's ack, ~ms) -- a behavior
+  change for all scripts, but only adds error-raising on already-failing calls.
+- Schedule editor now bounded too: schedule.validate gained optional (lo, hi)
+  args (default 5..35, so TestSchedulePureLib unchanged); PUT /api/schedule
+  passes temp_bounds(zone); html editor temp inputs clamp via zoneBounds(zone).
+- The example/daemon split: thermostat.{lua,html} + lib/schedule.lua edits are
+  REFERENCE only. The CallService fix IS a real daemon change (internal/ha,
+  cmd). The user's LIVE scripts in /config/ha-lua/scripts/ still need the lua/
+  html edits copied over (examples dir is never loaded).
+- Released as 2.3.0 (2026-06-23): comfort+schedule device-range bounds, tap-to-
+  edit target, call_service result checking.
 
 ## Bundled reference examples (2026-06-22, load-examples-spec.md, v2.2.0)
 - The repo's example/script tree doubled as the author's personal heating
