@@ -166,8 +166,12 @@ func main() {
 			return store.New(writeDB, readDB, scriptID)
 		},
 		CallService: func(ctx context.Context, domain, service string, data jsontext.Value) error {
+			// Wait for HA's result so a rejected call (e.g. a setpoint above
+			// the device's max_temp) surfaces as an error to the script rather
+			// than vanishing — fire-and-forget hid those failures entirely.
+			id := client.NextID()
 			raw, err := json.Marshal(serviceCallMsg{
-				ID:      client.NextID(),
+				ID:      id,
 				Type:    "call_service",
 				Domain:  domain,
 				Service: service,
@@ -176,7 +180,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			return client.SendRaw(ctx, raw)
+			return client.SendCommandWaitResult(ctx, id, raw)
 		},
 		FireEvent: func(ctx context.Context, eventType string, data jsontext.Value) error {
 			raw, err := json.Marshal(fireEventMsg{
