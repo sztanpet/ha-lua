@@ -1,6 +1,33 @@
 # AI Working State
 Last updated: 2026-06-23
 
+## Drag-to-reorder thermostat cards (2026-06-23, examples/thermostat.{lua,html})
+- REQUEST: make the thermostat cards re-orderable and persist the order on the
+  backend so other browsers/users see the same arrangement.
+- BACKEND (f3c8436): one fixed store KV key "zone_order" = array of zone ids.
+  ordered_zones() filters it to zones that still exist and appends any omitted
+  ones alphabetically, so the served order always covers exactly the current
+  zone set however stale the stored value is -> UI renders straight from it.
+  full_state() gained an `order` field; new PUT /api/order validates ids,
+  collapses dupes, accepts a partial list. GET stays alphabetical until set.
+- FRONTEND (a74a241): six-dot grip in each card head. render() now lays cards
+  out in state.order (fallback sorted keys). Drag is POINTER EVENTS, not HTML5
+  DnD, so it works on touch+mouse; touch-action:none on the grip stops a
+  touch-drag scrolling the page. onDragMove swaps DOM positions when the dragged
+  card's centre crosses a neighbour's, nudging startY by the neighbour height so
+  the translate stays continuous (no jump). endDrag PUTs the DOM order, holds
+  the zone busy until the PUT resolves (no mid-drag poll rebuild), and on a
+  failed PUT re-renders from lastState -> reverts the move. New i18n key
+  "reorder"; card carries data-zone.
+- TESTS: TestThermostatOrderAPI (Go, no browser) drives GET/PUT order, rejects
+  unknown zones, checks partial-list append, and the persist-across-readers
+  round-trip. TestThermostatUIReorderPersists (chromedp) does a REAL pointer
+  drag via CDP mouse input (which fires pointer events; setPointerCapture works
+  with the real mouse pointerId, and is try/guarded anyway) and asserts the swap
+  survives a fresh navigation. Green under -race x3 + full `make check`.
+- EXAMPLES-ONLY change (reference tree). The user's LIVE scripts in
+  /config/ha-lua/scripts/ still need the lua+html copied over. NOT released.
+
 ## Comfort setpoint: always-visible input (2026-06-23, examples/thermostat.html)
 - REQUEST: tap-to-reveal setpoint (84fadb1) was too slow; make it a permanent
   number field so an exact target can be typed without first tapping.
