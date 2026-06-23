@@ -394,6 +394,17 @@ func TestThermostatAPI(t *testing.T) {
 		t.Errorf("max_temp = %v, want 30", bedroom["max_temp"])
 	}
 
+	// The schedule editor is bounded by the same device range: a transition
+	// above max_temp is rejected, one inside it is accepted.
+	rec = doReq(router, "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":33}]}}`)
+	if rec.Code != 400 {
+		t.Errorf("schedule temp above max_temp: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+	rec = doReq(router, "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":22}]}}`)
+	if rec.Code != 200 {
+		t.Fatalf("schedule temp within range: status = %d body %q", rec.Code, rec.Body.String())
+	}
+
 	// GET / serves the self-contained UI page.
 	rec = doReq(router, "GET", "/", "")
 	if rec.Code != 200 {

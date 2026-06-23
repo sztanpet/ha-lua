@@ -352,7 +352,8 @@ ha.serve("PUT", "/api/schedule", function(req)
   if body == nil then return bad("invalid JSON body") end
   local zone = body.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
-  local valid, msg = schedule.validate(body.days)
+  local lo, hi = temp_bounds(zone)
+  local valid, msg = schedule.validate(body.days, lo, hi)
   if not valid then return bad("invalid schedule: " .. msg) end
   store.set(sched_key(zone), { days = body.days })
   local now, dow, minute = now_parts()

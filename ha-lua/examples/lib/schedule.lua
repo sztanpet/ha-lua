@@ -100,8 +100,12 @@ end
 
 -- validate checks a `days` table from the UI before it is persisted. Returns
 -- true on success, or false plus an error message. Temperatures are bounded to
--- a sane heating range so a typo can't drive a radiator to 300°.
-function M.validate(days)
+-- [lo, hi] (defaulting to a sane 5..35 heating range) so a typo can't drive a
+-- radiator to 300° and so a value the climate device would reject is never
+-- stored; callers pass the entity's min_temp/max_temp for the tighter bound.
+function M.validate(days, lo, hi)
+  lo = lo or 5
+  hi = hi or 35
   if type(days) ~= "table" then
     return false, "days must be a table"
   end
@@ -118,8 +122,8 @@ function M.validate(days)
         if M.parse_hhmm(transition.time) == nil then
           return false, "bad time: " .. tostring(transition.time)
         end
-        if type(transition.temp) ~= "number" or transition.temp < 5 or transition.temp > 35 then
-          return false, "temp out of range (5..35): " .. tostring(transition.temp)
+        if type(transition.temp) ~= "number" or transition.temp < lo or transition.temp > hi then
+          return false, string.format("temp out of range (%g..%g): %s", lo, hi, tostring(transition.temp))
         end
       end
     end

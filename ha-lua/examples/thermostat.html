@@ -261,6 +261,16 @@ const ICON_STOPWATCH =
 // translation fall back to the capitalised, de-underscored key.
 const title = (zone) => t("zone." + zone, null, zone.charAt(0).toUpperCase() + zone.slice(1).replace(/_/g, " "));
 
+// The climate device's accepted setpoint range for a zone (its min_temp/
+// max_temp), read from the last rendered state. Both the comfort stepper and
+// the schedule editor clamp to it so the UI never offers a value HA would
+// reject. Falls back to a permissive 5..35 before the first poll has bounds.
+function zoneBounds(zone) {
+  const status = lastState && lastState.zones && lastState.zones[zone];
+  const num = (v, dflt) => (status && Number.isFinite(Number(v)) ? Number(v) : dflt);
+  return [num(status && status.min_temp, 5), num(status && status.max_temp, 35)];
+}
+
 function showErr(msg) {
   const errEl = document.getElementById("err");
   errEl.textContent = msg; errEl.style.display = "block";
@@ -340,8 +350,7 @@ function zoneCard(zone, status) {
     // The device's accepted setpoint range (from HA's min_temp/max_temp). A
     // value above max_temp is silently rejected by HA, so every path that sets
     // the comfort target clamps into [lo, hi] first.
-    const lo = Number.isFinite(Number(status.min_temp)) ? Number(status.min_temp) : 5;
-    const hi = Number.isFinite(Number(status.max_temp)) ? Number(status.max_temp) : 35;
+    const [lo, hi] = zoneBounds(zone);
     const commitComfort = (value) => {
       // Round to the 0.1 grid (so float drift never leaks a 21.30000001) and
       // clamp into the device range. Garbage input is ignored — the re-render
@@ -585,8 +594,9 @@ function entryRow(entries, i, zone, card) {
         h("option", { value: group.value, selected: group.value === entry.group }, t("day." + group.value))))));
   const time = h("input", { type: "time", value: entry.time,
     onchange: (ev) => { entry.time = ev.target.value; } });
-  const temp = h("input", { type: "number", min: "5", max: "35", step: "0.1", value: entry.temp,
-    onchange: (ev) => { entry.temp = Number(ev.target.value); } });
+  const [lo, hi] = zoneBounds(zone);
+  const temp = h("input", { type: "number", min: lo, max: hi, step: "0.1", value: entry.temp,
+    onchange: (ev) => { entry.temp = Math.min(hi, Math.max(lo, Number(ev.target.value))); ev.target.value = entry.temp; } });
   const rm = h("button", { class: "rm",
     onclick: () => { entries.splice(i, 1); renderEditor(zone, entries, card); } }, "✕");
   return h("div", { class: "row" }, daySelect, time, temp, rm);
