@@ -4,6 +4,15 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.5.0 - 2026-06-23
+
+### Added
+- The example thermostat UI's cards can be reordered by dragging the grip
+  handle in each card head. The order is persisted on the backend (new
+  `PUT /api/order`, and an `order` field on `/api/state`), so every browser
+  and user sees the same arrangement instead of a fixed alphabetical one.
+  Dragging uses Pointer Events, so it works on touch as well as mouse.
+
 ## 2.4.0 - 2026-06-23
 
 ### Changed
