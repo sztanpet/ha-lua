@@ -201,8 +201,11 @@ Last updated: 2026-06-23
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
 (milestones 1–7, see thermostat-ui-spec.md). Filesystem plugin COMPLETE
 (see fs-plugin-spec.md). Bundled reference examples COMPLETE (see
-load-examples-spec.md). Released as add-on 2.5.0 (2026-06-23, tag v2.5.0):
-minor bump for drag-to-reorder thermostat cards persisted on the backend.
+load-examples-spec.md). Released as add-on 2.6.0 (2026-06-23, tag v2.6.0):
+minor bump for the boost->override / override->manual vocab rename (example
+HTTP API + stored keys changed; daemon untouched). 2.5.0 (2026-06-23, tag
+v2.5.0): minor bump for drag-to-reorder thermostat cards persisted on the
+backend.
 2.4.0 (2026-06-23) was the status-badge change; 2.3.0 the device-range bounds
 + call_service result checking. 2.2.0 (2026-06-22, tag v2.2.0): minor bump
 shipping the read-only examples dir. 2.1.0 (2026-06-21) was the
