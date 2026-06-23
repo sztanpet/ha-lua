@@ -4,6 +4,15 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.4.0 - 2026-06-23
+
+### Changed
+- The example thermostat's card badge no longer shows the raw `heat` hvac
+  mode. It now reads "on" when the zone is in heat mode, and "heating" while
+  the device is actively calling for heat (the entity's `hvac_action`), so the
+  badge reflects what the radiator is doing. `/api/state` now exposes
+  `hvac_action`.
+
 ## 2.3.0 - 2026-06-23
 
 ### Fixed
