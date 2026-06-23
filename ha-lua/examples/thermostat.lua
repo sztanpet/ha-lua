@@ -22,6 +22,10 @@ local function boost_key(zone) return "boost:" .. zone end
 local function override_key(zone) return "override:" .. zone end
 local function comfort_key(zone) return "comfort:" .. zone end
 
+-- The card display order is a single UI preference shared by every browser, so
+-- it lives under one fixed key (not per-zone): an array of zone ids.
+local ORDER_KEY = "zone_order"
+
 -- now_parts returns the current time userdata plus the schedule's weekday
 -- (0=Mon..6=Sun, converted from Go's Sunday-first weekday) and minute-of-day.
 local function now_parts()
@@ -272,13 +276,38 @@ local function zone_state(zone, now, dow, minute)
   }
 end
 
+-- ordered_zones returns the zone ids in the user-chosen display order. The
+-- stored order is filtered to zones that still exist; any zone missing from it
+-- (e.g. one newly added to zones.lua) is appended alphabetically. The result
+-- therefore always covers exactly the current zone set, however stale the
+-- stored order has become, so the UI can render straight from it.
+local function ordered_zones()
+  local stored = store.get(ORDER_KEY)
+  local seen, order = {}, {}
+  if type(stored) == "table" then
+    for _, zone in ipairs(stored) do
+      if zone_defs[zone] ~= nil and not seen[zone] then
+        seen[zone] = true
+        order[#order + 1] = zone
+      end
+    end
+  end
+  local rest = {}
+  for zone in pairs(zone_defs) do
+    if not seen[zone] then rest[#rest + 1] = zone end
+  end
+  table.sort(rest)
+  for _, zone in ipairs(rest) do order[#order + 1] = zone end
+  return order
+end
+
 local function full_state()
   local now, dow, minute = now_parts()
   local zone_states = {}
   for zone in pairs(zone_defs) do
     zone_states[zone] = zone_state(zone, now, dow, minute)
   end
-  return { zones = zone_states }
+  return { zones = zone_states, order = ordered_zones() }
 end
 
 -- decode_body parses a JSON request body into a table, or returns nil.
@@ -335,6 +364,26 @@ ha.serve("PUT", "/api/settings", function(req)
   store.set(comfort_key(zone), body.comfort_temp)
   local now, dow, minute = now_parts()
   apply_zone(zone, now, dow, minute) -- if a boost is active, the new comfort applies now
+  return json_ok(full_state())
+end)
+
+-- PUT /api/order persists the card display order so every browser and user
+-- sees the same arrangement. Body is { order = ["zone", ...] }; unknown ids are
+-- rejected and duplicates collapsed. A partial list is accepted (ordered_zones
+-- appends any omitted zones), so the UI may send only the zones it rendered.
+ha.serve("PUT", "/api/order", function(req)
+  local body = decode_body(req)
+  if body == nil then return bad("invalid JSON body") end
+  if type(body.order) ~= "table" then return bad("order must be an array") end
+  local seen, clean = {}, {}
+  for _, zone in ipairs(body.order) do
+    if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone in order") end
+    if not seen[zone] then
+      seen[zone] = true
+      clean[#clean + 1] = zone
+    end
+  end
+  store.set(ORDER_KEY, clean)
   return json_ok(full_state())
 end)
 

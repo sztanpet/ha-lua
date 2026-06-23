@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -415,6 +417,84 @@ func TestThermostatAPI(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "<!doctype html>") {
 		t.Errorf("GET / did not return the HTML page")
+	}
+}
+
+// TestThermostatOrderAPI exercises the card-order persistence: GET /api/state
+// reports the order (alphabetical until set), PUT /api/order persists an
+// arbitrary arrangement that survives a re-GET (so other browsers see it),
+// unknown zones are rejected, and a partial list appends the omitted zones.
+func TestThermostatOrderAPI(t *testing.T) {
+	srv := serveThermostatUISeed(t, defaultZoneSeed())
+	client := srv.Client()
+
+	getOrder := func() []string {
+		t.Helper()
+		req, err := http.NewRequestWithContext(context.Background(), "GET", srv.URL+"/api/state", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body struct {
+			Order []string `json:"order"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		return body.Order
+	}
+	putOrder := func(payload string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequestWithContext(context.Background(), "PUT", srv.URL+"/api/order", strings.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	// Default order is alphabetical by zone key.
+	if got := getOrder(); !reflect.DeepEqual(got, []string{"bedroom", "childrens", "livingroom"}) {
+		t.Fatalf("default order = %v, want alphabetical", got)
+	}
+
+	// A full reordering is echoed back and persists for the next reader.
+	resp := putOrder(`{"order":["livingroom","bedroom","childrens"]}`)
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("PUT /api/order status = %d", resp.StatusCode)
+	}
+	want := []string{"livingroom", "bedroom", "childrens"}
+	if got := getOrder(); !reflect.DeepEqual(got, want) {
+		t.Errorf("persisted order = %v, want %v", got, want)
+	}
+
+	// An unknown zone is rejected and leaves the stored order untouched.
+	bad := putOrder(`{"order":["nope"]}`)
+	defer bad.Body.Close()
+	if bad.StatusCode != 400 {
+		t.Errorf("unknown-zone order status = %d, want 400", bad.StatusCode)
+	}
+	if got := getOrder(); !reflect.DeepEqual(got, want) {
+		t.Errorf("order after rejected PUT = %v, want unchanged %v", got, want)
+	}
+
+	// A partial list keeps the named zone first and appends the rest alphabetically.
+	partial := putOrder(`{"order":["livingroom"]}`)
+	defer partial.Body.Close()
+	if partial.StatusCode != 200 {
+		t.Fatalf("partial order status = %d", partial.StatusCode)
+	}
+	if got := getOrder(); !reflect.DeepEqual(got, []string{"livingroom", "bedroom", "childrens"}) {
+		t.Errorf("partial order = %v, want livingroom then alphabetical rest", got)
 	}
 }
 
