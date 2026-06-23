@@ -367,6 +367,33 @@ func TestThermostatAPI(t *testing.T) {
 		t.Fatalf("bad zone status = %d, want 400", rec.Code)
 	}
 
+	// Comfort temp is bounded by the device's advertised max_temp. Re-seed the
+	// bedroom with a 30° ceiling: a PUT above it must be rejected (this is the
+	// bug where HA silently drops a setpoint above max_temp and the device never
+	// boosts), while a value inside the range is accepted and echoed back along
+	// with the bounds.
+	if err := tracker.Seed(context.Background(), []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":19.5,"temperature":18,"min_temp":7,"max_temp":30}`)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","comfort_temp":31.3}`)
+	if rec.Code != 400 {
+		t.Errorf("comfort_temp above max_temp: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+	}
+	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","comfort_temp":29}`)
+	if rec.Code != 200 {
+		t.Fatalf("comfort_temp within range: status = %d body %q", rec.Code, rec.Body.String())
+	}
+	zones, _ = decode(rec)["zones"].(map[string]any)
+	bedroom, _ = zones["bedroom"].(map[string]any)
+	if bedroom["comfort_temp"] != float64(29) {
+		t.Errorf("comfort_temp = %v, want 29", bedroom["comfort_temp"])
+	}
+	if bedroom["max_temp"] != float64(30) {
+		t.Errorf("max_temp = %v, want 30", bedroom["max_temp"])
+	}
+
 	// GET / serves the self-contained UI page.
 	rec = doReq(router, "GET", "/", "")
 	if rec.Code != 200 {

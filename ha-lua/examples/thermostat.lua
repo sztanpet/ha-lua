@@ -58,6 +58,22 @@ local function current_target(zone)
   return nil
 end
 
+-- temp_bounds returns the climate entity's accepted setpoint range. HA
+-- advertises min_temp/max_temp on every climate entity, and writing a
+-- temperature outside that range is silently rejected by HA (the setpoint just
+-- stays put). We honour the device's own limits so the UI can never offer, nor
+-- a boost ever request, a value the device will refuse. Falls back to a
+-- permissive 5..35 only while the entity has not seeded yet.
+local function temp_bounds(zone)
+  local lo, hi = 5, 35
+  local state = ha.get_state(zone_defs[zone].climate)
+  if state and state.attributes then
+    if type(state.attributes.min_temp) == "number" then lo = state.attributes.min_temp end
+    if type(state.attributes.max_temp) == "number" then hi = state.attributes.max_temp end
+  end
+  return lo, hi
+end
+
 -- any_window_open reports whether any window in the zone is definitely open.
 -- A not-yet-seeded sensor (nil) counts as closed for the write decision.
 local function any_window_open(zone)
@@ -223,6 +239,7 @@ local function zone_state(zone, now, dow, minute)
   end
   local days = load_schedule(zone)
   local sched_temp, now_index = schedule.resolve(days, dow, minute)
+  local min_temp, max_temp = temp_bounds(zone)
 
   local boost_tbl
   local boost = active_boost(zone, now)
@@ -241,6 +258,8 @@ local function zone_state(zone, now, dow, minute)
     current_temp = current,
     target = target,
     comfort_temp = comfort(zone),
+    min_temp = min_temp,
+    max_temp = max_temp,
     window_open = any_window_open(zone),
     scheduled_temp = sched_temp,
     today = schedule.day_list(days, dow),
@@ -305,8 +324,9 @@ ha.serve("PUT", "/api/settings", function(req)
   if body == nil then return bad("invalid JSON body") end
   local zone = body.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
-  if type(body.comfort_temp) ~= "number" or body.comfort_temp < 5 or body.comfort_temp > 35 then
-    return bad("comfort_temp out of range (5..35)")
+  local lo, hi = temp_bounds(zone)
+  if type(body.comfort_temp) ~= "number" or body.comfort_temp < lo or body.comfort_temp > hi then
+    return bad(string.format("comfort_temp out of range (%g..%g)", lo, hi))
   end
   store.set(comfort_key(zone), body.comfort_temp)
   local now, dow, minute = now_parts()
