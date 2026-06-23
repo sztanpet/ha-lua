@@ -493,13 +493,13 @@ func TestThermostatUIScheduleTempTenths(t *testing.T) {
 	}
 }
 
-// firstCardComfort reads the bedroom card's stepper value ("21.1°" -> 21.1).
-const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val").textContent)`
+// firstCardComfort reads the bedroom card's always-visible setpoint input.
+const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val-input").value)`
 
 // TestThermostatUIComfortStepper exercises the target-temp stepper round-trip:
 // the + and − buttons PUT /api/settings in tenth-degree steps and the returned
 // state re-renders the displayed value. The 0.1° quantisation lives in the page
-// (setComfort rounds to the nearest 0.1), so only a browser test covers it.
+// (nudge rounds to the nearest 0.1), so only a browser test covers it.
 func TestThermostatUIComfortStepper(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveThermostatUI(t)
@@ -511,7 +511,7 @@ func TestThermostatUIComfortStepper(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/?lang=en"),
-		chromedp.WaitVisible(".card .stepper .val", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .stepper .val-input", chromedp.ByQuery),
 		chromedp.Evaluate(firstCardComfort, &start),
 		// + raises the seeded 21.0 to 21.1; the re-render must reflect it.
 		chromedp.Click(".card .stepper button:last-child", chromedp.ByQuery),

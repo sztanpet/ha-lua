@@ -58,9 +58,9 @@
   .stepper { display:flex; align-items:center; gap:8px; }
   .stepper button { width:42px; height:42px; font-size:1.4rem; border:1px solid var(--line);
           border-radius:10px; background:var(--surface); color:var(--ink); cursor:pointer; }
-  .stepper .val { font-size:1.3rem; font-weight:600; min-width:52px; text-align:center; cursor:pointer; }
-  .stepper .val-input { width:68px; padding:4px 2px; cursor:text; border:1px solid var(--line);
-          border-radius:8px; background:var(--surface); color:var(--ink); }
+  .stepper .val-input { width:72px; height:42px; padding:4px 2px; font-size:1.3rem;
+          font-weight:600; text-align:center; border:1px solid var(--line);
+          border-radius:10px; background:var(--surface); color:var(--ink); }
   .today { display:flex; flex-wrap:wrap; gap:6px 10px; font-size:.9rem;
            color:var(--muted); margin-bottom:8px; }
   .today .step.now { color:var(--accent); font-weight:700; cursor:help; }
@@ -122,7 +122,7 @@ const MESSAGES = {
     "custom_minutes_title": "custom minutes",
     "custom_minutes_prompt": "Override for how many minutes?",
     "boost": "Temporary override",
-    "edit_comfort": "Tap to set an exact target",
+    "edit_comfort": "Set an exact target",
     "no_schedule": "no schedule set",
     "now_period": "currently active period",
     "edit_schedule": "Edit schedule",
@@ -151,7 +151,7 @@ const MESSAGES = {
     "custom_minutes_title": "egyéni időtartam",
     "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
     "boost": "Ideiglenes felülbírálás",
-    "edit_comfort": "Koppints a pontos cél megadásához",
+    "edit_comfort": "Pontos cél megadása",
     "no_schedule": "nincs beállított ütemezés",
     "now_period": "jelenleg aktív időszak",
     "edit_schedule": "Ütemezés szerkesztése",
@@ -363,47 +363,43 @@ function zoneCard(zone, status) {
     // value above max_temp is silently rejected by HA, so every path that sets
     // the comfort target clamps into [lo, hi] first.
     const [lo, hi] = zoneBounds(zone);
+    // Skip a redundant PUT when the value hasn't actually moved since the last
+    // send (e.g. a blur right after the +/- buttons already committed). Seeded
+    // with the rendered value so merely focusing and tabbing away sends nothing.
+    let lastSent = Math.round(Number(status.comfort_temp) * 10) / 10;
     const commitComfort = (value) => {
       // Round to the 0.1 grid (so float drift never leaks a 21.30000001) and
       // clamp into the device range. Garbage input is ignored — the re-render
       // restores the previous display.
       let newVal = Math.round(Number(value) * 10) / 10;
-      if (!Number.isFinite(newVal)) return;
+      if (!Number.isFinite(newVal) || newVal === lastSent) return;
       newVal = Math.min(hi, Math.max(lo, newVal));
+      lastSent = newVal;
       send("api/settings", "PUT", { zone, comfort_temp: newVal }).then(applyState);
     };
-    const setComfort = (delta) => commitComfort(Number(status.comfort_temp) + delta);
 
-    // Tap the value to type an exact target. The field is focused and the zone
-    // is marked busy (suppressing the 5s poll) until it commits on Enter/blur
-    // or cancels on Escape, so a refresh can't yank the input away mid-edit.
-    const valSpan = h("span", { class: "val", title: t("edit_comfort"),
-      onclick: () => editComfort() }, status.comfort_temp + "°");
-    function editComfort() {
-      busy.add(zone);
-      const input = h("input", { class: "val val-input", type: "number",
-        min: lo, max: hi, step: "0.1", value: status.comfort_temp });
-      let done = false;
-      const finish = (commit) => {
-        if (done) return;
-        done = true;
-        busy.delete(zone);
-        if (commit) commitComfort(input.value);
-        else applyState(lastState);   // cancelled: restore the last rendered state
-      };
-      input.onkeydown = (ev) => {
-        if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
-        else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
-      };
-      input.onblur = () => finish(true);
-      valSpan.replaceWith(input);
-      input.focus();
-      input.select();
-    }
-    const stepper = h("div", { class: "stepper" },
-      h("button", { onclick: () => setComfort(-0.1) }, "−"),
-      valSpan,
-      h("button", { onclick: () => setComfort(0.1) }, "+"));
+    // The setpoint is an always-visible number field: type an exact target and
+    // commit on Enter or blur, or nudge by 0.1 with the +/- buttons. Focusing
+    // marks the zone busy so the 5s poll can't yank the field away mid-edit;
+    // blur clears it. Escape reverts to the last rendered value.
+    const input = h("input", { class: "val-input", type: "number", inputmode: "decimal",
+      min: lo, max: hi, step: "0.1", value: status.comfort_temp,
+      title: t("edit_comfort"), "aria-label": t("edit_comfort"),
+      onfocus: () => busy.add(zone),
+      onblur: () => { busy.delete(zone); commitComfort(input.value); },
+      onkeydown: (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); input.blur(); }
+        else if (ev.key === "Escape") { ev.preventDefault(); input.value = status.comfort_temp; input.blur(); }
+      } });
+    // The +/- buttons nudge the committed setpoint by 0.1; the PUT response
+    // re-renders the field with the confirmed value (no optimistic write, so a
+    // slow/out-of-order response can't leave a stale number on screen).
+    const nudge = (delta) => commitComfort(Number(status.comfort_temp) + delta);
+    // mousedown preventDefault keeps focus on the field while nudging, so it
+    // doesn't blur-commit and then nudge from a stale value mid-click.
+    const nudgeBtn = (label, delta) => h("button",
+      { onmousedown: (ev) => ev.preventDefault(), onclick: () => nudge(delta) }, label);
+    const stepper = h("div", { class: "stepper" }, nudgeBtn("−", -0.1), input, nudgeBtn("+", 0.1));
 
     body = h("fieldset", { class: "boost" },
       h("legend", null, t("boost")),

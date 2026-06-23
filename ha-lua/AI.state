@@ -1,6 +1,21 @@
 # AI Working State
 Last updated: 2026-06-23
 
+## Comfort setpoint: always-visible input (2026-06-23, examples/thermostat.html)
+- REQUEST: tap-to-reveal setpoint (84fadb1) was too slow; make it a permanent
+  number field so an exact target can be typed without first tapping.
+- The .val span + editComfort() swap is gone; the stepper now renders a
+  persistent <input class=val-input type=number inputmode=decimal>. Focus marks
+  the zone busy (suppresses the 5s poll), blur/Enter commit, Escape reverts.
+- +/- nudge the COMMITTED setpoint (commitComfort(comfort_temp ± 0.1)); no
+  optimistic input.value write -- an earlier optimistic version let the browser
+  test's settled() pass pre-response and re-rendered PUT replies out of order
+  under -race, leaving a stale number. lastSent guard dedupes the no-op blur PUT.
+- nudge buttons use onmousedown preventDefault so clicking them keeps field
+  focus (no blur-commit mid-click). edit_comfort i18n reworded off "tap".
+- Test: thermostat_ui_test.go firstCardComfort reads .val-input .value (was
+  .val .textContent); WaitVisible selector updated. green under -race x3.
+
 ## Thermostat boost vs device max_temp (2026-06-23, examples/thermostat.*)
 - BUG REPORT: boost did nothing. Root cause: boost sets the setpoint to the
   zone's comfort temp; comfort stepper/validation allowed 5..35 but the user's
