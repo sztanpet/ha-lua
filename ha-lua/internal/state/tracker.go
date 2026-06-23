@@ -93,7 +93,10 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 		return fmt.Errorf("decode state_changed data: %w", err)
 	}
 	if data.NewState == nil {
-		slog.Warn("state: state_changed with nil new_state", "entity", data.EntityID)
+		// HA sends a nil new_state when an entity is removed (e.g. deleting an
+		// automation). That is normal lifecycle, not an error, so log it at
+		// debug rather than warning.
+		slog.Debug("state: entity removed (nil new_state)", "entity", data.EntityID)
 		return nil
 	}
 
