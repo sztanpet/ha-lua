@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/go-json-experiment/json/jsontext"
 
@@ -534,6 +536,83 @@ func TestThermostatUIComfortStepper(t *testing.T) {
 	}
 	if afterMinus != 20.9 {
 		t.Errorf("after two − = %v, want 20.9", afterMinus)
+	}
+}
+
+// cardOrderJS reads the rendered card order as a list of zone ids.
+const cardOrderJS = `Array.from(document.querySelectorAll(".card[data-zone]")).map(card => card.dataset.zone)`
+
+// TestThermostatUIReorderPersists drives the drag-to-reorder gesture end to end:
+// a real pointer drag (CDP mouse input, which fires pointer events) on the first
+// card's grip down past the second card swaps the two, the new order is PUT to
+// /api/order, and a fresh page load — standing in for another browser — comes
+// back in the persisted order rather than the alphabetical default.
+func TestThermostatUIReorderPersists(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	// Pointer path: press on the first grip, then move so the dragged card's
+	// centre passes the second card's centre by a small margin (so it swaps with
+	// the second card but not a third).
+	const coordJS = `(() => {
+		const cards = document.querySelectorAll(".card[data-zone]");
+		const grip = cards[0].querySelector(".grip").getBoundingClientRect();
+		const c1 = cards[0].getBoundingClientRect();
+		const c2 = cards[1].getBoundingClientRect();
+		const gx = grip.left + grip.width / 2, gy = grip.top + grip.height / 2;
+		return { gx, gy, targetY: gy + (c2.top + c2.height / 2) - (c1.top + c1.height / 2) + 6 };
+	})()`
+
+	var before []string
+	var coords struct{ Gx, Gy, TargetY float64 }
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card[data-zone] .grip", chromedp.ByQuery),
+		chromedp.Evaluate(cardOrderJS, &before),
+		chromedp.Evaluate(coordJS, &coords),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(before) < 2 {
+		t.Fatalf("need at least 2 cards to reorder, got %v", before)
+	}
+
+	// Press the grip, walk the pointer down in steps so onDragMove sees the swap
+	// threshold cross, then release.
+	actions := []chromedp.Action{
+		chromedp.MouseEvent(input.MousePressed, coords.Gx, coords.Gy, chromedp.ButtonType(input.Left)),
+	}
+	const steps = 8
+	for i := 1; i <= steps; i++ {
+		y := coords.Gy + (coords.TargetY-coords.Gy)*float64(i)/steps
+		actions = append(actions, chromedp.MouseEvent(input.MouseMoved, coords.Gx, y))
+	}
+	actions = append(actions, chromedp.MouseEvent(input.MouseReleased, coords.Gx, coords.TargetY, chromedp.ButtonType(input.Left)))
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		t.Fatal(err)
+	}
+
+	// The PUT response re-renders; wait for the first card to become the zone
+	// that was second, then read the settled order.
+	firstIsSwapped := `(() => { const card = document.querySelector(".card[data-zone]"); return card && card.dataset.zone; })() === ` + strconv.Quote(before[1])
+	var after, reloaded []string
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(firstIsSwapped, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(cardOrderJS, &after),
+		// A fresh navigation is a stand-in for another browser: the order must
+		// come back from the backend, not reset to alphabetical.
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card[data-zone]", chromedp.ByQuery),
+		chromedp.Evaluate(cardOrderJS, &reloaded),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(after) != len(before) || after[0] != before[1] || after[1] != before[0] {
+		t.Errorf("after drag order = %v, want first two of %v swapped", after, before)
+	}
+	if !reflect.DeepEqual(reloaded, after) {
+		t.Errorf("reloaded order = %v, want persisted order %v", reloaded, after)
 	}
 }
 

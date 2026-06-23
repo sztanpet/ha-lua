@@ -34,8 +34,18 @@
           background:var(--surface); color:var(--ink); cursor:pointer; }
   .card { background:var(--card); border-radius:14px; padding:14px;
           margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  /* The dragged card lifts above its neighbours and stops capturing text
+     selection; while it moves, transitions are off so it tracks the pointer. */
+  .card.dragging { position:relative; z-index:10; opacity:.96; user-select:none;
+          box-shadow:0 8px 24px rgba(0,0,0,.22); }
   .head { display:flex; justify-content:space-between; align-items:baseline;
           margin-bottom:12px; }
+  .head-main { display:flex; align-items:center; gap:8px; min-width:0; }
+  /* The reorder grip. touch-action:none is essential: it stops a touch-drag on
+     the handle from scrolling the page so the pointer drag can take over. */
+  .grip { display:inline-flex; align-items:center; padding:2px; color:var(--muted);
+          cursor:grab; touch-action:none; user-select:none; }
+  .grip:active { cursor:grabbing; }
   .zone { font-weight:600; font-size:1.1rem; }
   .status { color:var(--muted); font-size:.95rem; }
   .status b { color:var(--ink); }
@@ -122,6 +132,7 @@ const MESSAGES = {
     "custom_minutes_title": "custom minutes",
     "custom_minutes_prompt": "Override for how many minutes?",
     "boost": "Temporary override",
+    "reorder": "Drag to reorder",
     "edit_comfort": "Set an exact target",
     "no_schedule": "no schedule set",
     "now_period": "currently active period",
@@ -151,6 +162,7 @@ const MESSAGES = {
     "custom_minutes_title": "egyéni időtartam",
     "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
     "boost": "Ideiglenes felülbírálás",
+    "reorder": "Húzással átrendezhető",
     "edit_comfort": "Pontos cél megadása",
     "no_schedule": "nincs beállított ütemezés",
     "now_period": "jelenleg aktív időszak",
@@ -268,6 +280,12 @@ const ICON_STOPWATCH =
   'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<circle cx="12" cy="14" r="7"/><path d="M12 14v-3.5"/>' +
   '<path d="M9.5 2.5h5"/><path d="M12 2.5v2"/></svg>';
+// The six-dot drag handle; fill (not stroke) so the dots read at small sizes.
+const ICON_GRIP =
+  '<svg viewBox="0 0 24 24" width="1.2em" height="1.2em" fill="currentColor">' +
+  '<circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/>' +
+  '<circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/>' +
+  '<circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
 
 // Zone display names are translated under "zone.<key>"; zones with no
 // translation fall back to the capitalised, de-underscored key.
@@ -321,17 +339,102 @@ function fmtTime(hhmm) {
   return timeFmt.format(new Date(2000, 0, 1, Number(parts[0]) || 0, Number(parts[1]) || 0));
 }
 
+// Card drag-to-reorder. One drag at a time, tracked in `drag`. The grip's
+// pointerdown starts it; move/up are listened for on the document so the drag
+// keeps tracking even if the pointer slips off the card, and we also try to
+// capture the pointer (ignored where unsupported). The zone is held busy for
+// the whole gesture so polling/render can't rebuild the cards mid-drag.
+let drag = null;
+
+function startDrag(ev, zone) {
+  if (drag || editing.size || busy.size) return;    // one drag, never mid-edit
+  if (ev.button != null && ev.button !== 0) return; // primary pointer only
+  const card = ev.currentTarget.closest(".card");
+  if (!card) return;
+  ev.preventDefault();
+  try { card.setPointerCapture(ev.pointerId); } catch (err) { /* capture optional */ }
+  busy.add(zone);
+  drag = { zone, card, pointerId: ev.pointerId, startY: ev.clientY };
+  card.classList.add("dragging");
+  document.addEventListener("pointermove", onDragMove);
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+}
+
+// Follow the pointer and, when the dragged card's centre crosses a neighbour's
+// centre, swap their DOM positions (at most one swap per move). Reordering
+// shifts the dragged card's own layout box by the neighbour's height, so startY
+// is nudged by the same amount to keep the translate continuous — no visual
+// jump on the swap.
+function onDragMove(ev) {
+  const card = drag.card;
+  card.style.transform = "translateY(" + (ev.clientY - drag.startY) + "px)";
+  const rect = card.getBoundingClientRect();
+  const mid = rect.top + rect.height / 2;
+  const next = card.nextElementSibling;
+  if (next) {
+    const nr = next.getBoundingClientRect();
+    if (mid > nr.top + nr.height / 2) {
+      next.after(card);
+      drag.startY += nr.height;
+      card.style.transform = "translateY(" + (ev.clientY - drag.startY) + "px)";
+      return;
+    }
+  }
+  const prev = card.previousElementSibling;
+  if (prev) {
+    const pr = prev.getBoundingClientRect();
+    if (mid < pr.top + pr.height / 2) {
+      prev.before(card);
+      drag.startY -= pr.height;
+      card.style.transform = "translateY(" + (ev.clientY - drag.startY) + "px)";
+    }
+  }
+}
+
+// End the gesture: drop the visual lift, persist the new order to the backend
+// (so every browser/user sees it), and re-render from the response. busy is
+// held until the PUT resolves so no poll renders a half state. A failed PUT
+// leaves lastState untouched, so the re-render reverts the cards to the
+// server's order.
+async function endDrag() {
+  const d = drag;
+  if (!d) return;
+  drag = null;
+  try { d.card.releasePointerCapture(d.pointerId); } catch (err) { /* may not be captured */ }
+  document.removeEventListener("pointermove", onDragMove);
+  document.removeEventListener("pointerup", endDrag);
+  document.removeEventListener("pointercancel", endDrag);
+  d.card.classList.remove("dragging");
+  d.card.style.transform = "";
+  const order = Array.from(document.querySelectorAll(".card[data-zone]")).map(c => c.dataset.zone);
+  const newState = await send("api/order", "PUT", { order });
+  busy.delete(d.zone);
+  if (newState) lastState = newState;
+  render(lastState);
+}
+
 function render(state) {
   if (editing.size || busy.size) return;
   const app = document.getElementById("app");
   app.innerHTML = "";
-  Object.keys(state.zones).sort().forEach(zone => app.appendChild(zoneCard(zone, state.zones[zone])));
+  // The backend supplies the persisted display order (alphabetical until the
+  // user drags a card); fall back to sorted keys if it's ever missing.
+  const order = Array.isArray(state.order) ? state.order : Object.keys(state.zones).sort();
+  order.forEach(zone => {
+    if (state.zones[zone]) app.appendChild(zoneCard(zone, state.zones[zone]));
+  });
 }
 
 function zoneCard(zone, status) {
   const current = (status.current_temp != null) ? status.current_temp.toFixed(1) + "°" : "";
+  // The grip starts a pointer drag to reorder cards; it derives its card from
+  // the DOM at drag time, so it needs no reference to the card built below.
+  const grip = h("span", { class: "grip", title: t("reorder"), "aria-label": t("reorder"),
+    html: ICON_GRIP });
+  grip.onpointerdown = (ev) => startDrag(ev, zone);
   const head = h("div", { class: "head" },
-    h("span", { class: "zone" }, title(zone)),
+    h("div", { class: "head-main" }, grip, h("span", { class: "zone" }, title(zone))),
     h("span", { class: "status" }, h("b", null, statusLabel(status)), " " + current));
 
   let body;
@@ -419,7 +522,7 @@ function zoneCard(zone, status) {
       }))
     : h("div", { class: "today" }, t("no_schedule"));
 
-  const card = h("div", { class: "card" }, head, body, todayStrip);
+  const card = h("div", { class: "card", "data-zone": zone }, head, body, todayStrip);
   card.append(h("button", { class: "edit-btn",
     onclick: () => {
       if (busy.has(zone)) return;          // ignore clicks while opening or closing
