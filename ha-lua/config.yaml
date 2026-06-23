@@ -1,6 +1,6 @@
 name: "HA Lua"
 description: "Lua scripting engine for Home Assistant"
-version: "2.4.0"
+version: "2.5.0"
 slug: "ha-lua"
 init: false
 # Pull the prebuilt per-arch image from GHCR (pushed by .github/release.yml)
