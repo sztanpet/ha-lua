@@ -2,6 +2,7 @@ package ha
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -271,6 +272,65 @@ func TestAddEventTypeLiveSubscribe(t *testing.T) {
 	case et := <-subs:
 		t.Errorf("duplicate subscription sent: %q", et)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// A call_service whose result HA reports as success must return nil; one HA
+// rejects (success:false) must return an error carrying HA's message. This is
+// the path that used to silently swallow an out-of-range set_temperature.
+func TestSendCommandWaitResult(t *testing.T) {
+	srv := mockServer(t, func(ctx context.Context, conn *websocket.Conn) {
+		if _, err := serveAuth(ctx, conn); err != nil {
+			return
+		}
+		for {
+			var cmd map[string]any
+			if err := wsjson.Read(ctx, conn, &cmd); err != nil {
+				return
+			}
+			switch cmd["type"] {
+			case "get_states":
+				_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "result": []any{}})
+			case "subscribe_events":
+				_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "success": true})
+			case "call_service":
+				// Reject a setpoint above 30, as a capped TRV would.
+				data, _ := cmd["service_data"].(map[string]any)
+				temp, _ := data["temperature"].(float64)
+				if temp > 30 {
+					_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result",
+						"success": false, "error": map[string]any{"code": "invalid_format", "message": "temperature out of range"}})
+				} else {
+					_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "success": true})
+				}
+			}
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c := New(wsURL(srv), "tok")
+	c.Start(ctx)
+	<-c.States
+
+	call := func(temp float64) error {
+		id := c.NextID()
+		raw := []byte(fmt.Sprintf(
+			`{"id":%d,"type":"call_service","domain":"climate","service":"set_temperature","service_data":{"temperature":%v}}`,
+			id, temp))
+		return c.SendCommandWaitResult(ctx, id, raw)
+	}
+
+	if err := call(20); err != nil {
+		t.Errorf("in-range call: unexpected error %v", err)
+	}
+	err := call(99)
+	if err == nil {
+		t.Fatal("out-of-range call: expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("error %q does not carry HA's message", err)
 	}
 }
 

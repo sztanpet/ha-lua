@@ -45,15 +45,28 @@ type Client struct {
 	conn       *websocket.Conn     // authed connection; nil while down
 	eventTypes []string            // extra types beyond state_changed
 	subscribed map[string]struct{} // types subscribed on the current conn
+
+	// pending correlates a command id with the goroutine awaiting HA's
+	// result frame. Guarded by mu and drained on disconnect, so a waiter
+	// never blocks past the life of the connection it was sent on.
+	pending map[int]chan cmdResult
+}
+
+// cmdResult carries HA's outcome for a correlated command back to the waiting
+// caller of SendCommandWaitResult.
+type cmdResult struct {
+	success bool
+	errMsg  string
 }
 
 // New creates a Client. Call Start to begin connecting.
 func New(url, token string) *Client {
 	return &Client{
-		url:    url,
-		token:  token,
-		Events: make(chan Event, 256),
-		States: make(chan []StateData, 1),
+		url:     url,
+		token:   token,
+		Events:  make(chan Event, 256),
+		States:  make(chan []StateData, 1),
+		pending: make(map[int]chan cmdResult),
 	}
 }
 
@@ -106,6 +119,80 @@ func (c *Client) SendRaw(ctx context.Context, data []byte) error {
 		return fmt.Errorf("ha: not connected")
 	}
 	return conn.Write(ctx, websocket.MessageText, data)
+}
+
+// SendCommandWaitResult writes a command and blocks until HA returns the result
+// frame for its id, returning an error if HA reports the command failed (for
+// example a set_temperature above the device's max_temp), if no connection is
+// active, or if ctx is cancelled. The id must be the one embedded in data
+// (allocate it with NextID). Unlike SendRaw, this surfaces HA-side rejections,
+// which the WebSocket protocol reports asynchronously in a separate frame.
+func (c *Client) SendCommandWaitResult(ctx context.Context, id int, data []byte) error {
+	// Bound the wait so a command HA never answers can't pin the calling
+	// script goroutine forever. HA answers every command in practice; this is
+	// only a liveness floor on top of the disconnect drain.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	ch := make(chan cmdResult, 1)
+	c.mu.Lock()
+	conn := c.conn
+	if conn == nil {
+		c.mu.Unlock()
+		return fmt.Errorf("ha: not connected")
+	}
+	c.pending[id] = ch
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+	}()
+
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		return err
+	}
+	select {
+	case res := <-ch:
+		if !res.success {
+			return fmt.Errorf("ha: command rejected: %s", res.errMsg)
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// deliverResult routes a "result" frame to the goroutine waiting on its id.
+// Frames with no waiter (subscribe acks, the inline get_states result) are
+// dropped. The waiter's channel is buffered (cap 1) with a single reader, so
+// the send is also guarded with a default to stay non-blocking even if the
+// waiter has already given up.
+func (c *Client) deliverResult(raw []byte) {
+	var res resultMsg
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return
+	}
+	c.mu.Lock()
+	ch := c.pending[res.ID]
+	c.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	msg := ""
+	if !res.Success {
+		msg = res.Error.Message
+		if msg == "" {
+			msg = res.Error.Code
+		}
+		if msg == "" {
+			msg = "unknown error"
+		}
+	}
+	select {
+	case ch <- cmdResult{success: res.Success, errMsg: msg}:
+	default:
+	}
 }
 
 // Start runs the connection loop in a background goroutine.
@@ -165,7 +252,17 @@ func (c *Client) connect(ctx context.Context) error {
 	defer func() {
 		c.mu.Lock()
 		c.conn = nil
+		pending := c.pending
+		c.pending = make(map[int]chan cmdResult)
 		c.mu.Unlock()
+		// Fail every in-flight command so its waiter unblocks instead of
+		// hanging until its own timeout once the connection is gone.
+		for _, ch := range pending {
+			select {
+			case ch <- cmdResult{errMsg: "connection lost"}:
+			default:
+			}
+		}
 	}()
 
 	// Re-seed on every connect; Tracker.Seed dedups history rows.
@@ -255,12 +352,17 @@ func (c *Client) getStates(ctx context.Context, conn *websocket.Conn) ([]StateDa
 		if err := json.Unmarshal(raw, &envelope); err != nil {
 			continue
 		}
-		if envelope.Type == "result" && envelope.ID == id {
-			var result getStatesResult
-			if err := json.Unmarshal(raw, &result); err != nil {
-				return nil, err
+		if envelope.Type == "result" {
+			if envelope.ID == id {
+				var result getStatesResult
+				if err := json.Unmarshal(raw, &result); err != nil {
+					return nil, err
+				}
+				return result.Result, nil
 			}
-			return result.Result, nil
+			// A result for some other command (e.g. a call_service issued
+			// during seeding) — hand it to its waiter rather than drop it.
+			c.deliverResult(raw)
 		}
 	}
 }
@@ -282,6 +384,10 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 		var snap incomingMsg
 		if err := json.Unmarshal(raw, &snap); err != nil {
 			slog.Warn("ha: failed to parse message", "err", err)
+			continue
+		}
+		if snap.Type == "result" {
+			c.deliverResult(raw)
 			continue
 		}
 		if snap.Type != "event" {

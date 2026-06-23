@@ -25,6 +25,17 @@ type incomingMsg struct {
 	ID   int    `json:"id,omitempty"`
 }
 
+// resultMsg is HA's response frame to a command (call_service, subscribe, …):
+// success plus, on failure, an error code/message.
+type resultMsg struct {
+	ID      int  `json:"id"`
+	Success bool `json:"success"`
+	Error   struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 // Result of a get_states command
 type getStatesResult struct {
 	ID     int         `json:"id"`
