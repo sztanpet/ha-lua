@@ -4,6 +4,23 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.3.0 - 2026-06-23
+
+### Fixed
+- The example thermostat's boost set the climate setpoint to the zone's
+  comfort temperature, but the comfort stepper accepted values up to 35°
+  while many climate entities only accept up to their advertised `max_temp`
+  (commonly 30°). Home Assistant silently drops a `set_temperature` above
+  `max_temp`, so a high comfort temp made boost appear to do nothing. The
+  controller now reads each entity's `min_temp`/`max_temp` and bounds the
+  comfort temperature to that range.
+
+### Added
+- The example thermostat UI lets you tap the target temperature between the
+  −/+ buttons to type an exact value, instead of only stepping in 0.1°
+  increments. Both the stepper and the manual input clamp to the device's
+  advertised temperature range.
+
 ## 2.2.0 - 2026-06-22
 
 ### Added

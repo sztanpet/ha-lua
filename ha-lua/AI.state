@@ -1,5 +1,29 @@
 # AI Working State
-Last updated: 2026-06-22
+Last updated: 2026-06-23
+
+## Thermostat boost vs device max_temp (2026-06-23, examples/thermostat.*)
+- BUG REPORT: boost did nothing. Root cause: boost sets the setpoint to the
+  zone's comfort temp; comfort stepper/validation allowed 5..35 but the user's
+  TRVs cap at max_temp=30. HA SILENTLY rejects a set_temperature above max_temp
+  (CallService in main.go is fire-and-forget over the WS -- SendRaw returns nil
+  unless the socket write fails; it never reads HA's result), so a 31-32°
+  comfort temp made boost a no-op with nothing in thermostat-errors.log.
+- Diagnosed from GET /api/state: childrens had boost.active, mode heat,
+  window closed, comfort 31.3, yet target stuck at 19.5 -> every gate passed,
+  so set_temp fired and HA dropped it. (bedroom also had window_open=true, a
+  separate reason its write is skipped.)
+- FIX: thermostat.lua temp_bounds(zone) reads entity min_temp/max_temp (fallback
+  5..35 pre-seed); /api/settings validates comfort against it; /api/state now
+  publishes min_temp/max_temp per zone. thermostat.html: stepper + new tap-to-
+  edit number input both clamp to [min,max]. New i18n key edit_comfort.
+- Tests: TestThermostatAPI re-seeds bedroom with max_temp=30 and asserts a 31.3
+  PUT -> 400, 29 -> 200 + echoed max_temp. ComfortStepper browser test still
+  green (seed has no max_temp -> 5..35 fallback, 21.x in range).
+- NOT a daemon change -- only the REFERENCE examples. The user's LIVE scripts in
+  /config/ha-lua/scripts/thermostat.{lua,html} need the same edit (the examples
+  dir is reference-only, never loaded). Did NOT touch the silent-rejection root
+  cause (CallService awaiting HA's result) -- out of scope, flagged to user.
+- Changelog 2.3.0 added; config.yaml NOT yet bumped / NOT tagged (awaiting user).
 
 ## Bundled reference examples (2026-06-22, load-examples-spec.md, v2.2.0)
 - The repo's example/script tree doubled as the author's personal heating
