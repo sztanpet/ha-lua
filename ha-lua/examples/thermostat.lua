@@ -232,10 +232,13 @@ end
 local function zone_state(zone, now, dow, minute)
   local state = ha.get_state(zone_defs[zone].climate)
   local hvac_mode = state and state.state or "unknown"
-  local current, target
+  local current, target, hvac_action
   if state and state.attributes then
     current = state.attributes.current_temperature
     target = state.attributes.temperature
+    -- hvac_action ("heating"/"idle"/...) is what the device is doing right
+    -- now, distinct from the mode; the UI uses it to show "heating" vs "on".
+    hvac_action = state.attributes.hvac_action
   end
   local days = load_schedule(zone)
   local sched_temp, now_index = schedule.resolve(days, dow, minute)
@@ -255,6 +258,7 @@ local function zone_state(zone, now, dow, minute)
 
   return {
     mode = hvac_mode,
+    hvac_action = hvac_action,
     current_temp = current,
     target = target,
     comfort_temp = comfort(zone),

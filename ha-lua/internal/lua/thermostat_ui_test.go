@@ -209,6 +209,47 @@ func TestThermostatUINotControlledCard(t *testing.T) {
 	}
 }
 
+// TestThermostatUIStatusLabel checks the card head badge: a heat zone reads
+// "on", or "heating" while the device is actively calling for heat
+// (hvac_action), and the raw "heat" mode word is never shown. statusLabel runs
+// in zoneCard, so only a rendered DOM exercises it.
+func TestThermostatUIStatusLabel(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUISeed(t, []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":19.5,"temperature":18,"hvac_action":"heating"}`)},
+		{EntityID: "climate.livingroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":21.0,"temperature":20,"hvac_action":"idle"}`)},
+		{EntityID: "climate.childrens_room", State: "heat", Attributes: jsontext.Value(`{"current_temperature":20.0,"temperature":19}`)},
+	})
+
+	const script = `Array.from(document.querySelectorAll(".card .status b")).map(el => el.textContent)`
+	var labels []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.WaitVisible(".card .status b", chromedp.ByQuery),
+		chromedp.Evaluate(script, &labels),
+	); err != nil {
+		t.Fatal(err)
+	}
+	heating, on := 0, 0
+	for _, label := range labels {
+		switch label {
+		case "heating":
+			heating++
+		case "on":
+			on++
+		case "heat":
+			t.Errorf("status badge shows raw %q, want on/heating", label)
+		}
+	}
+	// bedroom is actively heating; the idle and the action-less zones read "on".
+	if heating != 1 {
+		t.Errorf("heating badges = %d, want 1 (labels %v)", heating, labels)
+	}
+	if on != 2 {
+		t.Errorf("on badges = %d, want 2 (labels %v)", on, labels)
+	}
+}
+
 // editorAnimationsDone is a predicate that is truthy once the editor exists and
 // has no running animations. While the open animation runs the editor is
 // max-height clipped, so its cancel button is visually clipped and a click on

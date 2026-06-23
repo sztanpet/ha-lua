@@ -133,6 +133,7 @@ const MESSAGES = {
     "http_error": "Error {status}: {msg}",
     "mode.heat": "heat", "mode.off": "off", "mode.cool": "cool",
     "mode.auto": "auto", "mode.idle": "idle", "mode.unknown": "unknown",
+    "mode.on": "on", "action.heating": "heating",
     "daygroup.combined": "Day groups", "daygroup.individual": "Single days",
     "day.everyday": "Every day", "day.weekdays": "Mon–Fri", "day.weekend": "Sat–Sun",
     "day.0": "Monday", "day.1": "Tuesday", "day.2": "Wednesday",
@@ -161,6 +162,7 @@ const MESSAGES = {
     "http_error": "Hiba {status}: {msg}",
     "mode.heat": "fűtés", "mode.off": "off", "mode.cool": "hűtés",
     "mode.auto": "automatikus", "mode.idle": "tétlen", "mode.unknown": "ismeretlen",
+    "mode.on": "on", "action.heating": "fűt",
     "daygroup.combined": "Napcsoportok", "daygroup.individual": "Egyes napok",
     "day.everyday": "Minden nap", "day.weekdays": "Hétköznap", "day.weekend": "Hétvége",
     "day.0": "Hétfő", "day.1": "Kedd", "day.2": "Szerda",
@@ -195,6 +197,16 @@ function t(key, params, fallback) {
 // hvac modes come straight from Home Assistant; show the raw value when we
 // have no translation for it.
 const modeLabel = (mode) => t("mode." + mode, null, mode);
+
+// The status badge shown in each card head. In heat mode we show "on", or
+// "heating" while the device is actively calling for heat (hvac_action), so
+// the raw "heat" mode word never appears; other modes fall back to modeLabel.
+function statusLabel(status) {
+  if (status.mode === "heat") {
+    return status.hvac_action === "heating" ? t("action.heating") : t("mode.on");
+  }
+  return modeLabel(status.mode);
+}
 
 // Each editor entry targets one of these day groups; .days lists the
 // underlying 0=Mon..6=Sun indices the entry expands to on save. Labels are
@@ -320,7 +332,7 @@ function zoneCard(zone, status) {
   const current = (status.current_temp != null) ? status.current_temp.toFixed(1) + "°" : "";
   const head = h("div", { class: "head" },
     h("span", { class: "zone" }, title(zone)),
-    h("span", { class: "status" }, h("b", null, modeLabel(status.mode)), " " + current));
+    h("span", { class: "status" }, h("b", null, statusLabel(status)), " " + current));
 
   let body;
   if (status.mode !== "heat") {
