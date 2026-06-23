@@ -1,13 +1,13 @@
 -- thermostat.lua
 --
--- The heating controller. It owns the schedule / boost / manual-override
+-- The heating controller. It owns the schedule / override / manual
 -- dimension of each zone's setpoint; heating_windows.lua owns the window
 -- dimension. The split is clean: this script computes one desired setpoint per
 -- zone, publishes it to global so the window script can restore it, and writes
 -- it to the climate entity only while no window in the zone is open.
 --
 -- See thermostat-ui-spec.md for the full design. This file is the controller
--- (the 1-minute tick + desired() engine + manual-override detection); the HTTP
+-- (the 1-minute tick + desired() engine + manual-change detection); the HTTP
 -- API and the single-page UI are added on top of it.
 
 local zones = require "zones"
@@ -15,12 +15,13 @@ local schedule = require "schedule"
 
 local zone_defs = zones.zones
 
--- Per-zone store keys. Schedule/boost/override/comfort all live in this
--- script's KV store; the published desired lives in `global` (shared).
+-- Per-zone store keys. Schedule, the UI override (timed), the manual hold
+-- (dial-detected) and the override setpoint all live in this script's KV store;
+-- the published desired lives in `global` (shared).
 local function sched_key(zone) return "schedule:" .. zone end
-local function boost_key(zone) return "boost:" .. zone end
 local function override_key(zone) return "override:" .. zone end
-local function comfort_key(zone) return "comfort:" .. zone end
+local function manual_key(zone) return "manual:" .. zone end
+local function override_temp_key(zone) return "override_temp:" .. zone end
 
 -- The card display order is a single UI preference shared by every browser, so
 -- it lives under one fixed key (not per-zone): an array of zone ids.
@@ -40,12 +41,13 @@ local function parse_time(text)
   return parsed -- nil on parse failure
 end
 
--- comfort returns the zone's UI-settable boost temperature, seeding the default
--- the first time before the user touches the stepper.
-local function comfort(zone)
-  local value = store.get(comfort_key(zone))
+-- override_temp returns the zone's UI-settable override setpoint (the
+-- temperature an override drives the zone to), seeding the default the first
+-- time before the user touches the stepper.
+local function override_temp(zone)
+  local value = store.get(override_temp_key(zone))
   if type(value) == "number" then return value end
-  return zones.default_comfort
+  return zones.default_override_temp
 end
 
 -- mode returns the climate entity's hvac mode ("heat"/"off"/...) or nil if the
@@ -66,7 +68,7 @@ end
 -- advertises min_temp/max_temp on every climate entity, and writing a
 -- temperature outside that range is silently rejected by HA (the setpoint just
 -- stays put). We honour the device's own limits so the UI can never offer, nor
--- a boost ever request, a value the device will refuse. Falls back to a
+-- an override ever request, a value the device will refuse. Falls back to a
 -- permissive 5..35 only while the entity has not seeded yet.
 local function temp_bounds(zone)
   local lo, hi = 5, 35
@@ -89,7 +91,7 @@ local function any_window_open(zone)
 end
 
 -- any_window_unknown reports whether any window sensor has no state yet. Used
--- only to suppress manual-override detection until the sensors have seeded.
+-- only to suppress manual-change detection until the sensors have seeded.
 local function any_window_unknown(zone)
   for _, window in ipairs(zone_defs[zone].windows) do
     if ha.get_state(window) == nil then return true end
@@ -103,48 +105,48 @@ local function load_schedule(zone)
   return {}
 end
 
--- active_boost returns the live boost table for the zone, or nil. An expired
--- boost is cleared as a side effect so the zone reverts to schedule.
-local function active_boost(zone, now)
-  local boost = store.get(boost_key(zone))
-  if type(boost) ~= "table" or not boost.active or type(boost.ends_at) ~= "string" then
-    return nil
-  end
-  local ends = parse_time(boost.ends_at)
-  if ends == nil then
-    store.delete(boost_key(zone))
-    return nil
-  end
-  if now:before(ends) then return boost end
-  store.delete(boost_key(zone))
-  return nil
-end
-
--- active_override returns the live manual-override table, or nil, clearing it
--- once its `expires` instant has passed. (We avoid the field name "until"
--- because it is a Lua keyword.)
+-- active_override returns the live override table for the zone, or nil. An
+-- expired override is cleared as a side effect so the zone reverts to schedule.
 local function active_override(zone, now)
   local override = store.get(override_key(zone))
-  if type(override) ~= "table" or type(override.temp) ~= "number" or type(override.expires) ~= "string" then
+  if type(override) ~= "table" or not override.active or type(override.ends_at) ~= "string" then
     return nil
   end
-  local exp = parse_time(override.expires)
-  if exp == nil then
+  local ends = parse_time(override.ends_at)
+  if ends == nil then
     store.delete(override_key(zone))
     return nil
   end
-  if now:before(exp) then return override end
+  if now:before(ends) then return override end
   store.delete(override_key(zone))
   return nil
 end
 
--- desired implements §4.1: boost beats override beats schedule. Returns the
--- temperature and its source string ("boost"/"override"/"schedule"), or nil if
+-- active_manual returns the live manual-hold table, or nil, clearing it once its
+-- `expires` instant has passed. (We avoid the field name "until" because it is a
+-- Lua keyword.)
+local function active_manual(zone, now)
+  local manual = store.get(manual_key(zone))
+  if type(manual) ~= "table" or type(manual.temp) ~= "number" or type(manual.expires) ~= "string" then
+    return nil
+  end
+  local exp = parse_time(manual.expires)
+  if exp == nil then
+    store.delete(manual_key(zone))
+    return nil
+  end
+  if now:before(exp) then return manual end
+  store.delete(manual_key(zone))
+  return nil
+end
+
+-- desired implements §4.1: override beats manual beats schedule. Returns the
+-- temperature and its source string ("override"/"manual"/"schedule"), or nil if
 -- the zone has no schedule at all.
 local function desired(zone, now, dow, minute)
-  if active_boost(zone, now) then return comfort(zone), "boost" end
-  local override = active_override(zone, now)
-  if override then return override.temp, "override" end
+  if active_override(zone, now) then return override_temp(zone), "override" end
+  local manual = active_manual(zone, now)
+  if manual then return manual.temp, "manual" end
   local temp = schedule.resolve(load_schedule(zone), dow, minute)
   if temp ~= nil then return temp, "schedule" end
   return nil, nil
@@ -173,7 +175,7 @@ local function apply_zone(zone, now, dow, minute)
 end
 
 -- The single tick that drives everything (§8): recompute, publish and (maybe)
--- write every zone. Boost/override expiry is handled inside desired().
+-- write every zone. Override/manual expiry is handled inside desired().
 local function tick()
   local now, dow, minute = now_parts()
   for zone in pairs(zone_defs) do
@@ -186,7 +188,7 @@ ha.every("1m", tick)
 -- Manual setpoint change detection (§9): the controller is the only thing that
 -- writes `desired`, and it always writes exactly `desired`, so a climate target
 -- that differs from the published desired is an external change by the user. It
--- becomes an ad-hoc override that holds until the next schedule transition.
+-- becomes an ad-hoc manual hold that lasts until the next schedule transition.
 for zone, conf in pairs(zone_defs) do
   ha.on_state_change(conf.climate, function(data)
     local new_state = data.new_state
@@ -196,7 +198,7 @@ for zone, conf in pairs(zone_defs) do
     if type(target) ~= "number" then return end
 
     local now, dow, minute = now_parts()
-    if active_boost(zone, now) then return end -- boost wins; ignore dial nudges
+    if active_override(zone, now) then return end -- override wins; ignore dial nudges
     -- Window open or not-yet-seeded: that's the window script's 15°C territory.
     if any_window_open(zone) or any_window_unknown(zone) then return end
 
@@ -207,7 +209,7 @@ for zone, conf in pairs(zone_defs) do
 
     local _, _, mins_to_next = schedule.resolve(load_schedule(zone), dow, minute)
     local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
-    store.set(override_key(zone), {
+    store.set(manual_key(zone), {
       temp = target,
       expires = now:add(hold):format(time.RFC3339),
     })
@@ -248,16 +250,16 @@ local function zone_state(zone, now, dow, minute)
   local sched_temp, now_index = schedule.resolve(days, dow, minute)
   local min_temp, max_temp = temp_bounds(zone)
 
-  local boost_tbl
-  local boost = active_boost(zone, now)
-  if boost then
+  local override_tbl
+  local override = active_override(zone, now)
+  if override then
     local remaining = 0
-    local ends = parse_time(boost.ends_at)
+    local ends = parse_time(override.ends_at)
     if ends ~= nil then
       local secs = ends:sub(now)
       if secs > 0 then remaining = math.floor(secs) end
     end
-    boost_tbl = { active = true, ends_at = boost.ends_at, remaining_s = remaining }
+    override_tbl = { active = true, ends_at = override.ends_at, remaining_s = remaining }
   end
 
   return {
@@ -265,14 +267,14 @@ local function zone_state(zone, now, dow, minute)
     hvac_action = hvac_action,
     current_temp = current,
     target = target,
-    comfort_temp = comfort(zone),
+    override_temp = override_temp(zone),
     min_temp = min_temp,
     max_temp = max_temp,
     window_open = any_window_open(zone),
     scheduled_temp = sched_temp,
     today = schedule.day_list(days, dow),
     now_index = now_index,
-    boost = boost_tbl,
+    override = override_tbl,
   }
 end
 
@@ -321,7 +323,7 @@ ha.serve("GET", "/api/state", function()
   return json_ok(full_state())
 end)
 
-ha.serve("POST", "/api/boost", function(req)
+ha.serve("POST", "/api/override", function(req)
   local body = decode_body(req)
   if body == nil then return bad("invalid JSON body") end
   local zone = body.zone
@@ -330,23 +332,23 @@ ha.serve("POST", "/api/boost", function(req)
     return bad("minutes must be 1..1440")
   end
   local now, dow, minute = now_parts()
-  store.set(boost_key(zone), {
+  store.set(override_key(zone), {
     active = true,
     ends_at = now:add(body.minutes * 60):format(time.RFC3339),
   })
-  store.delete(override_key(zone)) -- a boost outranks and clears any override
+  store.delete(manual_key(zone)) -- an override outranks and clears any manual hold
   apply_zone(zone, now, dow, minute)
   return json_ok(full_state())
 end)
 
--- Registered after /api/boost; the router's longest-prefix match sends
--- /api/boost/cancel here and bare /api/boost to the boost handler.
-ha.serve("POST", "/api/boost/cancel", function(req)
+-- Registered after /api/override; the router's longest-prefix match sends
+-- /api/override/cancel here and bare /api/override to the override handler.
+ha.serve("POST", "/api/override/cancel", function(req)
   local body = decode_body(req)
   if body == nil then return bad("invalid JSON body") end
   local zone = body.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
-  store.delete(boost_key(zone))
+  store.delete(override_key(zone))
   local now, dow, minute = now_parts()
   apply_zone(zone, now, dow, minute)
   return json_ok(full_state())
@@ -358,12 +360,12 @@ ha.serve("PUT", "/api/settings", function(req)
   local zone = body.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
   local lo, hi = temp_bounds(zone)
-  if type(body.comfort_temp) ~= "number" or body.comfort_temp < lo or body.comfort_temp > hi then
-    return bad(string.format("comfort_temp out of range (%g..%g)", lo, hi))
+  if type(body.override_temp) ~= "number" or body.override_temp < lo or body.override_temp > hi then
+    return bad(string.format("override_temp out of range (%g..%g)", lo, hi))
   end
-  store.set(comfort_key(zone), body.comfort_temp)
+  store.set(override_temp_key(zone), body.override_temp)
   local now, dow, minute = now_parts()
-  apply_zone(zone, now, dow, minute) -- if a boost is active, the new comfort applies now
+  apply_zone(zone, now, dow, minute) -- if an override is active, the new temp applies now
   return json_ok(full_state())
 end)
 

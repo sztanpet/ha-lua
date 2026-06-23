@@ -15,9 +15,10 @@ local M = {}
 -- Setpoint (°C) the window script holds while a window in a zone is open.
 M.frost_temp = 15
 
--- Seed value (°C) for a zone's comfort/boost temperature, used the first time
--- before the user touches that zone's stepper in the UI.
-M.default_comfort = 23
+-- Seed value (°C) for a zone's override temperature (the setpoint an override
+-- drives the zone to), used the first time before the user touches that zone's
+-- stepper in the UI.
+M.default_override_temp = 23
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
 -- `radiator` is the temperature sensor strapped to that zone's radiator; only

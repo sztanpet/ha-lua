@@ -163,7 +163,7 @@ func TestThermostatUIRendersZones(t *testing.T) {
 }
 
 // TestThermostatUINotControlledCard seeds one zone in a non-heat hvac mode and
-// checks its card degrades to the "not controlled" notice with no boost or
+// checks its card degrades to the "not controlled" notice with no override or
 // stepper controls, while the heat zones keep theirs. The card body branches on
 // status.mode in zoneCard, so only a rendered DOM exercises it.
 func TestThermostatUINotControlledCard(t *testing.T) {
@@ -173,15 +173,15 @@ func TestThermostatUINotControlledCard(t *testing.T) {
 	srv := serveThermostatUISeed(t, seed)
 
 	// One card shows the .muted notice; the off card carries no controls; the
-	// two heat cards keep their .boost fieldset.
+	// two heat cards keep their .override fieldset.
 	const script = `(() => {
 		const cards = Array.from(document.querySelectorAll(".card"));
 		const muted = cards.filter(card => card.querySelector(".muted"));
 		return {
 			mutedCount: muted.length,
 			mutedText: muted[0] ? muted[0].querySelector(".muted").textContent : "",
-			mutedHasControls: muted.some(card => card.querySelector(".boost, .stepper, .boost-row")),
-			controlledCards: cards.filter(card => card.querySelector(".boost")).length,
+			mutedHasControls: muted.some(card => card.querySelector(".override, .stepper, .override-row")),
+			controlledCards: cards.filter(card => card.querySelector(".override")).length,
 		};
 	})()`
 	var res struct {
@@ -204,7 +204,7 @@ func TestThermostatUINotControlledCard(t *testing.T) {
 		t.Errorf("notice = %q, want it to name the mode and \"not controlled\"", res.MutedText)
 	}
 	if res.MutedHasControls {
-		t.Error("not-controlled card still shows boost/stepper controls")
+		t.Error("not-controlled card still shows override/stepper controls")
 	}
 	if res.ControlledCards != 2 {
 		t.Errorf("heat cards with controls = %d, want 2", res.ControlledCards)
@@ -289,12 +289,12 @@ func TestThermostatUIEditorToggle(t *testing.T) {
 	}
 }
 
-// TestThermostatUIBoostFlow drives the boost mutate→render cycle through the
-// real backend: clicking a preset duration POSTs /api/boost, and the returned
-// state re-renders the card's boost-row into a live countdown with a cancel
-// button; clicking cancel POSTs /api/boost/cancel and restores the preset row.
-// The first sorted card is bedroom (cards render in zone-key order).
-func TestThermostatUIBoostFlow(t *testing.T) {
+// TestThermostatUIOverrideFlow drives the override mutate→render cycle through
+// the real backend: clicking a preset duration POSTs /api/override, and the
+// returned state re-renders the card's override-row into a live countdown with a
+// cancel button; clicking cancel POSTs /api/override/cancel and restores the
+// preset row. The first sorted card is bedroom (cards render in zone-key order).
+func TestThermostatUIOverrideFlow(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveThermostatUI(t)
 
@@ -302,15 +302,15 @@ func TestThermostatUIBoostFlow(t *testing.T) {
 	var rowBack bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/?lang=en"),
-		chromedp.WaitVisible(".card .boost-row button", chromedp.ByQuery),
-		// First preset is "10m"; clicking it boosts bedroom.
-		chromedp.Click(".card .boost-row button", chromedp.ByQuery),
-		chromedp.WaitVisible(".card .boosting", chromedp.ByQuery),
-		chromedp.Text(".card .boosting .cd", &countdown, chromedp.ByQuery),
-		// Cancel is the only button inside .boosting; it restores the preset row.
-		chromedp.Click(".card .boosting button", chromedp.ByQuery),
-		chromedp.WaitVisible(".card .boost-row button", chromedp.ByQuery),
-		chromedp.Evaluate(`!!document.querySelector(".card .boost-row")`, &rowBack),
+		chromedp.WaitVisible(".card .override-row button", chromedp.ByQuery),
+		// First preset is "10m"; clicking it overrides bedroom.
+		chromedp.Click(".card .override-row button", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .overriding", chromedp.ByQuery),
+		chromedp.Text(".card .overriding .cd", &countdown, chromedp.ByQuery),
+		// Cancel is the only button inside .overriding; it restores the preset row.
+		chromedp.Click(".card .overriding button", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .override-row button", chromedp.ByQuery),
+		chromedp.Evaluate(`!!document.querySelector(".card .override-row")`, &rowBack),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -319,14 +319,14 @@ func TestThermostatUIBoostFlow(t *testing.T) {
 		t.Errorf("countdown = %q, want mm:ss", countdown)
 	}
 	if !rowBack {
-		t.Error("preset boost-row did not return after cancel")
+		t.Error("preset override-row did not return after cancel")
 	}
 }
 
 // TestThermostatUILocalizesHungarian loads the page with ?lang=hu and checks
 // the whole localization path resolves in a real browser: the static document
 // chrome the HTML ships (the <h1>/<title>) is rewritten after load, and the
-// dynamically rendered cards translate both the zone names and the boost
+// dynamically rendered cards translate both the zone names and the override
 // fieldset legend through t(). en is covered by RendersZones; this guards that
 // a non-default locale actually takes effect rather than silently falling back.
 func TestThermostatUILocalizesHungarian(t *testing.T) {
@@ -337,11 +337,11 @@ func TestThermostatUILocalizesHungarian(t *testing.T) {
 	var zoneNames []string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/?lang=hu"),
-		chromedp.WaitVisible(".card .boost legend", chromedp.ByQuery),
+		chromedp.WaitVisible(".card .override legend", chromedp.ByQuery),
 		chromedp.Text("h1", &heading, chromedp.ByQuery),
 		// textContent, not Text: the legend is CSS text-transform:uppercase, so
 		// innerText would report the visually upper-cased form.
-		chromedp.Evaluate(`document.querySelector(".card .boost legend").textContent`, &legend),
+		chromedp.Evaluate(`document.querySelector(".card .override legend").textContent`, &legend),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll(".card .zone")).map(node => node.textContent)`, &zoneNames),
 	); err != nil {
 		t.Fatal(err)
@@ -350,7 +350,7 @@ func TestThermostatUILocalizesHungarian(t *testing.T) {
 		t.Errorf("h1 = %q, want Hungarian \"Fűtés\"", heading)
 	}
 	if legend != "Ideiglenes felülbírálás" {
-		t.Errorf("boost legend = %q, want Hungarian", legend)
+		t.Errorf("override legend = %q, want Hungarian", legend)
 	}
 	got := strings.Join(zoneNames, ", ")
 	for _, want := range []string{"Hálószoba", "Nappali", "Gyerekszoba"} {
@@ -495,41 +495,41 @@ func TestThermostatUIScheduleTempTenths(t *testing.T) {
 	}
 }
 
-// firstCardComfort reads the bedroom card's always-visible setpoint input.
-const firstCardComfort = `parseFloat(document.querySelector(".card .stepper .val-input").value)`
+// firstCardOverrideTemp reads the bedroom card's always-visible setpoint input.
+const firstCardOverrideTemp = `parseFloat(document.querySelector(".card .stepper .val-input").value)`
 
-// TestThermostatUIComfortStepper exercises the target-temp stepper round-trip:
-// the + and − buttons PUT /api/settings in tenth-degree steps and the returned
-// state re-renders the displayed value. The 0.1° quantisation lives in the page
-// (nudge rounds to the nearest 0.1), so only a browser test covers it.
-func TestThermostatUIComfortStepper(t *testing.T) {
+// TestThermostatUIOverrideTempStepper exercises the target-temp stepper
+// round-trip: the + and − buttons PUT /api/settings in tenth-degree steps and
+// the returned state re-renders the displayed value. The 0.1° quantisation lives
+// in the page (nudge rounds to the nearest 0.1), so only a browser test covers it.
+func TestThermostatUIOverrideTempStepper(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveThermostatUI(t)
 
 	var start, afterPlus, afterMinus float64
 	settled := func(want float64) chromedp.QueryAction {
-		return chromedp.Poll(firstCardComfort+` === `+strconv.FormatFloat(want, 'f', -1, 64),
+		return chromedp.Poll(firstCardOverrideTemp+` === `+strconv.FormatFloat(want, 'f', -1, 64),
 			nil, chromedp.WithPollingTimeout(5*time.Second))
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/?lang=en"),
 		chromedp.WaitVisible(".card .stepper .val-input", chromedp.ByQuery),
-		chromedp.Evaluate(firstCardComfort, &start),
+		chromedp.Evaluate(firstCardOverrideTemp, &start),
 		// + raises the seeded 21.0 to 21.1; the re-render must reflect it.
 		chromedp.Click(".card .stepper button:last-child", chromedp.ByQuery),
 		settled(21.1),
-		chromedp.Evaluate(firstCardComfort, &afterPlus),
+		chromedp.Evaluate(firstCardOverrideTemp, &afterPlus),
 		// − drops it back below the start to 20.9 (two effective steps).
 		chromedp.Click(".card .stepper button:first-child", chromedp.ByQuery),
 		settled(21),
 		chromedp.Click(".card .stepper button:first-child", chromedp.ByQuery),
 		settled(20.9),
-		chromedp.Evaluate(firstCardComfort, &afterMinus),
+		chromedp.Evaluate(firstCardOverrideTemp, &afterMinus),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if start != 21 {
-		t.Errorf("start comfort = %v, want 21", start)
+		t.Errorf("start override temp = %v, want 21", start)
 	}
 	if afterPlus != 21.1 {
 		t.Errorf("after + = %v, want 21.1", afterPlus)

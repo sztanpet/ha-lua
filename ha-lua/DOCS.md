@@ -220,7 +220,7 @@ The flagship example — a heating controller with a web UI — lives in
 
 | File | Role |
 |------|------|
-| `thermostat.lua` | Controller + HTTP API. A weekly schedule per zone, duration **boosts** (10/30/60 min + custom) to a per-zone comfort temperature, and ad-hoc manual overrides. |
+| `thermostat.lua` | Controller + HTTP API. A weekly schedule per zone, timed **overrides** (10/30/60 min + custom) to a per-zone override temperature, and ad-hoc manual holds (when the dial is changed directly). |
 | `thermostat.html` | The single-page UI, loaded by `thermostat.lua` via `fs.read`. |
 | `heating_windows.lua` | Drops a zone to a frost guard (15 °C) while a window is open and restores the controller's desired setpoint when it closes. |
 | `lib/zones.lua` | Shared zone definitions (climate + window entity ids) used by both scripts. **Edit this to match your setup.** |
@@ -231,7 +231,7 @@ To use it, copy all of these from `examples/` into your scripts directory —
 `fs.read` at load and will error without it) — edit the entity ids in
 `lib/zones.lua`, then open
 **Heating** from the sidebar (ingress) or add a Webpage card pointing at
-`http://<ha-host>:8100/`. Schedules, boosts, and comfort temperatures are
+`http://<ha-host>:8100/`. Schedules, overrides, and override temperatures are
 persisted per zone, so they survive restarts. The controller writes a zone's
 setpoint only while its mode is `heat` and no window is open; it never changes
 the hvac mode.

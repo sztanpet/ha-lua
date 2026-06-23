@@ -159,7 +159,7 @@ func copyRepoFile(t *testing.T, src, dst string) {
 // must not depend on its contents — they write this fixture instead.
 const testZonesLua = `local M = {}
 M.frost_temp = 15
-M.default_comfort = 21
+M.default_override_temp = 21
 M.zones = {
   bedroom    = { climate = "climate.bedroom",       windows = { "binary_sensor.bedroom_window" } },
   livingroom = { climate = "climate.livingroom",    windows = { "binary_sensor.livingroom_window" } },
@@ -274,8 +274,8 @@ func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
 
 // TestThermostatAPI loads the real thermostat.lua (with its libs, a real
 // scheduler, and the Router wired up) and drives its HTTP API end to end:
-// /api/state returns per-zone status, a boost shows up in the next read, and a
-// bad zone is rejected with 400.
+// /api/state returns per-zone status, an override shows up in the next read,
+// and a bad zone is rejected with 400.
 func TestThermostatAPI(t *testing.T) {
 	dir := t.TempDir()
 	libDir := filepath.Join(dir, "lib")
@@ -298,7 +298,7 @@ func TestThermostatAPI(t *testing.T) {
 	router := NewRouter(reg)
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	// The boost path calls set_temperature; a no-op capture keeps it from erroring.
+	// The override path calls set_temperature; a no-op capture keeps it from erroring.
 	cs := func(context.Context, string, string, jsontext.Value) error { return nil }
 
 	if err := tracker.Seed(context.Background(), []ha.StateData{
@@ -331,7 +331,7 @@ func TestThermostatAPI(t *testing.T) {
 		return m
 	}
 
-	// GET /api/state: bedroom present with its default comfort temp.
+	// GET /api/state: bedroom present with its default override temp.
 	rec := doReq(router, "GET", "/api/state", "")
 	if rec.Code != 200 {
 		t.Fatalf("GET /api/state status %d", rec.Code)
@@ -341,56 +341,56 @@ func TestThermostatAPI(t *testing.T) {
 	if bedroom == nil {
 		t.Fatalf("no bedroom zone in state: %s", rec.Body.String())
 	}
-	if bedroom["comfort_temp"] != float64(21) {
-		t.Errorf("comfort_temp = %v, want 21", bedroom["comfort_temp"])
+	if bedroom["override_temp"] != float64(21) {
+		t.Errorf("override_temp = %v, want 21", bedroom["override_temp"])
 	}
 	if bedroom["mode"] != "heat" {
 		t.Errorf("mode = %v, want heat", bedroom["mode"])
 	}
 
-	// POST /api/boost: the boost is reflected in the returned state.
-	rec = doReq(router, "POST", "/api/boost", `{"zone":"bedroom","minutes":30}`)
+	// POST /api/override: the override is reflected in the returned state.
+	rec = doReq(router, "POST", "/api/override", `{"zone":"bedroom","minutes":30}`)
 	if rec.Code != 200 {
-		t.Fatalf("POST /api/boost status %d body %q", rec.Code, rec.Body.String())
+		t.Fatalf("POST /api/override status %d body %q", rec.Code, rec.Body.String())
 	}
 	zones, _ = decode(rec)["zones"].(map[string]any)
 	bedroom, _ = zones["bedroom"].(map[string]any)
-	boost, _ := bedroom["boost"].(map[string]any)
-	if boost == nil || boost["active"] != true {
-		t.Fatalf("boost not active after POST: %s", rec.Body.String())
+	override, _ := bedroom["override"].(map[string]any)
+	if override == nil || override["active"] != true {
+		t.Fatalf("override not active after POST: %s", rec.Body.String())
 	}
-	if rem, _ := boost["remaining_s"].(float64); rem <= 0 || rem > 30*60 {
-		t.Errorf("remaining_s = %v, want 0<rem<=1800", boost["remaining_s"])
+	if rem, _ := override["remaining_s"].(float64); rem <= 0 || rem > 30*60 {
+		t.Errorf("remaining_s = %v, want 0<rem<=1800", override["remaining_s"])
 	}
 
 	// Bad zone -> 400.
-	rec = doReq(router, "POST", "/api/boost", `{"zone":"nope","minutes":30}`)
+	rec = doReq(router, "POST", "/api/override", `{"zone":"nope","minutes":30}`)
 	if rec.Code != 400 {
 		t.Fatalf("bad zone status = %d, want 400", rec.Code)
 	}
 
-	// Comfort temp is bounded by the device's advertised max_temp. Re-seed the
+	// Override temp is bounded by the device's advertised max_temp. Re-seed the
 	// bedroom with a 30° ceiling: a PUT above it must be rejected (this is the
 	// bug where HA silently drops a setpoint above max_temp and the device never
-	// boosts), while a value inside the range is accepted and echoed back along
-	// with the bounds.
+	// heats to it), while a value inside the range is accepted and echoed back
+	// along with the bounds.
 	if err := tracker.Seed(context.Background(), []ha.StateData{
 		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"current_temperature":19.5,"temperature":18,"min_temp":7,"max_temp":30}`)},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","comfort_temp":31.3}`)
+	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","override_temp":31.3}`)
 	if rec.Code != 400 {
-		t.Errorf("comfort_temp above max_temp: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
+		t.Errorf("override_temp above max_temp: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
 	}
-	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","comfort_temp":29}`)
+	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","override_temp":29}`)
 	if rec.Code != 200 {
-		t.Fatalf("comfort_temp within range: status = %d body %q", rec.Code, rec.Body.String())
+		t.Fatalf("override_temp within range: status = %d body %q", rec.Code, rec.Body.String())
 	}
 	zones, _ = decode(rec)["zones"].(map[string]any)
 	bedroom, _ = zones["bedroom"].(map[string]any)
-	if bedroom["comfort_temp"] != float64(29) {
-		t.Errorf("comfort_temp = %v, want 29", bedroom["comfort_temp"])
+	if bedroom["override_temp"] != float64(29) {
+		t.Errorf("override_temp = %v, want 29", bedroom["override_temp"])
 	}
 	if bedroom["max_temp"] != float64(30) {
 		t.Errorf("max_temp = %v, want 30", bedroom["max_temp"])
@@ -548,9 +548,9 @@ func climateChange(entity string, oldT, newT float64) ha.Event {
 			`"new_state":{"state":"heat","attributes":{"temperature":%v}}}`, entity, oldT, newT))}
 }
 
-func overrideTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
+func manualTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
 	t.Helper()
-	v, err := kv.Get(context.Background(), "override:"+zone)
+	v, err := kv.Get(context.Background(), "manual:"+zone)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,10 +562,10 @@ func overrideTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
 	return temp, true
 }
 
-// TestThermostatManualOverrideDetected: with no boost and a closed (seeded)
+// TestThermostatManualHoldDetected: with no override and a closed (seeded)
 // window, a climate target that differs from the published desired is recorded
-// as a manual override (§9), with a future expiry.
-func TestThermostatManualOverrideDetected(t *testing.T) {
+// as a manual hold (§9), with a future expiry.
+func TestThermostatManualHoldDetected(t *testing.T) {
 	reg, kv, global, tracker := startThermostat(t)
 	ctx := context.Background()
 
@@ -583,32 +583,32 @@ func TestThermostatManualOverrideDetected(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if temp, ok := overrideTemp(t, kv, "bedroom"); ok {
+		if temp, ok := manualTemp(t, kv, "bedroom"); ok {
 			if temp != 22 {
-				t.Fatalf("override temp = %v, want 22", temp)
+				t.Fatalf("manual temp = %v, want 22", temp)
 			}
-			ov, _ := kv.Get(ctx, "override:bedroom")
+			ov, _ := kv.Get(ctx, "manual:bedroom")
 			m := ov.(map[string]any)
 			exp, _ := m["expires"].(string)
 			if _, err := time.Parse(time.RFC3339, exp); err != nil {
-				t.Fatalf("override expires not RFC3339: %q", exp)
+				t.Fatalf("manual expires not RFC3339: %q", exp)
 			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("manual override was never recorded")
+	t.Fatal("manual hold was never recorded")
 }
 
-// TestThermostatBoostSuppressesOverride: an active boost makes the controller
-// ignore manual dial changes (§5.3a). A second zone with no boost acts as a
-// FIFO barrier — once its override appears, the boosted zone's event has
-// already been processed, so the absence of its override is deterministic.
-func TestThermostatBoostSuppressesOverride(t *testing.T) {
+// TestThermostatOverrideSuppressesManual: an active override makes the
+// controller ignore manual dial changes (§5.3a). A second zone with no override
+// acts as a FIFO barrier — once its manual hold appears, the overridden zone's
+// event has already been processed, so the absence of its hold is deterministic.
+func TestThermostatOverrideSuppressesManual(t *testing.T) {
 	reg, kv, global, tracker := startThermostat(t)
 	ctx := context.Background()
 
-	if err := kv.Set(ctx, "boost:bedroom", map[string]any{
+	if err := kv.Set(ctx, "override:bedroom", map[string]any{
 		"active":  true,
 		"ends_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 	}); err != nil {
@@ -625,18 +625,18 @@ func TestThermostatBoostSuppressesOverride(t *testing.T) {
 	_ = global.Set(ctx, "thermostat:desired:bedroom", 18.0)
 	_ = global.Set(ctx, "thermostat:desired:childrens", 18.0)
 
-	reg.Dispatch(climateChange("climate.bedroom", 18, 22))        // must be suppressed (boost)
-	reg.Dispatch(climateChange("climate.childrens_room", 18, 22)) // barrier: must create override
+	reg.Dispatch(climateChange("climate.bedroom", 18, 22))        // must be suppressed (override)
+	reg.Dispatch(climateChange("climate.childrens_room", 18, 22)) // barrier: must create manual hold
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, ok := overrideTemp(t, kv, "childrens"); ok {
-			if _, ok := overrideTemp(t, kv, "bedroom"); ok {
-				t.Fatal("boost did not suppress the manual override")
+		if _, ok := manualTemp(t, kv, "childrens"); ok {
+			if _, ok := manualTemp(t, kv, "bedroom"); ok {
+				t.Fatal("active override did not suppress the manual hold")
 			}
-			return // barrier processed and bedroom has no override
+			return // barrier processed and bedroom has no manual hold
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("barrier override (childrens) never appeared")
+	t.Fatal("barrier manual hold (childrens) never appeared")
 }
