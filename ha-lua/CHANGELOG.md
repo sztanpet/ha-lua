@@ -4,6 +4,22 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.6.0 - 2026-06-23
+
+### Changed
+- **BREAKING (example thermostat only):** renamed the misleading "boost"
+  concept to "override". The UI's timed 10/30/60-minute hold was never a
+  boost — it is a temporary manual override of the schedule — so it is now
+  called an override throughout. The pre-existing "override" (the hold created
+  when you change the thermostat dial directly) is renamed to "manual" to free
+  up the name. The example's HTTP API changes accordingly:
+  `POST /api/boost` → `POST /api/override` (and `/cancel`), and the
+  `comfort_temp` field (on `/api/state` and `PUT /api/settings`) becomes
+  `override_temp`. The per-zone stored keys also change, so each zone's
+  override temperature and any active override revert to their defaults once,
+  until set again. The daemon's Lua API is unaffected; this touches only the
+  bundled reference scripts.
+
 ## 2.5.0 - 2026-06-23
 
 ### Added
