@@ -122,6 +122,44 @@ func TestHandleStateChanged(t *testing.T) {
 	}
 }
 
+// TestHandleStateChangedRemoval covers HA deleting an entity: a state_changed
+// with a nil new_state must drop the row from the current-state mirror (so
+// GetState reports it gone) while leaving its state_history intact.
+func TestHandleStateChangedRemoval(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	_ = tr.Seed(ctx, []ha.StateData{
+		{EntityID: "automation.foo", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	})
+
+	// HA deletes the automation: new_state is nil, only old_state is present.
+	if err := tr.HandleStateChanged(ctx, jsontext.Value(`{
+		"entity_id": "automation.foo",
+		"old_state": {"entity_id":"automation.foo","state":"on","attributes":{},"last_changed":"2026-01-01T00:00:00Z","last_updated":"2026-01-01T00:00:00Z"}
+	}`)); err != nil {
+		t.Fatalf("handle removal: %v", err)
+	}
+
+	s, err := tr.GetState(ctx, "automation.foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s != nil {
+		t.Errorf("mirror still has removed entity: %+v", s)
+	}
+
+	// The seeded state happened; history must still carry it.
+	history, err := tr.GetHistory(ctx, "automation.foo", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) == 0 {
+		t.Error("removal wiped state_history; want past states preserved")
+	}
+}
+
 func TestStateHistoryAppended(t *testing.T) {
 	tr := newTracker(t)
 	ctx := context.Background()

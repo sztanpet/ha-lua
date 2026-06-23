@@ -95,8 +95,14 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 	if data.NewState == nil {
 		// HA sends a nil new_state when an entity is removed (e.g. deleting an
 		// automation). That is normal lifecycle, not an error, so log it at
-		// debug rather than warning.
+		// debug rather than warning. Drop the entity from the current-state
+		// mirror so get_state reports it as gone; state_history is append-only
+		// and keeps the past states it really had.
 		slog.Debug("state: entity removed (nil new_state)", "entity", data.EntityID)
+		if _, err := t.writeDB.ExecContext(ctx,
+			`DELETE FROM states WHERE entity_id = ?`, data.EntityID); err != nil {
+			return fmt.Errorf("delete removed entity %s: %w", data.EntityID, err)
+		}
 		return nil
 	}
 
