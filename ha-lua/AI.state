@@ -37,6 +37,11 @@ Last updated: 2026-06-23
   html edits copied over (examples dir is never loaded).
 - Released as 2.3.0 (2026-06-23): comfort+schedule device-range bounds, tap-to-
   edit target, call_service result checking.
+- Status badge (2026-06-23, 2.4.0): card head shows "on" when mode==heat, or
+  "heating" while hvac_action=="heating", never the raw "heat" word. zone_state
+  exposes hvac_action; UI statusLabel() in thermostat.html; hu "mode.on" is "on"
+  (user wanted the English word, not "be"). TestThermostatUIStatusLabel covers
+  the three paths (heating / idle->on / absent->on). Examples-only change.
 
 ## Bundled reference examples (2026-06-22, load-examples-spec.md, v2.2.0)
 - The repo's example/script tree doubled as the author's personal heating
