@@ -234,8 +234,11 @@ Last updated: 2026-06-25
 ## Phase
 Enhanced-climate track IN PROGRESS (enhanced-climate-spec.md): M1 (generic
 transport — REST set/remove + ha.on_command + lib/card.lua) DONE 2026-06-25,
-unreleased; M2–M5 (shared lib/control + new example, removal UI, card JS,
-docs/release) pending.
+unreleased. M2 IN PROGRESS: commit 4 (extract lib/control.lua, migrate
+thermostat.lua behavior-preserving) DONE 2026-06-25 (3e11155); NEXT = commit 5
+(enhanced_climate registry + configure/remove handlers), then 6 (control loop +
+bounds), 7 (multi-sensor window), 8 (companion publish). M3 (removal Ingress
+page), M4 (card JS), M5 (docs/release) pending.
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
 (milestones 1–7, see thermostat-ui-spec.md). Filesystem plugin COMPLETE
 (see fs-plugin-spec.md). Bundled reference examples COMPLETE (see
