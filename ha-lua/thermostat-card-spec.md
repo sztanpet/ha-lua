@@ -1,273 +1,262 @@
-# Thermostat dashboard card — HA integration spec
+# Thermostat dashboard card — HA-configured zones spec
 
-Status: proposed (2026-06-25, rev 2 — entity publishing folded in)
-Scope: a new **general daemon capability** (`ha.set_state` / `ha.remove_state`)
-plus **`examples/thermostat.lua`** changes that use it. The Lovelace custom
-card (JS) is a separate deliverable and is out of scope here.
+Status: proposed (2026-06-25, rev 3 — card-provisioned dynamic zones)
+Scope: a general daemon capability (`ha.set_state`/`ha.remove_state`/
+`ha.on_command`), a **rework of the thermostat controller** to runtime-defined
+zones, and the **`custom:ha-lua-thermostat-card`** interface. The card JS is a
+separate deliverable; this spec defines the contract it relies on.
 
 ## 1. Goal
 
-Let a native Lovelace **custom card** on an HA dashboard read and control the
-thermostat scheduler, in parallel with the existing Ingress web UI. The card
-shows live per-zone state (mode, target, override/manual, schedule) and lets the
-user nudge the override temp, start/cancel a timed override, edit the schedule,
-and reorder zones — the same surface the HTTP API already exposes.
+A dashboard card whose configuration is essentially **just the climate entity**.
+Dropping the card on a dashboard and pointing it at `climate.living_room`:
 
-This is **additive**. The Ingress UI served by `internal/web` stays exactly as
-is; the card is a second front-end onto the same controller state.
+- **provisions** that zone in the daemon (no `lib/zones.lua` edit),
+- gives a working **7-day schedule editor**,
+- gives **boost / timed override** + cancel,
+- optionally binds a **window sensor** that pauses heating while open,
 
-## 2. Channels and the entity decision
+…all configured from HA, never by editing a script file.
 
-A dashboard card can only talk to a backend through Home Assistant core — it
-cannot fetch the add-on's Ingress URL directly (the ingress session token isn't
-available to card JS; that is the documented Frigate-card pain point). So both
-directions go through HA. They use **different** mechanisms because HA core is
-asymmetric:
+## 2. Division of responsibility
 
-### 2.1 Outbound (script → card): **publish HA entities** (the read channel)
+The scheduling loop must run server-side (a browser card can't hold a 1-minute
+control loop), but the *zone definitions now come from HA at runtime*:
 
-The script publishes each zone as a real HA entity via the core REST API
-(`POST /api/states/<entity_id>`, the documented "set state + attributes"
-endpoint — 200 if the entity existed, 201 if new). The card reads
-`this.hass.states['sensor.ha_lua_thermostat_living'].attributes` and re-renders
-automatically on every `hass` update.
+| Concern | Owner | Lives in |
+|---------|-------|----------|
+| Which climate entity is a zone, its window sensor, boost presets | **Card config** | dashboard YAML, mirrored to the daemon on load |
+| Schedule, active override, window state | **Daemon** | per-zone store (schedule already is) |
+| Control loop (desired = override > manual > schedule; write climate) | **Daemon** | `thermostat.lua` |
+| Live temp / setpoint / hvac_action / min/max | **HA** | the climate entity itself |
+| Schedule/boost/override/window status the card needs | **Daemon** | companion `sensor.ha_lua_thermostat_<slug>` |
 
-This is the **cleaner** channel than the fire-and-forget state event from rev 1,
-and is now the chosen design:
+Identity: **a zone *is* a climate entity.** Key/slug = the climate entity's
+object id (`climate.living_room` → `living_room`).
 
-- **Retained state, not a transient pulse.** A fresh card has the data
-  immediately from `hass.states` — no cold-start `get` handshake, no missed
-  events before the subscription opened.
-- **Native reactivity.** HA pushes `hass` updates to the card on every state
-  change for free; no `subscribeEvents` plumbing on the card side.
-- **Shows up in HA proper.** Entities appear in the entity list, history,
-  logbook, more-info dialogs, and can be used by other cards/automations — a
-  real integration surface, not a private side channel.
+## 3. End-to-end flow
 
-The cost is a small **Go daemon change** (ha-lua only ingests state today; it
-needs an outbound `set_state`). That capability — `ha.set_state` — is generic
-and useful to **every** script, not just the thermostat, so it earns its place.
+```
+dashboard YAML  ──set_config──▶  card
+  climate_entity, window_sensor?, presets?
 
-> **Rejected:** shipping a Python custom integration to register entities/
-> services "properly." That is a second codebase in a second language deployed
-> to `/config/custom_components` — strictly more machinery for the same result.
-> REST `set_state` from the daemon we already run is the Linus choice.
+card (on load / config change)
+  ── fire ha_lua_command {action:"configure_zone",
+       data:{key, climate_entity, window_sensor, presets}} ──▶ daemon
+  (idempotent upsert; no-op if unchanged)
 
-### 2.2 Inbound (card → script): **custom event** (the command channel)
+daemon thermostat.lua
+  upsert zone in store ▶ control loop now includes it
+  ▶ ha.set_state("sensor.ha_lua_thermostat_<slug>", target,
+       {ha_lua_script="thermostat", ha_lua_climate=<entity>, ha_lua_key=<slug>,
+        schedule, override, manual, window, presets, controlled})
 
-`set_state` can't *control* anything, and registering an HA **service** requires
-an integration (rejected above). The remaining no-new-component inbound path is
-a **custom event**, which ha-lua already handles via `ha.on_event`
-(`internal/lua/api_ha.go:292`) — the runner subscribes through
-`client.AddEventType` → `subscribe_events`, live on every (re)load and across
-reconnects. So the card fires one event to command; **zero daemon change** on
-this side.
+card render = climate entity (temp/hvac/min/max)
+            + companion sensor (schedule/boost/override/window)
+  discovers the companion by attr ha_lua_climate == climate_entity
 
-## 3. New daemon capability: `ha.set_state` / `ha.remove_state`
-
-A general binding, specced here because the card needs it; reusable everywhere.
-
-### 3.1 `internal/ha` — REST client
-
-`ha-lua` is WS-only today. Add a thin REST path to `ha.Client`:
-
-- New fields: `restURL string`, `httpClient *http.Client` (≈10s timeout).
-- `SetState(ctx, entityID, state string, attrs jsontext.Value) (created bool, err error)`
-  → `POST {restURL}/states/{entityID}` with `Authorization: Bearer {token}`,
-  `Content-Type: application/json`, body `{"state": state, "attributes": attrs}`.
-  200/201 → ok (`created` from 201); any other status → error carrying the
-  status code + a short body snippet.
-- `RemoveState(ctx, entityID) error` → `DELETE {restURL}/states/{entityID}`
-  (200 → ok, 404 → treat as already-gone/ok).
-- The REST call is independent of the WS connection lifecycle; it shares only
-  the token. (If HA is fully down, both fail — fine.)
-
-Extend the constructor to take the REST base (`New(wsURL, restURL, token)`); the
-test/call-site churn is mechanical.
-
-### 3.2 `internal/config` — REST base URL
-
-Mirror the existing add-on-forcing pattern in `config.load()`
-(`config.go:117`), no new user option, no `config.yaml` schema change
-(`homeassistant_api: true` is already granted — `config.yaml:14`):
-
-- Add `HomeAssistant.RestURL` (`rest_url`), optional.
-- **Add-on mode:** force `cfg.HomeAssistant.RestURL = "http://supervisor/core/api"`
-  (the Supervisor core proxy), next to the existing `URL`/`Token`/`IngressPort`
-  forcing.
-- **Dev mode:** if `RestURL` is empty, derive from `URL` in `Defaults()`:
-  scheme `ws→http` / `wss→https`, strip a trailing `/websocket` from the path →
-  REST base (e.g. `ws://host:8123/api/websocket` → `http://host:8123/api`). The
-  Supervisor `/core/websocket` shape isn't hit in dev, so the simple strip is
-  enough; a user can still set `rest_url` explicitly.
-
-### 3.3 `internal/lua` — bindings + wiring
-
-- `Deps.SetState` / `Deps.RemoveState` funcs (like `CallService` / `FireEvent`,
-  `supervisor.go:33`), wired in `main.go` from the `ha.Client` methods.
-- Lua bindings in `api_ha.go`:
-  - `ok, err = ha.set_state(entity_id, state, attributes)`
-  - `ok, err = ha.remove_state(entity_id)`
-- **Non-raising** (`value|nil, errmsg`), matching the `http`/`fs`/`json`
-  convention — **not** `call_service`'s raise-to-`on_exception`. Rationale:
-  publishing runs every tick; a transient HA outage would otherwise spam
-  `on_exception` once per zone per minute. The script ignores the error and the
-  next tick re-publishes. (`call_service` raises because a dropped command is a
-  real, rare failure; a dropped state publish self-heals.)
-
-## 4. Entity model (outbound)
-
-One entity per zone, plus one index entity.
-
-### 4.1 Per-zone — `sensor.ha_lua_thermostat_<zone_id>`
-
-- **state**: current target setpoint (°C, numeric) when the zone is controlled;
-  `"off"` when `mode != heat`.
-- **attributes** (mirror the per-zone fields of `full_state()` / `GET /api/state`):
-  `friendly_name` (zone name), `mode`, `hvac_action`, `current_temperature`,
-  `target_temperature`, `override` (`{active, expires, temp}`), `manual`
-  (`{active}`), `min_temp`, `max_temp`, `window_open`, `schedule` (the zone's
-  7-day entries — small, well under HA's attribute size limit, so the card's
-  editor can render straight from `hass.states`), `order` (index), `controlled`
-  (bool). Plus `unit_of_measurement: "°C"`, `device_class: temperature`,
-  `icon: mdi:thermostat`.
-
-### 4.2 Index — `sensor.ha_lua_thermostat`
-
-- **state**: zone count.
-- **attributes**: `order` (array of zone ids), `zones` (array of the per-zone
-  entity ids). Lets the card discover the zone set and order in a single read
-  without scanning entity ids.
-
-### 4.3 Lifecycle
-
-- Publish all entities on **script load** (initial), in the existing **1-minute
-  `ha.every` tick**, and at the end of every **mutator** (§5.2) so any change —
-  card, Ingress UI, schedule transition, window handoff — pushes immediately.
-- **Restart transience (the one real caveat):** REST-set states are *not*
-  integration-backed, so an HA restart drops them. ha-lua re-publishes on its
-  next tick (≤1 min) and on reconnect-triggered reload, so they reappear on
-  their own. Acceptable for a dashboard; document it in DOCS.md.
-- When a zone disappears from config, `ha.remove_state` its entity so a stale
-  card entry doesn't linger (compare published set vs current zones on load).
-
-## 5. Command contract & handlers (inbound)
-
-### 5.1 `ha_lua_thermostat_cmd` (card → script)
-
-One event type, dispatched on an `action` field (one `ha.on_event`, one card
-channel). No `get` action — entities are retained, so the card never needs to
-poll for a snapshot.
-
-```jsonc
-{ "action": "override", "zone": "living", "minutes": 30 }
-{ "action": "override", "zone": "living", "cancel": true }
-{ "action": "settings", "zone": "living", "override_temp": 21.3 }
-{ "action": "schedule", "zone": "living", "schedule": [ /* entries */ ] }
-{ "action": "order",    "order": ["living","bedroom","kitchen"] }
+user edits (schedule save / boost / cancel / override temp)
+  ── fire ha_lua_command {action, data:{key, ...}} ──▶ daemon
+  daemon persists + re-publishes ▶ card reconciles from next hass update
 ```
 
-Field names/shapes **mirror the HTTP API** (override_temp, schedule entry shape,
-order array) so both front-ends share validation + mutators. Unknown action →
-no-op.
+The card config asks only for the climate entity; the companion sensor is
+**discovered**, not configured.
 
-### 5.2 Reconciliation, not acks
+## 4. Generic transport (unchanged from rev 2, still the foundation)
 
-Events are fire-and-forget; there is no per-command ack. Each handler does:
-validate → mutate iff valid → **re-publish entities** (§4.3). A rejected command
-(e.g. override_temp out of device bounds via the same `temp_bounds(zone)` check,
-AI.state 2.3.0) simply doesn't change state, so the re-published entity makes the
-card's `hass.states` snap back to truth. Same optimism-free model the Ingress UI
-already uses. No separate error channel in v1.
+### 4.1 `ha.set_state` / `ha.remove_state` (new daemon capability)
 
-## 6. `thermostat.lua` changes
+ha-lua only ingests state today; publishing needs the core REST API.
 
-1. **Shared mutators** (factor if not already): `set_override_temp(zone,t)`,
-   `set_schedule(zone,s)`, `start_override(zone,mins)`, `cancel_override(zone)`,
-   `set_order(list)`, each returning `ok, err`. HTTP handlers *and* the event
-   handler call these. (Names descriptive; reuse what the handlers call today.)
-2. **`publish_zone(zone)` / `publish_all()`**: build the per-zone table and the
-   index table and `ha.set_state(...)` them. Log-and-continue on the returned
-   error (do not raise).
-3. **Call `publish_all()`** from: initial load, the 1-min tick (after it
-   recomputes desired), and the end of each mutator.
-4. **Register the command handler** for `ha_lua_thermostat_cmd` (§5.1),
-   dispatching to the mutators, then `publish_all()` unconditionally.
-5. **Bounds reuse**: validation goes through `temp_bounds(zone)` so the card
-   can't push a setpoint HA silently drops.
+- `internal/ha`: `Client.SetState(ctx, entityID, state, attrs) (created bool, err)`
+  → `POST {restURL}/states/{id}` (200/201); `RemoveState` → `DELETE` (200/404 ok).
+  ≈10s `http.Client`; shares the WS token.
+- `internal/config`: add `HomeAssistant.RestURL`. Add-on mode forces
+  `http://supervisor/core/api` (same place `URL`/`Token`/`IngressPort` are
+  forced, `config.go:117`); `homeassistant_api: true` already grants it
+  (`config.yaml:14`), no manifest/schema change. Dev derives from `URL`
+  (`ws→http`/`wss→https`, strip trailing `/websocket`).
+- `internal/lua`: `Deps.SetState`/`RemoveState`, bindings `ha.set_state`/
+  `ha.remove_state`, **non-raising** (`value|nil, err`, like `http`/`fs`) so the
+  per-minute publish doesn't spam `on_exception` during a transient outage.
 
-No change to `lib/zones.lua`, `lib/schedule.lua` (pure), `internal/web`, or the
-router. The `fire_event` outbound state event from rev 1 is **dropped** in favor
-of entities.
+> Rejected: a Python custom integration to register entities/services — a second
+> codebase in a second language for the same result.
 
-## 7. Security
+### 4.2 `ha.on_command` + `lib/card.lua`
 
-`homeassistant_api: true` already grants the supervisor token core REST access,
-so no manifest change. Anyone who can fire an event or write a state via that API
-can drive the thermostat — same trust level as `call_service`, already gated by
-HA auth + admin-only add-on install. Validation in the mutators is the real
-guard (present for the HTTP path); the event handler must not accept anything the
-HTTP path wouldn't.
+One inbound event for everything: `ha_lua_command` `{script, action, data}`.
 
-## 8. Testing
+- `ha.on_command(handler)` binding: wraps `ha.on_event("ha_lua_command", …)`,
+  filters `data.script == api.scriptID` (the runner already knows the id — it's
+  how `ha.log` tags lines, `api_ha.go`), calls `handler(action, data)`.
+- `lib/card.lua` ergonomic wrapper so a script opts in cheaply:
+  ```lua
+  local card = require("card").new()           -- bound to this script's id
+  card.on("schedule", function(d) set_schedule(d.key, d.schedule) end)
+  card.publish(key, state, attrs)              -- stamps ha_lua_* markers, set_state
+  card.remove(key)                             -- remove_state
+  ```
 
-**Go — `internal/ha`:** `SetState`/`RemoveState` against an `httptest.Server`:
-assert method, path (`/states/<id>`), `Authorization` header, JSON body; map
-200→ok, 201→`created`, 4xx/5xx→error; context-cancel path. (No live HA.)
+These are generic: any future script (lights, etc.) reuses them. The thermostat
+is the first consumer.
 
-**Go — `internal/config`:** add-on mode forces `RestURL` to the supervisor proxy;
-dev mode derives it from a `ws://…/api/websocket` URL; explicit `rest_url`
-survives. Extend the existing `config_test.go` table.
+## 5. Command contract (card → daemon)
 
-**Go — `internal/lua`:** inject capturing `SetState`/`RemoveState` stubs into
-`Deps`; bind-level test that `ha.set_state` returns `ok`/`err` per the stub and
-is non-raising on stub error.
+`ha_lua_command`, `script:"thermostat"`, dispatched on `action`; `data.key`
+(the zone slug) on every command:
 
-**Go — `internal/lua` (thermostat, via `Runner` like `TestThermostatAPI`):**
-1. `TestThermostatPublishesEntities` — on load, capturing `SetState` receives one
-   call per zone plus the index entity, attributes matching `GET /api/state`.
-2. `TestThermostatCmdOverrideTemp` — fire `settings {override_temp:X}`; assert the
-   re-published entity reflects X, and an out-of-bounds X is rejected (entity
-   unchanged) — reuses the max_temp=30 seed.
-3. `TestThermostatCmdScheduleRoundTrip` — fire a `schedule` command; assert the
-   published `schedule` attribute round-trips.
-4. `TestThermostatHTTPMutationPublishes` — drive `PUT /api/settings` via the
-   Router; assert a `set_state` is also emitted (two front-ends stay in sync).
+```jsonc
+// provisioning — idempotent upsert, fired by the card on load/config change
+{ "action":"configure_zone", "data":{ "key":"living_room",
+    "climate_entity":"climate.living_room",
+    "window_sensor":"binary_sensor.living_window",   // optional, "" to clear
+    "presets":[10,30,60] } }                         // boost minutes, optional
+{ "action":"remove_zone", "data":{ "key":"living_room" } }
 
-No browser test (card JS out of scope). All green under `-race` + `make check`.
+// runtime edits
+{ "action":"settings", "data":{ "key":"living_room", "override_temp":21.3 } }
+{ "action":"override", "data":{ "key":"living_room", "minutes":30 } }
+{ "action":"override", "data":{ "key":"living_room", "cancel":true } }
+{ "action":"schedule", "data":{ "key":"living_room", "schedule":[ /* entries */ ] } }
+```
 
-## 9. Out of scope / deferred
+Field shapes mirror the existing HTTP API so the Ingress UI and the card share
+validation + mutators. Unknown action / unknown key → no-op. Every handler
+validates → mutates iff valid → **re-publishes** the companion sensor;
+rejected commands leave state unchanged and the card snaps back from `hass`
+(optimism-free, the lesson the Ingress UI already learned). `configure_zone`
+upserts and only restarts/republishes when the config actually changed (guards
+against multi-tab/dashboard thrash).
 
-- **The Lovelace card JS** (LitElement; reads `hass.states['sensor.ha_lua_thermostat*']`;
-  commands via `hass.callApi('POST','events/ha_lua_thermostat_cmd', …)`;
-  dashboard resource) — separate deliverable.
-- **Per-client targeting / request correlation** — retained entities + broadcast
-  command are sufficient.
-- **A dedicated error event** — reconciliation covers v1 (§5.2).
-- **Integration-backed entities surviving HA restart without a re-publish** —
-  would need a real custom integration (§2.1, rejected); the ≤1-min re-publish
-  is good enough.
+## 6. Companion entity (daemon → card)
 
-## 10. Commits (each compiles + `make test`)
+`sensor.ha_lua_thermostat_<slug>`, published on configure / load / 1-min tick /
+every mutation:
 
-Daemon changes (general, reusable) first, then the example + docs:
+- **state**: current desired setpoint (°C) when controlled, else `"off"`.
+- **attributes**: `ha_lua_script:"thermostat"`, `ha_lua_climate:<entity>`,
+  `ha_lua_key:<slug>`, `friendly_name`, `schedule` (7-day entries — small),
+  `override` (`{active, expires, temp}`), `manual` (`{active}`),
+  `window` (`{sensor, open}`), `presets`, `min_temp`, `max_temp`, `controlled`,
+  plus `unit_of_measurement:"°C"`, `device_class:temperature`, `icon:mdi:thermostat`.
 
-1. `ha: add core REST client for entity set/remove` — `Client.SetState`/
-   `RemoveState` + `httptest` tests.
-2. `config: derive and force the core REST API base URL` — `RestURL` field,
-   add-on force + dev derive + `config_test.go` cases.
-3. `lua: add ha.set_state / ha.remove_state bindings` — `Deps.SetState`/
-   `RemoveState`, `api_ha.go` bindings, `main.go` wiring, capturing-stub tests.
-4. `examples: publish thermostat zones as HA entities` — `publish_all()` from
-   load + tick + mutators; remove zones via `remove_state`. Tests:
-   `TestThermostatPublishesEntities`, `TestThermostatHTTPMutationPublishes`.
-5. `examples: accept thermostat commands over HA events` — `ha_lua_thermostat_cmd`
-   handler. Tests: `…CmdOverrideTemp`, `…CmdScheduleRoundTrip`.
-6. `docs: document set_state + the thermostat card contract` — DOCS.md
-   (`ha.set_state`/`remove_state`, the entity model, command event, restart
-   caveat) + CHANGELOG. `ha.set_state` is a new Lua API ⇒ **minor** bump.
+**Restart transience:** REST-set states aren't integration-backed, so an HA
+restart drops them; the ≤1-min tick + reconnect-reload re-publish, so they
+self-heal. Documented caveat. `remove_zone` calls `ha.remove_state` so a removed
+zone's sensor disappears.
 
-> Commits 1–3 are real daemon changes shipped in the binary. 4–5 are
+## 7. Controller rework (`thermostat.lua`) — the big change
+
+Today zones come from static `lib/zones.lua`; they now come from the store.
+
+1. **Zone registry in the store** (global-scoped so the Ingress UI and card share
+   one source), keyed by slug: `{climate_entity, window_sensor, presets}`. CRUD
+   via the `configure_zone` / `remove_zone` handlers (§5).
+2. **Control loop iterates store zones** instead of `zones.lua`. Per-zone
+   `desired() = override > manual > schedule`, writing the climate entity only
+   when `mode==heat`, no bound window open, and the value changed (>0.05) — the
+   existing logic, just over a dynamic zone set. `temp_bounds(zone)` still reads
+   the climate entity's `min_temp`/`max_temp` so the card can't push a setpoint
+   HA silently drops (AI.state 2.3.0).
+3. **Window cooperation folds in.** The per-zone `window_sensor` comes from
+   config; the loop checks its state each tick and pauses/restores heating
+   (replacing the separate `heating_windows.lua` zones.lua coupling). For
+   immediacy, also subscribe `ha.on_state_change("binary_sensor.*", …)` and
+   filter to configured window sensors so an opened window pauses within seconds,
+   not up to a minute. **Assumption to confirm:** "optional window sensor
+   disablement" = bind a sensor that pauses heating while open (omit to disable
+   the feature); not a separate on/off toggle.
+4. **Companion publish** (§6) on configure / load / tick / mutation.
+5. **Retire `lib/zones.lua`** and its placeholder ids. The schedule store layout
+   is unchanged (already per-zone in the store), so only the *zone list* source
+   moves. `heating_windows.lua` is folded in / retired.
+
+This is **BREAKING** for anyone running the example as-is (zones.lua goes away) →
+**major** version bump (release process §SemVer).
+
+## 8. Ingress UI alignment
+
+The Ingress UI already edits store-backed schedules; it now also reads the
+dynamic zone set (zones appear as cards provision them). It should gain an
+**add-zone** (pick a climate entity) and **remove-zone** flow so users who don't
+use the dashboard card, and orphan cleanup, are both covered (a card removed from
+a dashboard can't send `remove_zone`, so the zone lingers until removed here).
+Shares the same store + mutators as the command handlers.
+
+## 9. Card interface (`custom:ha-lua-thermostat-card`, separate deliverable)
+
+```yaml
+type: custom:ha-lua-thermostat-card
+climate_entity: climate.living_room        # required — the only must-have
+window_sensor: binary_sensor.living_window # optional
+presets: [10, 30, 60]                      # optional boost minutes
+name: Living room                          # optional; else friendly_name
+```
+
+- On `setConfig` / first `hass`: fire `configure_zone` (idempotent) so adding the
+  card provisions the zone.
+- Discover the companion sensor by `attributes.ha_lua_climate === climate_entity`.
+- Render from the **climate entity** (current temp, hvac_action, min/max) + the
+  **companion** (schedule, override/boost, window): status line, target/override
+  stepper, boost preset row + live countdown, the **7-day schedule editor**, and
+  a window-state indicator when bound.
+- All mutations fire `ha_lua_command`; **optimism-free** — re-render from the next
+  `hass` update, never from local writes.
+- A config editor (`getConfigElement`) with an entity picker for
+  `climate_entity` / `window_sensor` makes it fully GUI-configurable.
+
+## 10. Testing
+
+**Go — generic transport:** `SetState`/`RemoveState` against `httptest`
+(method/path/auth/body, 200/201/404, ctx-cancel); `config_test` RestURL force +
+derive; capturing-stub tests for `ha.set_state`/`ha.on_command` (non-raising).
+
+**Go — controller (via `Runner` like `TestThermostatAPI`):**
+1. `configure_zone` creates a zone, starts control, publishes the companion;
+   re-`configure_zone` with same config is a no-op; changed config updates.
+2. `remove_zone` stops control and `remove_state`s the companion.
+3. Control loop drives a *store-defined* zone (no zones.lua): schedule/override
+   priority, write-gating on mode/window/changed.
+4. Window pause/restore from a dynamically-bound sensor.
+5. Command round-trips: `settings` (bounds-rejected out of range), `schedule`
+   round-trip, `override` start/cancel — each re-publishes the companion.
+
+No browser test (card JS out of scope). Green under `-race` + `make check`.
+
+## 11. Milestones / commits (each compiles + `make test`)
+
+**M1 — generic transport (reusable daemon):**
+1. `ha: add core REST client for entity set/remove`
+2. `config: derive and force the core REST API base URL`
+3. `lua: add ha.set_state / ha.remove_state / ha.on_command + lib/card.lua`
+
+**M2 — dynamic-zone controller (examples + the breaking change):**
+4. `examples: store-backed thermostat zone registry + configure/remove`
+5. `examples: drive the control loop from runtime zones, retire zones.lua`
+6. `examples: fold window cooperation into per-zone config`
+7. `examples: publish thermostat companion sensors`
+
+**M3 — Ingress UI:** 8. `examples: add/remove zones from the Ingress UI`
+
+**M4 — card (separate deliverable):** the `custom:ha-lua-thermostat-card` JS +
+config editor, and a dashboard-resource install note in DOCS.
+
+**M5 — docs/release:** DOCS (`ha.set_state`/`on_command`, the card config, the
+entity model, the zones.lua removal/migration, restart caveat) + CHANGELOG with a
+bold **BREAKING** lead + **major** version bump.
+
+> M1 commits ship in the binary and are reusable by any script. M2–M3 are
 > examples-only (reference tree, never loaded — AI.state); the user's live
-> `/config/ha-lua/scripts/thermostat.lua` must be updated separately for the
-> card to work against their deployment.
+> `/config/ha-lua/scripts/` must be migrated off `zones.lua` separately. M4 is
+> the only non-Lua/Go deliverable.
+
+## 12. Open items
+
+- **Window-sensor semantics** (§7.3) — confirm "bind a sensor, open pauses
+  heating" vs a separate enable/disable toggle.
+- **Orphan zones** — a card deleted from a dashboard leaves its zone; cleanup is
+  via the Ingress UI (§8) or a future TTL. Acceptable for v1.
+- **Multiple cards, one climate entity** — idempotent `configure_zone` makes this
+  safe; last writer of `window_sensor`/`presets` wins (cosmetic).
