@@ -129,6 +129,50 @@ func TestSchedulePureLib(t *testing.T) {
 	}
 }
 
+func TestControlPureLib(t *testing.T) {
+	L := newScheduleState(t)
+
+	err := L.DoString(`
+		local c = require "control"
+
+		-- desired: override > manual > schedule, nil when none.
+		local t, src = c.desired(22, 20, 18)
+		assert(t == 22 and src == "override", "override wins")
+		t, src = c.desired(nil, 20, 18)
+		assert(t == 20 and src == "manual", "manual beats schedule")
+		t, src = c.desired(nil, nil, 18)
+		assert(t == 18 and src == "schedule", "schedule fallback")
+		t, src = c.desired(nil, nil, nil)
+		assert(t == nil and src == nil, "no source -> nil")
+
+		-- is_manual: within 0.1 of a numeric published value is our own write.
+		assert(c.is_manual(21.0, 21) == false, "21 vs 21.0 not manual")
+		assert(c.is_manual(21.05, 21) == false, "within tolerance not manual")
+		assert(c.is_manual(21.2, 21) == true, "beyond tolerance is manual")
+		assert(c.is_manual(21, nil) == true, "never-published is manual")
+
+		-- should_write: heat mode, no window, value changed > 0.05.
+		assert(c.should_write("heat", false, 19.5, 21) == true, "changed -> write")
+		assert(c.should_write("heat", false, nil, 21) == true, "no current -> write")
+		assert(c.should_write("heat", false, 21.0, 21.02) == false, "unchanged -> skip")
+		assert(c.should_write("off", false, 19, 21) == false, "not heat -> skip")
+		assert(c.should_write("heat", true, 19, 21) == false, "window open -> skip")
+
+		-- clamp_bounds: device min/max.
+		assert(c.clamp_bounds(40, 5, 30) == 30, "clamp high")
+		assert(c.clamp_bounds(2, 5, 30) == 5, "clamp low")
+		assert(c.clamp_bounds(21, 5, 30) == 21, "in range")
+
+		-- window_open: any open / all closed.
+		assert(c.window_open({"off", "on", "off"}) == true, "any open")
+		assert(c.window_open({"off", "off"}) == false, "all closed")
+		assert(c.window_open({}) == false, "no sensors -> closed")
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // openTestRoot opens an os.Root over dir for the read-only fs module, closed
 // on test cleanup. Used by the thermostat tests, whose script reads its UI
 // page through fs.read.
@@ -284,6 +328,7 @@ func TestThermostatAPI(t *testing.T) {
 	}
 	writeTestZones(t, libDir)
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
 
@@ -511,6 +556,7 @@ func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore,
 	}
 	writeTestZones(t, libDir)
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
 

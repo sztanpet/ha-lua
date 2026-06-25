@@ -12,6 +12,7 @@
 
 local zones = require "zones"
 local schedule = require "schedule"
+local control = require "control"
 
 local zone_defs = zones.zones
 
@@ -81,13 +82,15 @@ local function temp_bounds(zone)
 end
 
 -- any_window_open reports whether any window in the zone is definitely open.
--- A not-yet-seeded sensor (nil) counts as closed for the write decision.
+-- A not-yet-seeded sensor (nil) counts as closed for the write decision. The
+-- any-open/all-closed reduction itself is the shared control.window_open.
 local function any_window_open(zone)
+  local states = {}
   for _, window in ipairs(zone_defs[zone].windows) do
     local state = ha.get_state(window)
-    if state ~= nil and state.state == "on" then return true end
+    states[#states + 1] = state and state.state or "off"
   end
-  return false
+  return control.window_open(states)
 end
 
 -- any_window_unknown reports whether any window sensor has no state yet. Used
@@ -142,14 +145,14 @@ end
 
 -- desired implements §4.1: override beats manual beats schedule. Returns the
 -- temperature and its source string ("override"/"manual"/"schedule"), or nil if
--- the zone has no schedule at all.
+-- the zone has no schedule at all. The priority pick is the shared
+-- control.desired; this wrapper resolves each source's candidate temperature
+-- (and expires stale override/manual holds as a side effect).
 local function desired(zone, now, dow, minute)
-  if active_override(zone, now) then return override_temp(zone), "override" end
+  local override = active_override(zone, now) and override_temp(zone) or nil
   local manual = active_manual(zone, now)
-  if manual then return manual.temp, "manual" end
-  local temp = schedule.resolve(load_schedule(zone), dow, minute)
-  if temp ~= nil then return temp, "schedule" end
-  return nil, nil
+  local sched_temp = schedule.resolve(load_schedule(zone), dow, minute)
+  return control.desired(override, manual and manual.temp or nil, sched_temp)
 end
 
 local function set_temp(zone, temp)
@@ -166,10 +169,10 @@ local function apply_zone(zone, now, dow, minute)
   local desired_temp = desired(zone, now, dow, minute)
   if desired_temp == nil then return end
   global.set(zones.desired_key(zone), desired_temp)
-  if mode(zone) ~= "heat" then return end
-  if any_window_open(zone) then return end -- window script's territory
-  local current = current_target(zone)
-  if current == nil or math.abs(current - desired_temp) > 0.05 then
+  -- Write only in heat mode, with no window open (the window script's
+  -- territory), and only when the value actually changed — the shared
+  -- control.should_write gate.
+  if control.should_write(mode(zone), any_window_open(zone), current_target(zone), desired_temp) then
     set_temp(zone, desired_temp)
   end
 end
@@ -204,8 +207,9 @@ for zone, conf in pairs(zone_defs) do
 
     local published = global.get(zones.desired_key(zone))
     -- Float tolerance: our own write (and the window restore) set target ==
-    -- published exactly, but 21 vs 21.0 must not look like a manual change.
-    if type(published) == "number" and math.abs(target - published) <= 0.1 then return end
+    -- published exactly, but 21 vs 21.0 must not look like a manual change. The
+    -- predicate is the shared control.is_manual.
+    if not control.is_manual(target, published) then return end
 
     local _, _, mins_to_next = schedule.resolve(load_schedule(zone), dow, minute)
     local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
