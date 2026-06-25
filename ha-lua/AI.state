@@ -232,25 +232,26 @@ Last updated: 2026-06-25
 
 
 ## Phase
-UNRELEASED on main (2026-06-25): a stack of enhanced-climate-card fixes awaiting
-a future v2.7.2 (user chose NOT to cut a release yet after the first one). None
-reach a user's HA until an image ships and the daemon re-materializes the
-embedded card. In order:
-- 0.3.2 (2d? getGridOptions): sections dashboard warned "does not fully support
-  resizing" because the element had only getCardSize; added getGridOptions
-  (full-width default, min_columns 6, rows auto).
-- 0.3.3: stepper numeric input had no height so it rendered shorter than the ±
-  buttons (height:42px box-sizing:border-box).
-- 0.3.4 (a9800d3): boost->override rename in the CARD UI — the 28a15b9 vocab
-  rename hit thermostat.html but the card (written later) still said "Boost".
-  Daemon command was already "override"; renamed labels/i18n keys (en+hu)/CSS
-  classes/_renderBoost + DOCS wording + test comments to match.
-NOTE for the v2.7.2 changelog: bundle 0.3.2 (resize), 0.3.3 (stepper height),
-0.3.4 (override vocab). Also still-open USER ISSUE: card stuck at "Setting up…"
-= companion sensor.ha_lua_enhanced_climate_<slug> never published; most likely
-the example script wasn't copied into /config/ha-lua/scripts/, or the HA user
-isn't admin (events API), or set_state is erroring (check enhanced-climate-
-errors.log). NOT diagnosed as a code bug yet — awaiting the user's checks.
+PATCH v2.7.2 RELEASED (2026-06-25): bundle of enhanced-climate-card fixes,
+tag v2.7.2 on the release commit b9660f5, pushed main + tag to both remotes
+(triggers GHCR build). Card VERSION 0.3.5. Contents (all card-only, reach a
+user's HA only once the image ships and the daemon re-materializes the embedded
+card into /config/www/ha-lua on boot):
+- 0.3.2 getGridOptions: kill the sections-dashboard "does not fully support
+  resizing" warning (was only getCardSize).
+- 0.3.3: stepper numeric input height (was shorter than the ± buttons).
+- 0.3.4: boost->override rename in the CARD UI (28a15b9 vocab rename had hit
+  thermostat.html but not the later-written card; daemon command was already
+  "override").
+- 0.3.5: mode as icon buttons not a <select> (like HA's own card); override +
+  schedule in separate bordered groups; schedule shows today's periods inline
+  (read-only, active highlighted) via new pure todayPeriods helper, edit still
+  opens the 7-day editor. Harness test extended for mode buttons + today strip.
+STILL-OPEN USER ISSUE (not a diagnosed code bug): card stuck at "Setting up…" =
+companion sensor.ha_lua_enhanced_climate_<slug> never published. Most likely the
+example script wasn't copied into /config/ha-lua/scripts/ (examples/ is never
+loaded), or the HA user isn't admin (events API), or set_state errors (check
+enhanced-climate-errors.log). Awaiting the user's checks.
 
 PATCH v2.7.1 (2026-06-25): fix the enhanced-climate card config editor. HA sets
 an element's hass before setConfig, so the editor's _render ran with
