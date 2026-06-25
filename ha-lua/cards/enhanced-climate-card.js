@@ -9,13 +9,14 @@
 // Add it as a dashboard resource of type "module" pointing at
 //   /local/ha-lua/enhanced-climate-card.js
 //
-// Covered here: lifecycle, header (name + current temp, status + held badges),
-// the climate-native controls (target stepper + HVAC mode icon buttons),
+// Covered here: lifecycle, header (name + current temp · mode, held badge),
+// the climate-native controls (target stepper + HVAC mode icon buttons on one
+// row),
 // and the enhanced controls (override
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.9";
+const VERSION = "0.3.10";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -331,7 +332,9 @@ const STYLES = `
     font-size: var(--ha-card-header-font-size, var(--ha-font-size-2xl));
     letter-spacing: -0.012em; line-height: var(--ha-line-height-expanded);
     font-weight: var(--ha-font-weight-normal); }
-  .subtitle { font-size: .85rem; color: var(--secondary-text-color); }
+  .subtitle { display: flex; align-items: center; gap: 8px; font-size: .9rem;
+    color: var(--secondary-text-color); }
+  .subtitle .divider { width: 1px; height: 12px; background: var(--divider-color, #ccc); }
   .badge { font-size: .72rem; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
     background: color-mix(in oklch, var(--primary-color) 16%, transparent); color: var(--primary-color); }
   .badge.held { background: color-mix(in oklch, var(--warning-color, #ffa600) 22%, transparent);
@@ -347,11 +350,11 @@ const STYLES = `
   .step { width: 40px; height: 42px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
     background: transparent; color: var(--primary-text-color); font-size: 1.3rem; cursor: pointer; }
   .step:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
-  .modes { display: flex; gap: 8px; flex-wrap: wrap; }
-  .mode-btn { flex: 1 1 0; min-width: 68px; padding: 8px 6px; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--divider-color, #ccc);
-    border-radius: 12px; background: transparent; color: var(--secondary-text-color); cursor: pointer;
-    font: inherit; }
+  .climate-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  .modes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mode-btn { min-width: 44px; height: 44px; padding: 0 8px; display: inline-flex; align-items: center;
+    justify-content: center; border: 1px solid var(--divider-color, #ccc); border-radius: 12px;
+    background: transparent; color: var(--secondary-text-color); cursor: pointer; font: inherit; }
   .mode-btn:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
   .mode-btn.active { background: var(--mode-color, var(--primary-color));
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
@@ -512,16 +515,17 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const hvacAction = attrs.hvac_action;
     const name = this._config.name || attrs.friendly_name || entity;
 
-    // The name and the current temperature sit together as the card title, so
-    // the current reading reads as a tight subtitle rather than its own row.
+    // Title = name, with a subtitle that pairs the current temperature and the
+    // current mode/status side by side, split by a thin divider.
     const heading = h("div", { class: "heading" }, h("div", { class: "title" }, name));
+    const subtitle = h("div", { class: "subtitle" });
     if (Number.isFinite(Number(attrs.current_temperature))) {
-      heading.append(h("div", { class: "subtitle" },
-        translate("current") + " " + attrs.current_temperature + "°"));
+      subtitle.append(h("span", { class: "current-temp" }, attrs.current_temperature + "°"));
+      subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
     }
-    const header = h("div", { class: "header" },
-      heading,
-      h("span", { class: "badge status" }, statusLabel(translate, mode, hvacAction)));
+    subtitle.append(h("span", { class: "status" }, statusLabel(translate, mode, hvacAction)));
+    heading.append(subtitle);
+    const header = h("div", { class: "header" }, heading);
     if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
       const clock = formatClock(hass.language, companionAttrs.manual.until);
       if (clock) header.append(h("span", { class: "badge held" }, translate("held_until", { time: clock })));
@@ -529,15 +533,18 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     root.append(header);
 
     const content = h("div", { class: "content" });
-    content.append(this._stepper(translate, {
+    // Target stepper and the mode buttons share one row, wrapping to two lines
+    // only when there isn't room; labels are dropped (the stepper keeps an
+    // aria-label, each mode button a title) to keep it tight.
+    const target = this._stepperControl(translate, {
       label: translate("target"),
       value: attrs.temperature,
       lo: Number(attrs.min_temp),
       hi: Number(attrs.max_temp),
       step: Number(attrs.target_temp_step) || 0.5,
       onCommit: (value) => this.callClimate("set_temperature", { temperature: value }),
-    }));
-    content.append(this._renderMode(translate, attrs, mode));
+    });
+    content.append(h("div", { class: "climate-controls" }, target, this._renderMode(translate, attrs, mode)));
 
     if (companionAttrs) {
       content.append(this._renderEnhanced(translate, companionAttrs));
@@ -555,10 +562,12 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     this.shadowRoot.append(style, root);
   }
 
-  // _stepper is the shared ± / typed numeric control, clamped to [lo, hi] and
-  // committed through onCommit. lastSent (per render) dedupes no-op writes; the
-  // focused field suppresses the hass-driven re-render.
-  _stepper(translate, opts) {
+  // _stepperControl is the bare ± / typed numeric control (.stepper), clamped to
+  // [lo, hi] and committed through onCommit. lastSent (per render) dedupes no-op
+  // writes; the focused field suppresses the hass-driven re-render. opts.label
+  // is used as the input's aria-label so the control is named even with no
+  // visible label beside it.
+  _stepperControl(translate, opts) {
     const current = Number(opts.value);
     let lastSent = Number.isFinite(current) ? current : null;
     const commit = (raw) => {
@@ -575,6 +584,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       class: "value",
       type: "number",
       inputmode: "decimal",
+      "aria-label": opts.label,
       step: String(opts.step),
       min: Number.isFinite(opts.lo) ? String(opts.lo) : null,
       max: Number.isFinite(opts.hi) ? String(opts.hi) : null,
@@ -601,15 +611,22 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       onclick: () => commit(base() + opts.step),
     }, "+");
 
-    return h("div", { class: "row" },
-      h("span", { class: "label" }, opts.label),
-      h("div", { class: "stepper" }, minus, input, h("span", { class: "unit" }, "°"), plus));
+    return h("div", { class: "stepper" }, minus, input, h("span", { class: "unit" }, "°"), plus);
   }
 
-  // _renderMode draws the HVAC modes as a row of rounded icon buttons (like HA's
-  // own climate card) rather than a dropdown; the active mode is filled with its
+  // _stepper wraps _stepperControl in a labelled row (used by the override-temp
+  // control inside the override group).
+  _stepper(translate, opts) {
+    return h("div", { class: "row" },
+      h("span", { class: "label" }, opts.label),
+      this._stepperControl(translate, opts));
+  }
+
+  // _renderMode draws the HVAC modes as rounded icon buttons (like HA's own
+  // climate card) rather than a dropdown; the active mode is filled with its
   // state colour. The mode name is the button's title/aria-label (tooltip + screen
   // reader), not visible text. Modes without a known icon fall back to the name.
+  // Returns the bare .modes group so it can sit next to the target stepper.
   _renderMode(translate, attrs, mode) {
     const modes = Array.isArray(attrs.hvac_modes) ? attrs.hvac_modes : [];
     if (modes.length === 0) return h("span", {});
@@ -635,9 +652,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       }
       return button;
     });
-    return h("div", { class: "row" },
-      h("span", { class: "label" }, translate("mode")),
-      h("div", { class: "modes" }, ...buttons));
+    return h("div", { class: "modes" }, ...buttons);
   }
 
   // _renderEnhanced builds the daemon-driven controls from the companion as
@@ -717,7 +732,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
     const { periods, nowIndex } = todayPeriods(companionAttrs.schedule || {}, new Date());
     if (periods.length === 0) {
-      group.append(h("div", { class: "today muted" }, translate("no_schedule")));
+      // Empty: a compact dash carrying the explanation as a tooltip, so it
+      // doesn't take a whole "no schedule set" line.
+      group.append(h("div", { class: "today muted", title: translate("no_schedule") }, "—"));
     } else {
       group.append(h("div", { class: "today" }, ...periods.map((period, index) =>
         h("span", {

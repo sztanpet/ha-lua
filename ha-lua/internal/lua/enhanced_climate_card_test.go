@@ -85,15 +85,15 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok),
-		chromedp.Poll(`!!window.__shadow(".badge.status")`, &ok),
-		chromedp.Evaluate(`window.__text(".badge.status")`, &status),
+		chromedp.Poll(`!!window.__shadow(".subtitle .status")`, &ok),
+		chromedp.Evaluate(`window.__text(".subtitle .status")`, &status),
 		chromedp.Evaluate(`window.__val(".stepper .value")`, &target),
 		chromedp.Evaluate(`window.__text(".presets button")`, &firstPreset),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if status != "on" {
-		t.Errorf("status badge = %q, want on", status)
+		t.Errorf("status = %q, want on", status)
 	}
 	if target != "20" {
 		t.Errorf("target value = %q, want 20", target)
@@ -202,17 +202,17 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Localize: Hungarian translates the target label ("Cél").
+	// Localize: Hungarian translates the override group heading ("Felülbírálás").
 	var label string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__apply("hu", `+cardStates+`)`, &ok),
-		chromedp.Poll(`window.__text(".row .label") === "Cél"`, &ok),
-		chromedp.Evaluate(`window.__text(".row .label")`, &label),
+		chromedp.Poll(`window.__text(".group-head") === "Felülbírálás"`, &ok),
+		chromedp.Evaluate(`window.__text(".group-head")`, &label),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if label != "Cél" {
-		t.Errorf("hu target label = %q, want Cél", label)
+	if label != "Felülbírálás" {
+		t.Errorf("hu override heading = %q, want Felülbírálás", label)
 	}
 
 	// Override durations are visible even when the card configured none (fallback
