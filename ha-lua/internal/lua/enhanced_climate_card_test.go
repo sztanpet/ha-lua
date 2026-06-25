@@ -134,6 +134,16 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if modeBtns != 2 {
 		t.Errorf("mode buttons = %d, want 2 (off, heat)", modeBtns)
 	}
+	// Each mode button carries a visible text label, not just an icon.
+	var modeLabel string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__text(".modes .mode-btn .mode-label")`, &modeLabel),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if modeLabel != "Off" {
+		t.Errorf("first mode label = %q, want Off", modeLabel)
+	}
 	var modeCalls string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__clickAll(".modes .mode-btn", 0)`, &ok),

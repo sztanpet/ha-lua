@@ -9,12 +9,13 @@
 // Add it as a dashboard resource of type "module" pointing at
 //   /local/ha-lua/enhanced-climate-card.js
 //
-// Covered here: lifecycle, header (status + held badges), the climate-native
-// controls (target stepper + HVAC mode), and the enhanced controls (override
+// Covered here: lifecycle, header (name + current temp, status + held badges),
+// the climate-native controls (target stepper + labelled HVAC mode buttons),
+// and the enhanced controls (override
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.7";
+const VERSION = "0.3.8";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -324,7 +325,13 @@ const STYLES = `
   :host { display: block; }
   ha-card { padding: 16px; }
   .header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  .title { font-size: 1.1rem; font-weight: 600; flex: 1; min-width: 0; }
+  .heading { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .title { color: var(--ha-card-header-color, var(--primary-text-color));
+    font-family: var(--ha-card-header-font-family, inherit);
+    font-size: var(--ha-card-header-font-size, var(--ha-font-size-2xl));
+    letter-spacing: -0.012em; line-height: var(--ha-line-height-expanded);
+    font-weight: var(--ha-font-weight-normal); }
+  .subtitle { font-size: .85rem; color: var(--secondary-text-color); }
   .badge { font-size: .72rem; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
     background: color-mix(in oklch, var(--primary-color) 16%, transparent); color: var(--primary-color); }
   .badge.held { background: color-mix(in oklch, var(--warning-color, #ffa600) 22%, transparent);
@@ -332,7 +339,6 @@ const STYLES = `
   .content { display: flex; flex-direction: column; gap: 12px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .label { color: var(--secondary-text-color); }
-  .current { color: var(--secondary-text-color); font-size: .95rem; }
   .stepper { display: flex; align-items: center; gap: 6px; }
   .stepper .value { width: 64px; height: 42px; box-sizing: border-box; text-align: center;
     font-size: 1.15rem; padding: 6px 4px; border: 1px solid var(--divider-color, #ccc);
@@ -341,14 +347,16 @@ const STYLES = `
   .step { width: 40px; height: 42px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
     background: transparent; color: var(--primary-text-color); font-size: 1.3rem; cursor: pointer; }
   .step:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
-  .modes { display: flex; gap: 6px; flex-wrap: wrap; }
-  .mode-btn { width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center;
-    justify-content: center; border: 1px solid var(--divider-color, #ccc); border-radius: 50%;
-    background: transparent; color: var(--secondary-text-color); cursor: pointer; }
+  .modes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mode-btn { flex: 1 1 0; min-width: 68px; padding: 8px 6px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 12px; background: transparent; color: var(--secondary-text-color); cursor: pointer;
+    font: inherit; }
   .mode-btn:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
   .mode-btn.active { background: var(--mode-color, var(--primary-color));
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
-  .mode-btn ha-icon { --mdc-icon-size: 22px; }
+  .mode-btn ha-icon { --mdc-icon-size: 24px; }
+  .mode-btn .mode-label { font-size: .74rem; line-height: 1; }
   .notice, .hint { color: var(--secondary-text-color); }
   .enhanced { display: flex; flex-direction: column; gap: 12px; }
   .group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; padding: 10px 12px;
@@ -427,7 +435,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   getGridOptions() {
     return {
       rows: "auto",
-      columns: 6,
+      columns: 12,
       min_columns: 3,
     };
   }
@@ -505,8 +513,15 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const hvacAction = attrs.hvac_action;
     const name = this._config.name || attrs.friendly_name || entity;
 
+    // The name and the current temperature sit together as the card title, so
+    // the current reading reads as a tight subtitle rather than its own row.
+    const heading = h("div", { class: "heading" }, h("div", { class: "title" }, name));
+    if (Number.isFinite(Number(attrs.current_temperature))) {
+      heading.append(h("div", { class: "subtitle" },
+        translate("current") + " " + attrs.current_temperature + "°"));
+    }
     const header = h("div", { class: "header" },
-      h("div", { class: "title" }, name),
+      heading,
       h("span", { class: "badge status" }, statusLabel(translate, mode, hvacAction)));
     if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
       const clock = formatClock(hass.language, companionAttrs.manual.until);
@@ -515,9 +530,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     root.append(header);
 
     const content = h("div", { class: "content" });
-    if (Number.isFinite(Number(attrs.current_temperature))) {
-      content.append(h("div", { class: "current" }, translate("current") + ": " + attrs.current_temperature + "°"));
-    }
     content.append(this._stepper(translate, {
       label: translate("target"),
       value: attrs.temperature,
@@ -617,9 +629,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         const haIcon = document.createElement("ha-icon");
         haIcon.setAttribute("icon", icon);
         button.append(haIcon);
-      } else {
-        button.append(label);
       }
+      // Always show the label under the icon so the mode is named, not guessed
+      // from a glyph (also the only content when there is no icon).
+      button.append(h("span", { class: "mode-label" }, label));
       return button;
     });
     return h("div", { class: "row" },
