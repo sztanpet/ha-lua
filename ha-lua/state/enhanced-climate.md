@@ -17,7 +17,7 @@ adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
 ## Release log (card)
-- **UNRELEASED on main** (card 0.3.13 → 0.3.14, would be v2.7.6):
+- **v2.7.6** (tag on 465bf68), card 0.3.13 → 0.3.14:
   - 0.3.13 button refactor — all buttons share one `.btn` style with modifiers
     (.icon mode buttons, .step ± glyphs, .active mode-colour fill, .primary Save,
     .ghost Add, .link/.danger the row ✕); the five old per-button styles are
