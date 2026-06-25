@@ -1,5 +1,7 @@
 # Bundled examples — Specification (draft)
 
+> **Working state:** [`state/bundled-examples.md`](state/bundled-examples.md) — implementation progress and decisions.
+
 Status: **ready to build**. Open decisions are consolidated in §7.
 
 > Filename is `load-examples-spec.md` for continuity, but examples are

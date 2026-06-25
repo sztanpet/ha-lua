@@ -1,5 +1,7 @@
 # Thermostat UI — Specification (draft)
 
+> **Working state:** [`state/thermostat-ui.md`](state/thermostat-ui.md) — implementation progress, decisions, release log.
+
 Status: **ready to build**. All design decisions are resolved (see §12);
 everything below reflects the agreed choices.
 

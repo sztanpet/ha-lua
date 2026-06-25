@@ -18,7 +18,7 @@ step within it:
 
 1. **Search before writing.** Use semble (see below) to find existing patterns, helpers, and conventions in the codebase before introducing new code.
 2. **Implement the milestone.** Keep each commit logically complete — tests travel with the code they test, not in a separate commit.
-3. **Update `AI.state`.** Mark the milestone done, note any decisions made during implementation, and update the "Pending" list.
+3. **Update the working state.** Record the detail (done/pending, decisions, commit hashes) in the track's `ha-lua/state/<track>.md`, and refresh the single `## Latest` pointer in `ha-lua/AI.state`. See "AI working state" below.
 4. **Commit.** Follow the git style below.
 
 ### Git commit style
@@ -195,7 +195,7 @@ Steps for releasing `vX.Y.Z` (do not skip the per-step commits):
 3. **Tag.** Annotated tag on the `release:` commit:
    `git tag -a vX.Y.Z <release-commit> -m "vX.Y.Z"` (message is just the tag).
    Later docs commits may sit on top of the tagged commit; that's fine.
-4. **Update `AI.state`** Phase section to record the release.
+4. **Update the working state** to record the release: add the version to the `AI.state` release log, refresh the `## Latest` pointer, and note the release detail in the track's `ha-lua/state/<track>.md`.
 5. **Push.** There is **no auto-push** — push explicitly. Two remotes:
    `origin` (private mirror) and `github` (github.com). Push `main` and the tag
    to **both**: `git push origin main && git push github main`, then
@@ -211,4 +211,32 @@ commit whose `config.yaml` already carries `X.Y.Z`.
 
 ## AI working state
 
-Claude tracks current work state in **`ha-lua/AI.state`**. Read it at the start of every session before doing anything else. Update it after every completed milestone.
+Claude tracks work state in a **two-level** layout so a session reads only what
+it needs, never one giant file of mostly-irrelevant history:
+
+- **`ha-lua/AI.state`** holds ONLY globally-useful data: the single most-recent/
+  in-progress thing (a one-paragraph "Latest" pointer to its full state file),
+  an index of the per-spec state files, the release log, and the cross-cutting
+  "Key decisions / Removed / User preferences" lists. It stays small.
+- **`ha-lua/state/<track>.md`** holds the detailed, spec-scoped working state —
+  one file per spec (e.g. `state/enhanced-climate.md` for
+  `enhanced-climate-spec.md`). Each spec links to its own state file from a
+  `> **Working state:** …` line in the spec's header.
+
+**At the start of every session:** read `AI.state` first. Then, only if you are
+touching a specific track, read that track's `state/<track>.md`. Do not read the
+other tracks' state files.
+
+**When updating after a completed milestone / release:**
+1. Put the detail in the relevant `state/<track>.md` (decisions, commit hashes,
+   gotchas, what's done/pending for that track).
+2. In `AI.state`, keep the **`## Latest`** section to a SINGLE thing — replace
+   it with whatever you just worked on, plus the pointer to its state file. Only
+   ever one "latest" entry; older context lives in the state files, not here.
+3. Add the version to the `AI.state` release log, and add any new cross-cutting
+   decision to the "Key decisions" list. Update the state-file index if you
+   created a new track.
+
+When a brand-new spec's work begins, create its `state/<track>.md`, add the
+`> **Working state:**` link to the spec header, and add the file to the AI.state
+index.

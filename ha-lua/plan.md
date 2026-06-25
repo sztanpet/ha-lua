@@ -1,5 +1,7 @@
 # ha-lua: Home Assistant Lua Scripting Engine
 
+> **Working state:** [`state/core-daemon.md`](state/core-daemon.md) — milestone-by-milestone implementation progress.
+
 A Go daemon that connects to the HA WebSocket API, mirrors all state into SQLite (full history), and dispatches events to registered Lua scripts.
 
 ---

@@ -1,5 +1,7 @@
 # Filesystem plugin — Specification (draft)
 
+> **Working state:** [`state/fs-plugin.md`](state/fs-plugin.md) — implementation progress and decisions.
+
 Status: **ready to build**. Open decisions are consolidated in §9.
 
 ## 1. Goal

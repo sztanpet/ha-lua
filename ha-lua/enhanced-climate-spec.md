@@ -1,5 +1,7 @@
 # Enhanced-climate example & card — HA-configured spec
 
+> **Working state:** [`state/enhanced-climate.md`](state/enhanced-climate.md) — implementation progress, decisions, release log.
+
 Status: proposed (2026-06-25, rev 8 — shared lib/control.lua, multiple window
 sensors, direct companion lookup; card mirrors thermostat.html; i18n in v1)
 Scope: a general daemon capability (`ha.set_state`/`ha.remove_state`/

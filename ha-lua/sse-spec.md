@@ -1,5 +1,7 @@
 # Server-Sent Events (serving) — Specification (draft)
 
+> **Working state:** none yet — not started. Create `state/sse.md` when work begins (and note it in AI.state).
+
 Status: **design complete, build gated on §0.** Read §0 first — it argues the
 whole feature may not be worth building yet. If we proceed, open decisions are
 in §10 and the Last-Event-ID sub-analysis is §9.
