@@ -194,6 +194,11 @@ func main() {
 			}
 			return client.SendRaw(ctx, raw)
 		},
+		// Entity publish/remove ride the core REST API; the bindings are
+		// non-raising so the per-minute publish doesn't spam on_exception
+		// during a transient outage.
+		SetState:    client.SetState,
+		RemoveState: client.RemoveState,
 		// AddEventType dedups and subscribes on the live connection, so
 		// scripts loaded or reloaded at any time get their events.
 		OnLoaded: func(r *luapkg.Runner) {

@@ -25,6 +25,10 @@ type haAPI struct {
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	// fireEvent fires a HA event; set by runner wiring.
 	fireEvent func(ctx context.Context, eventType string, data jsontext.Value) error
+	// setState publishes an entity via the core REST API; set by runner wiring.
+	setState func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
+	// removeState removes a published entity; set by runner wiring.
+	removeState func(ctx context.Context, entityID string) error
 	// onExceptionFn stores the registered exception handler for this script.
 	onExceptionFn *lua.LFunction
 	// stateChangeHandlers registered during load time.
@@ -86,6 +90,11 @@ type eventHandler struct {
 // registerHaAPI installs the `ha` module on L.
 func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 	haTable := L.NewTable()
+
+	// The script's own id (filename without extension). Exposed so libraries
+	// like lib/card.lua can derive a default publish prefix without the runner
+	// having to thread it through every call.
+	L.SetField(haTable, "script_id", lua.LString(api.scriptID))
 
 	L.SetField(haTable, "log", L.NewFunction(func(L *lua.LState) int {
 		level := L.CheckString(1)
@@ -208,6 +217,82 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		if err := api.fireEvent(L.Context(), eventType, data); err != nil {
 			L.RaiseError("fire_event: %v", err)
 		}
+		return 0
+	}))
+
+	// ha.set_state publishes (creates or updates) an entity via the core REST
+	// API. Non-raising — returns created:bool|nil, err — because it rides the
+	// per-minute control loop and a transient outage must not spam on_exception.
+	L.SetField(haTable, "set_state", L.NewFunction(func(L *lua.LState) int {
+		if api.setState == nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("set_state not available"))
+			return 2
+		}
+		entityID := L.CheckString(1)
+		state := L.CheckString(2)
+		var attrs jsontext.Value
+		if L.GetTop() >= 3 && L.Get(3) != lua.LNil {
+			tbl := L.CheckTable(3)
+			b, err := luaMarshal(L, tbl)
+			if err != nil {
+				L.Push(lua.LNil)
+				L.Push(lua.LString("set_state marshal: " + err.Error()))
+				return 2
+			}
+			attrs = jsontext.Value(b)
+		}
+		created, err := api.setState(L.Context(), entityID, state, attrs)
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString(err.Error()))
+			return 2
+		}
+		L.Push(lua.LBool(created))
+		return 1
+	}))
+
+	// ha.remove_state removes a published entity. Non-raising like set_state;
+	// returns true|nil, err.
+	L.SetField(haTable, "remove_state", L.NewFunction(func(L *lua.LState) int {
+		if api.removeState == nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString("remove_state not available"))
+			return 2
+		}
+		entityID := L.CheckString(1)
+		if err := api.removeState(L.Context(), entityID); err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString(err.Error()))
+			return 2
+		}
+		L.Push(lua.LTrue)
+		return 1
+	}))
+
+	// ha.on_command(handler) is sugar over on_event("ha_lua_command", …): it
+	// keeps only commands addressed to this script (data.script == script id)
+	// and calls handler(action, data) with the command's action and payload.
+	// One inbound event type carries every card-driven command. Load-time only.
+	L.SetField(haTable, "on_command", L.NewFunction(func(L *lua.LState) int {
+		handler := L.CheckFunction(1)
+		wrapper := L.NewFunction(func(L *lua.LState) int {
+			data := L.OptTable(1, nil)
+			if data == nil {
+				return 0
+			}
+			if s := data.RawGetString("script"); s.Type() != lua.LTString || s.String() != api.scriptID {
+				return 0
+			}
+			action := data.RawGetString("action")
+			payload := data.RawGetString("data")
+			L.Push(handler)
+			L.Push(action)
+			L.Push(payload)
+			L.Call(2, 0)
+			return 0
+		})
+		api.eventHandlers = append(api.eventHandlers, eventHandler{eventType: "ha_lua_command", fn: wrapper})
 		return 0
 	}))
 

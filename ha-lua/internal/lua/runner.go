@@ -61,6 +61,8 @@ type Runner struct {
 	// Wired by caller after construction; nil = not yet connected.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	fireEvent   func(ctx context.Context, eventType string, data jsontext.Value) error
+	setState    func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
+	removeState func(ctx context.Context, entityID string) error
 }
 
 // NewRunner creates a Runner. Call Start to load and run the script.
@@ -91,6 +93,16 @@ func (r *Runner) SetCallService(fn func(ctx context.Context, domain, service str
 // SetFireEvent wires the fire_event function. Must be called before Start.
 func (r *Runner) SetFireEvent(fn func(ctx context.Context, eventType string, data jsontext.Value) error) {
 	r.fireEvent = fn
+}
+
+// SetSetState wires the set_state function. Must be called before Start.
+func (r *Runner) SetSetState(fn func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)) {
+	r.setState = fn
+}
+
+// SetRemoveState wires the remove_state function. Must be called before Start.
+func (r *Runner) SetRemoveState(fn func(ctx context.Context, entityID string) error) {
+	r.removeState = fn
 }
 
 // EventTypes returns the distinct custom event types this script handles.
@@ -140,6 +152,8 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		scheduler:   r.scheduler,
 		callService: r.callService,
 		fireEvent:   r.fireEvent,
+		setState:    r.setState,
+		removeState: r.removeState,
 		timerFns:    make(map[string]*lua.LFunction),
 	}
 	r.registerHaAPI(L, api)

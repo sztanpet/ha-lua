@@ -2,6 +2,7 @@ package lua
 
 import (
 	"context"
+	"fmt"
 	"net/smtp"
 	"os"
 	"path/filepath"
@@ -289,6 +290,122 @@ func TestOnStateChangeBadPattern(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bad pattern") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestScriptID(t *testing.T) {
+	L, _, _, _ := newHALState(t)
+	if err := L.DoString(`sid = ha.script_id`); err != nil {
+		t.Fatal(err)
+	}
+	if got := L.GetGlobal("sid").String(); got != "test" {
+		t.Errorf("script_id: want test, got %q", got)
+	}
+}
+
+// ha.set_state coerces a numeric state to a string, marshals the attrs table,
+// and returns the created flag — the value/err pair, not a raise.
+func TestSetStateBinding(t *testing.T) {
+	L, api, _, _ := newHALState(t)
+
+	var gotID, gotState, gotAttrs string
+	api.setState = func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error) {
+		gotID, gotState, gotAttrs = entityID, state, string(attrs)
+		return true, nil
+	}
+
+	if err := L.DoString(`created, err = ha.set_state("sensor.x", 21.5, { unit_of_measurement = "°C" })`); err != nil {
+		t.Fatal(err)
+	}
+	if gotID != "sensor.x" || gotState != "21.5" {
+		t.Errorf("got id=%q state=%q", gotID, gotState)
+	}
+	if !strings.Contains(gotAttrs, "°C") {
+		t.Errorf("attrs not marshalled: %q", gotAttrs)
+	}
+	if L.GetGlobal("created") != lua.LTrue {
+		t.Errorf("created: want true, got %v", L.GetGlobal("created"))
+	}
+	if L.GetGlobal("err") != lua.LNil {
+		t.Errorf("err: want nil, got %v", L.GetGlobal("err"))
+	}
+}
+
+// An operational set_state failure must return nil, errmsg — never raise — so
+// the per-minute publish loop doesn't spam on_exception during an outage.
+func TestSetStateBindingNonRaising(t *testing.T) {
+	L, api, _, _ := newHALState(t)
+	api.setState = func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error) {
+		return false, fmt.Errorf("network down")
+	}
+
+	if err := L.DoString(`v, err = ha.set_state("sensor.x", "on")`); err != nil {
+		t.Fatalf("set_state must not raise on an operational error: %v", err)
+	}
+	if L.GetGlobal("v") != lua.LNil {
+		t.Errorf("value: want nil, got %v", L.GetGlobal("v"))
+	}
+	if s, ok := L.GetGlobal("err").(lua.LString); !ok || !strings.Contains(string(s), "network down") {
+		t.Errorf("err: want 'network down', got %v", L.GetGlobal("err"))
+	}
+}
+
+func TestRemoveStateBinding(t *testing.T) {
+	L, api, _, _ := newHALState(t)
+	var gotID string
+	api.removeState = func(ctx context.Context, entityID string) error {
+		gotID = entityID
+		return nil
+	}
+	if err := L.DoString(`ok, err = ha.remove_state("sensor.x")`); err != nil {
+		t.Fatal(err)
+	}
+	if gotID != "sensor.x" {
+		t.Errorf("entity id: got %q", gotID)
+	}
+	if L.GetGlobal("ok") != lua.LTrue || L.GetGlobal("err") != lua.LNil {
+		t.Errorf("want true,nil; got %v,%v", L.GetGlobal("ok"), L.GetGlobal("err"))
+	}
+}
+
+// ha.on_command registers a single ha_lua_command handler and routes only
+// commands addressed to this script, calling handler(action, data).
+func TestOnCommand(t *testing.T) {
+	L, api, _, runner := newHALState(t)
+	if err := L.DoString(`
+		count = 0
+		last_action = nil
+		last_entity = nil
+		ha.on_command(function(action, data)
+			count = count + 1
+			last_action = action
+			last_entity = data.climate_entity
+		end)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.eventHandlers) != 1 || api.eventHandlers[0].eventType != "ha_lua_command" {
+		t.Fatalf("on_command did not register an ha_lua_command handler: %+v", api.eventHandlers)
+	}
+
+	fire := func(script, action string) {
+		runner.handleHAEvent(L, api, ha.Event{
+			Type: "ha_lua_command",
+			Data: jsontext.Value(`{"script":"` + script + `","action":"` + action +
+				`","data":{"climate_entity":"climate.lr"}}`),
+		})
+	}
+	fire("test", "override") // ours — handled
+	fire("other", "ignored") // different script — dropped
+
+	if n := int(L.GetGlobal("count").(lua.LNumber)); n != 1 {
+		t.Errorf("handler call count: want 1, got %d", n)
+	}
+	if got := L.GetGlobal("last_action").String(); got != "override" {
+		t.Errorf("action: want override, got %q", got)
+	}
+	if got := L.GetGlobal("last_entity").String(); got != "climate.lr" {
+		t.Errorf("entity: want climate.lr, got %q", got)
 	}
 }
 

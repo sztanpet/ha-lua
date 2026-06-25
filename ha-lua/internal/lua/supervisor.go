@@ -32,6 +32,8 @@ type Deps struct {
 	NewKV       func(scriptID string) *store.Store
 	CallService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	FireEvent   func(ctx context.Context, eventType string, data jsontext.Value) error
+	SetState    func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
+	RemoveState func(ctx context.Context, entityID string) error
 	// Router receives each script's ha.serve routes on load and loses them on
 	// stop. May be nil (no UI server).
 	Router *Router
@@ -98,6 +100,8 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 	r := NewRunner(id, s.scriptDir, s.deps.Root, s.deps.Tracker, s.deps.Scheduler, s.deps.NewKV(id), s.deps.Global)
 	r.SetCallService(s.deps.CallService)
 	r.SetFireEvent(s.deps.FireEvent)
+	r.SetSetState(s.deps.SetState)
+	r.SetRemoveState(s.deps.RemoveState)
 
 	sctx, cancel := context.WithCancel(ctx)
 	h := &scriptHandle{runner: r, cancel: cancel, done: make(chan struct{})}
