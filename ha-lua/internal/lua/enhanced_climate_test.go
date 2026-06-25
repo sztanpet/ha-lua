@@ -454,6 +454,11 @@ func TestEnhancedClimateCompanion(t *testing.T) {
 	if presets, _ := attrs["presets"].([]any); len(presets) != 3 {
 		t.Errorf("presets = %v", attrs["presets"])
 	}
+	// override_temp is surfaced (default 23) even with no override active, so the
+	// card can show/edit it.
+	if attrs["override_temp"] != float64(23) {
+		t.Errorf("override_temp = %v, want default 23", attrs["override_temp"])
+	}
 
 	// A schedule makes it controlled, with the desired as the state.
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)

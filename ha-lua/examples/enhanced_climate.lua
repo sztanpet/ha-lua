@@ -234,6 +234,7 @@ local function publish_companion(e, now, desired_temp)
     friendly_name = friendly,
     schedule = load_schedule(e),
     override = override_tbl,
+    override_temp = override_temp(e), -- always surfaced so the card can edit it
     manual = manual_tbl,
     window = { sensors = window_sensors_of(e), open = window_open(e) },
     presets = cfg.presets,
