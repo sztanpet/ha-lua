@@ -202,17 +202,17 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Localize: Hungarian translates the override group heading ("Felülbírálás").
+	// Localize: Hungarian translates the override-temp label ("Felülbírálás cél").
 	var label string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__apply("hu", `+cardStates+`)`, &ok),
-		chromedp.Poll(`window.__text(".group-head") === "Felülbírálás"`, &ok),
-		chromedp.Evaluate(`window.__text(".group-head")`, &label),
+		chromedp.Poll(`window.__text(".row .label") === "Felülbírálás cél"`, &ok),
+		chromedp.Evaluate(`window.__text(".row .label")`, &label),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if label != "Felülbírálás" {
-		t.Errorf("hu override heading = %q, want Felülbírálás", label)
+	if label != "Felülbírálás cél" {
+		t.Errorf("hu override-temp label = %q, want Felülbírálás cél", label)
 	}
 
 	// Override durations are visible even when the card configured none (fallback

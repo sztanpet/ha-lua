@@ -16,7 +16,7 @@
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.10";
+const VERSION = "0.3.11";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -49,7 +49,7 @@ const MESSAGES = {
     "mode.heat_cool": "Heat / Cool",
     "mode.dry": "Dry",
     "mode.fan_only": "Fan",
-    "override": "Override",
+    "override_for": "Override for:",
     "override_temp": "Override target",
     "stop_override": "Stop",
     "custom_minutes": "Custom minutes",
@@ -100,7 +100,7 @@ const MESSAGES = {
     "mode.heat_cool": "Fűtés / Hűtés",
     "mode.dry": "Párátlanítás",
     "mode.fan_only": "Ventilátor",
-    "override": "Felülbírálás",
+    "override_for": "Felülbírálás:",
     "override_temp": "Felülbírálás cél",
     "stop_override": "Leállítás",
     "custom_minutes": "Egyéni időtartam",
@@ -352,10 +352,11 @@ const STYLES = `
   .step:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
   .climate-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
   .modes { display: flex; gap: 6px; flex-wrap: wrap; }
-  .mode-btn { min-width: 44px; height: 44px; padding: 0 8px; display: inline-flex; align-items: center;
-    justify-content: center; border: 1px solid var(--divider-color, #ccc); border-radius: 12px;
-    background: transparent; color: var(--secondary-text-color); cursor: pointer; font: inherit; }
-  .mode-btn:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
+  .mode-btn, button.override { min-width: 44px; height: 44px; padding: 0 10px; display: inline-flex;
+    align-items: center; justify-content: center; border: 1px solid var(--divider-color, #ccc);
+    border-radius: 12px; background: transparent; color: var(--secondary-text-color); cursor: pointer;
+    font: inherit; }
+  .mode-btn:hover, button.override:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
   .mode-btn.active { background: var(--mode-color, var(--primary-color));
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
   .mode-btn ha-icon { --mdc-icon-size: 24px; }
@@ -370,10 +371,10 @@ const STYLES = `
     color: var(--secondary-text-color); }
   .today .period.now { color: var(--primary-color); font-weight: 700; }
   .today.muted { font-style: italic; }
+  .override-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+  .head-title { font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--secondary-text-color); }
   .presets { display: flex; gap: 6px; flex-wrap: wrap; }
-  button.override { border-radius: 999px; border: 1px solid var(--primary-color); background: transparent;
-    color: var(--primary-color); padding: 6px 12px; font: inherit; cursor: pointer; }
-  button.override:hover { background: color-mix(in oklch, var(--primary-color) 14%, transparent); }
   .override-active { display: flex; align-items: center; gap: 10px; }
   .countdown { font-variant-numeric: tabular-nums; font-weight: 600; }
   .window.open { color: var(--warning-color, #ffa600); }
@@ -662,8 +663,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const section = h("div", { class: "enhanced" });
 
     section.append(h("div", { class: "group" },
-      h("div", { class: "group-head" }, translate("override")),
-      this._renderOverride(translate, companionAttrs),
+      h("div", { class: "override-head" },
+        h("span", { class: "head-title" }, translate("override_for")),
+        this._renderOverride(translate, companionAttrs)),
       this._stepper(translate, {
         label: translate("override_temp"),
         value: companionAttrs.override_temp,
@@ -686,8 +688,8 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   // _renderOverride shows the preset buttons, or — while an override is active —
-  // a live countdown plus a cancel button. The enclosing group supplies the
-  // "Override" heading, so no label row here.
+  // a live countdown plus a cancel button. Sits inline after the "Override for:"
+  // heading; buttons share the mode-button styling.
   _renderOverride(translate, companionAttrs) {
     const override = companionAttrs.override;
     if (override && override.active && override.expires) {
