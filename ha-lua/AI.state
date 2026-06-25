@@ -232,6 +232,17 @@ Last updated: 2026-06-25
 
 
 ## Phase
+PATCH v2.7.3 RELEASED (2026-06-25): more enhanced-climate-card fixes, tag
+v2.7.3 on release commit 8f215e5, pushed main + tag to both remotes (GHCR
+build). Card VERSION 0.3.7. Contents:
+- 0.3.6: getGridOptions returned columns:"full" which pinned the card full-width
+  and overrode the user's layout options; now columns 6 / min_columns 3 / rows
+  auto (resizable). Harness asserts columns!="full".
+- 0.3.7: dropped the redundant .enhanced border-top divider; override duration
+  buttons always show (fallback DEFAULT_PRESETS 10/30/60 when card configures
+  none); added a custom-duration "…" button that window.prompt()s for minutes
+  (daemon already accepts 1..1440). Harness asserts default presets + custom.
+
 PATCH v2.7.2 RELEASED (2026-06-25): bundle of enhanced-climate-card fixes,
 tag v2.7.2 on the release commit b9660f5, pushed main + tag to both remotes
 (triggers GHCR build). Card VERSION 0.3.5. Contents (all card-only, reach a
