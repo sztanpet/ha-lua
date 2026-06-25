@@ -247,11 +247,24 @@ add-on mode, main writes assets pre-connect; shipped file
 cards/enhanced-climate-card.js is the render/lifecycle SKELETON only (served
 verbatim as /local/ha-lua/enhanced-climate-card.js, no rename). Commit 11
 (render + climate-native target/mode controls + i18n en/hu) DONE 2026-06-25
-(e3fd064). NEXT = commit 12 (boost preset row + countdown + cancel,
-override-temp stepper, 7-day schedule editor — all via ha_lua_command +
-companion), then 13 (config editor getConfigElement, §10.6), 14 (chromedp
+(e3fd064). Commit 12 (boost presets + countdown + cancel, override-temp
+stepper, window indicator, 7-day schedule editor) DONE 2026-06-25 (1fbdc27),
+preceded by a9205ca (examples: surface override_temp on the companion — the
+card's stepper needs it always, not just when an override is active). NEXT =
+commit 13 (config editor getConfigElement, §10.6 — ha-entity-picker for
+climate + ha-entities-picker for window_sensors + presets/name; dispatches
+config-changed; only testable inside a live HA frontend), then 14 (chromedp
 harness test, §10.8). Then M5 (docs/release: DOCS + CHANGELOG + minor version
 bump). Pre-M2-detail below kept for reference.
+- CARD COMMIT 12 (1fbdc27): unified numeric _stepper helper (target +
+  override-temp). Render suppression now uses two flags: _fieldFocused (input
+  focus) and _editorOpen (schedule editor); _render() (hass-driven) early-returns
+  if either, _renderNow() forces for local interactions. Schedule editor ports
+  thermostat.html regroup (entriesFromSchedule/scheduleFromEntries, verified
+  round-trip via node). Boost countdown updated by a 1s setInterval in
+  connectedCallback (text-only, no re-render). pure static grew:
+  remainingSeconds, formatCountdown, entriesFromSchedule, scheduleFromEntries,
+  DAY_GROUPS.
 - JS TOOLING (verified 2026-06-25): node v18 present (use `node --check <file>`
   to syntax-check each card commit) and /usr/bin/chromium present, so commit
   14's chromedp harness WILL run here (not skip). Commits 11-13 have no
