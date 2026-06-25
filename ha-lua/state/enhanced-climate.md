@@ -17,10 +17,22 @@ adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
 ## Release log (card)
-- **UNRELEASED on main** (card 0.3.9): mode name moved from a visible per-button
-  label (briefly added in 0.3.8) to the button title (tooltip) + aria-label only
-  — the icon stays clean, hover/screen-reader still names it. Harness asserts the
-  title attribute. Awaiting a release (would be v2.7.5).
+- **UNRELEASED on main** (card 0.3.9 → 0.3.11), awaiting a release (would be
+  v2.7.5). Iterative card-layout polish:
+  - 0.3.9: mode name is the button title (tooltip) + aria-label only, NOT a
+    visible label (reverted the 0.3.8 visible label per user).
+  - 0.3.10: target stepper + mode buttons share one wrapping row (labels
+    dropped, stepper keeps aria-label, modes keep title); current mode/status
+    moved beside the current temperature in the subtitle (current temp · status,
+    thin divider) — the top-right status badge is gone; empty schedule renders a
+    compact "—" with "no schedule set" as a tooltip. _stepper split into
+    _stepperControl + labelled-row wrapper.
+  - 0.3.11: override duration buttons inline with the heading, renamed
+    "Override for:" (i18n override -> override_for); override/custom/cancel
+    buttons restyled to the shared mode-button look (rounded rects via merged
+    selectors).
+  Harness anchors: status -> .subtitle .status; hu localization -> the
+  override-temp .row .label ("Felülbírálás cél"); mode label -> title attribute.
 - **v2.7.4** (674d002): native-look polish, card 0.3.8 — default grid span 12
   cols (was 6, still resizable); HVAC mode = rounded flex buttons with the mode
   name labelled under each icon (not bare circles); current temperature moved
