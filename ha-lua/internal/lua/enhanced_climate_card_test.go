@@ -1,8 +1,10 @@
 package lua
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -100,6 +102,35 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("first preset = %q, want +10m", firstPreset)
 	}
 
+	// Mode renders as buttons (like HA's own card), not a <select>; clicking the
+	// first one (off) calls set_hvac_mode.
+	var modeBtns int
+	var hasSelect bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__card.shadowRoot.querySelectorAll(".modes .mode-btn").length`, &modeBtns),
+		chromedp.Evaluate(`!!window.__shadow("select.mode")`, &hasSelect),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if hasSelect {
+		t.Error("mode still renders a <select>; want buttons")
+	}
+	if modeBtns != 2 {
+		t.Errorf("mode buttons = %d, want 2 (off, heat)", modeBtns)
+	}
+	var modeCalls string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__clickAll(".modes .mode-btn", 0)`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls.service)`, &modeCalls),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"service":"set_hvac_mode"`, `"hvac_mode":"off"`} {
+		if !strings.Contains(modeCalls, want) {
+			t.Errorf("mode button did not call %s; service calls = %s", want, modeCalls)
+		}
+	}
+
 	// Click the first override preset -> override command for 10 minutes.
 	var apiCalls string
 	if err := chromedp.Run(ctx,
@@ -155,6 +186,26 @@ func TestEnhancedClimateCard(t *testing.T) {
 	}
 	if label != "Cél" {
 		t.Errorf("hu target label = %q, want Cél", label)
+	}
+
+	// Inline schedule: today's periods render read-only (two per day here)
+	// without opening the editor.
+	day := `[{"time":"06:00","temp":21},{"time":"22:00","temp":18}]`
+	days := make([]string, 0, 7)
+	for i := 0; i < 7; i++ {
+		days = append(days, fmt.Sprintf("%q:%s", strconv.Itoa(i), day))
+	}
+	schedStates := strings.Replace(cardStates, `"schedule": {}`, `"schedule": {`+strings.Join(days, ",")+`}`, 1)
+	var periods int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+schedStates+`)`, &ok),
+		chromedp.Poll(`window.__card.shadowRoot.querySelectorAll(".today .period").length === 2`, &ok),
+		chromedp.Evaluate(`window.__card.shadowRoot.querySelectorAll(".today .period").length`, &periods),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if periods != 2 {
+		t.Errorf("today periods = %d, want 2", periods)
 	}
 
 	// Open the schedule editor and save -> schedule command.

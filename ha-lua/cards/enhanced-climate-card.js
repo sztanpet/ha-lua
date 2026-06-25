@@ -14,7 +14,7 @@
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.4";
+const VERSION = "0.3.5";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -55,6 +55,8 @@ const MESSAGES = {
     "window.closed": "closed",
     "schedule": "Schedule",
     "edit_schedule": "Edit",
+    "no_schedule": "no schedule set",
+    "now_period": "currently active period",
     "add_entry": "Add entry",
     "save": "Save",
     "cancel": "Cancel",
@@ -102,6 +104,8 @@ const MESSAGES = {
     "window.closed": "zárva",
     "schedule": "Ütemezés",
     "edit_schedule": "Szerkesztés",
+    "no_schedule": "nincs beállított ütemezés",
+    "now_period": "jelenleg aktív időszak",
     "add_entry": "Új bejegyzés",
     "save": "Mentés",
     "cancel": "Mégse",
@@ -157,6 +161,18 @@ const DAY_GROUPS = [
   { value: "5", days: [5] },
   { value: "6", days: [6] },
 ];
+
+// HVAC mode -> mdi icon, mirroring Home Assistant's own climate card so the
+// mode buttons read the same. Modes without an entry fall back to a text label.
+const MODE_ICONS = {
+  off: "mdi:power",
+  heat: "mdi:fire",
+  cool: "mdi:snowflake",
+  heat_cool: "mdi:sun-snowflake-variant",
+  auto: "mdi:calendar-sync",
+  dry: "mdi:water-percent",
+  fan_only: "mdi:fan",
+};
 
 function slugOf(climateEntity) {
   return climateEntity.replace(/^climate\./, "");
@@ -260,6 +276,24 @@ function scheduleFromEntries(entries) {
   return days;
 }
 
+// todayPeriods derives today's schedule transitions (sorted by time) and the
+// index of the one in effect right now from the per-day schedule and the local
+// clock, so the card can show the running schedule inline (like thermostat.html)
+// without the daemon publishing a separate "today" array. nowIndex is -1 before
+// the day's first transition (yesterday's last period is carrying over).
+function todayPeriods(schedule, now) {
+  const dow = (now.getDay() + 6) % 7; // JS Sun=0 -> schedule Mon=0
+  const list = schedule && Array.isArray(schedule[String(dow)]) ? schedule[String(dow)].slice() : [];
+  list.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  const hhmm = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  let nowIndex = -1;
+  for (let index = 0; index < list.length; index++) {
+    if (String(list[index].time) <= hhmm) nowIndex = index;
+    else break;
+  }
+  return { periods: list, nowIndex };
+}
+
 // Tiny hyperscript builder: h(tag, attrs?, ...children) -> DOM node.
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -298,11 +332,26 @@ const STYLES = `
   .step { width: 40px; height: 42px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
     background: transparent; color: var(--primary-text-color); font-size: 1.3rem; cursor: pointer; }
   .step:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
-  select.mode { padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
-    background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
+  .modes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mode-btn { width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center;
+    justify-content: center; border: 1px solid var(--divider-color, #ccc); border-radius: 50%;
+    background: transparent; color: var(--secondary-text-color); cursor: pointer; }
+  .mode-btn:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
+  .mode-btn.active { background: var(--mode-color, var(--primary-color));
+    border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
+  .mode-btn ha-icon { --mdc-icon-size: 22px; }
   .notice, .hint { color: var(--secondary-text-color); }
   .enhanced { display: flex; flex-direction: column; gap: 12px;
     border-top: 1px solid var(--divider-color, #ccc); padding-top: 12px; }
+  .group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 10px; }
+  .group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--secondary-text-color); }
+  .today { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .92rem;
+    color: var(--secondary-text-color); }
+  .today .period.now { color: var(--primary-color); font-weight: 700; }
+  .today.muted { font-style: italic; }
   .presets { display: flex; gap: 6px; flex-wrap: wrap; }
   button.override { border-radius: 999px; border: 1px solid var(--primary-color); background: transparent;
     color: var(--primary-color); padding: 6px 12px; font: inherit; cursor: pointer; }
@@ -537,37 +586,55 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       h("div", { class: "stepper" }, minus, input, h("span", { class: "unit" }, "°"), plus));
   }
 
+  // _renderMode draws the HVAC modes as a row of round icon buttons (like HA's
+  // own climate card) rather than a dropdown; the active mode is filled with its
+  // state colour. Modes without a known icon fall back to their translated name.
   _renderMode(translate, attrs, mode) {
     const modes = Array.isArray(attrs.hvac_modes) ? attrs.hvac_modes : [];
     if (modes.length === 0) return h("span", {});
-    const select = h("select", {
-      class: "mode",
-      onchange: () => this.callClimate("set_hvac_mode", { hvac_mode: select.value }),
+    const buttons = modes.map((hvacMode) => {
+      const active = hvacMode === mode;
+      const label = translate("mode." + hvacMode, null, hvacMode);
+      const button = h("button", {
+        class: "mode-btn" + (active ? " active" : ""),
+        type: "button",
+        title: label,
+        "aria-label": label,
+        style: active ? `--mode-color: var(--state-climate-${hvacMode}-color, var(--primary-color))` : null,
+        onclick: () => this.callClimate("set_hvac_mode", { hvac_mode: hvacMode }),
+      });
+      const icon = MODE_ICONS[hvacMode];
+      if (icon) {
+        const haIcon = document.createElement("ha-icon");
+        haIcon.setAttribute("icon", icon);
+        button.append(haIcon);
+      } else {
+        button.append(label);
+      }
+      return button;
     });
-    for (const hvacMode of modes) {
-      const option = h("option", { value: hvacMode }, translate("mode." + hvacMode, null, hvacMode));
-      if (hvacMode === mode) option.setAttribute("selected", "");
-      select.append(option);
-    }
     return h("div", { class: "row" },
       h("span", { class: "label" }, translate("mode")),
-      select);
+      h("div", { class: "modes" }, ...buttons));
   }
 
-  // _renderEnhanced builds the daemon-driven controls from the companion: the
-  // override row, the override-temp stepper, the window indicator, and the
-  // schedule editor.
+  // _renderEnhanced builds the daemon-driven controls from the companion as
+  // distinct bordered groups: the override group (presets/countdown +
+  // override-temp stepper), an optional window row, and the schedule group.
   _renderEnhanced(translate, companionAttrs) {
     const section = h("div", { class: "enhanced" });
-    section.append(this._renderOverride(translate, companionAttrs));
-    section.append(this._stepper(translate, {
-      label: translate("override_temp"),
-      value: companionAttrs.override_temp,
-      lo: Number(companionAttrs.min_temp),
-      hi: Number(companionAttrs.max_temp),
-      step: 0.5,
-      onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
-    }));
+
+    section.append(h("div", { class: "group" },
+      h("div", { class: "group-head" }, translate("override")),
+      this._renderOverride(translate, companionAttrs),
+      this._stepper(translate, {
+        label: translate("override_temp"),
+        value: companionAttrs.override_temp,
+        lo: Number(companionAttrs.min_temp),
+        hi: Number(companionAttrs.max_temp),
+        step: 0.5,
+        onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
+      })));
 
     const windowInfo = companionAttrs.window;
     if (windowInfo && Array.isArray(windowInfo.sensors) && windowInfo.sensors.length > 0) {
@@ -577,12 +644,13 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
           translate(windowInfo.open ? "window.open" : "window.closed"))));
     }
 
-    section.append(this._renderSchedule(translate, companionAttrs));
+    section.append(this._renderScheduleGroup(translate, companionAttrs));
     return section;
   }
 
-  // _renderOverride shows the preset row, or — while an override is active — a
-  // live countdown plus a cancel button.
+  // _renderOverride shows the preset buttons, or — while an override is active —
+  // a live countdown plus a cancel button. The enclosing group supplies the
+  // "Override" heading, so no label row here.
   _renderOverride(translate, companionAttrs) {
     const override = companionAttrs.override;
     if (override && override.active && override.expires) {
@@ -590,26 +658,40 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         formatCountdown(remainingSeconds(override.expires)));
       const cancel = h("button", { class: "override", type: "button",
         onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override"));
-      return h("div", { class: "row" },
-        h("span", { class: "label" }, translate("override")),
-        h("div", { class: "override-active" }, countdown, cancel));
+      return h("div", { class: "override-active" }, countdown, cancel);
     }
     const presets = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
     const buttons = presets.map((minutes) => h("button", { class: "override", type: "button",
       onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, "+" + minutes + "m"));
-    return h("div", { class: "row" },
-      h("span", { class: "label" }, translate("override")),
-      h("div", { class: "presets" }, ...buttons));
+    return h("div", { class: "presets" }, ...buttons);
   }
 
-  _renderSchedule(translate, companionAttrs) {
-    if (!this._editorOpen) {
-      return h("div", { class: "row" },
-        h("span", { class: "label" }, translate("schedule")),
+  // _renderScheduleGroup shows today's running schedule inline (like
+  // thermostat.html) with the active period highlighted, an Edit button in the
+  // heading, and the full editor below once opened.
+  _renderScheduleGroup(translate, companionAttrs) {
+    const group = h("div", { class: "group" },
+      h("div", { class: "group-head" },
+        h("span", null, translate("schedule")),
         h("button", { class: "edit-schedule", type: "button",
-          onclick: () => this._openEditor(companionAttrs) }, translate("edit_schedule")));
+          onclick: () => this._openEditor(companionAttrs) }, translate("edit_schedule"))));
+
+    if (this._editorOpen) {
+      group.append(this._renderEditor(translate));
+      return group;
     }
-    return this._renderEditor(translate);
+
+    const { periods, nowIndex } = todayPeriods(companionAttrs.schedule || {}, new Date());
+    if (periods.length === 0) {
+      group.append(h("div", { class: "today muted" }, translate("no_schedule")));
+    } else {
+      group.append(h("div", { class: "today" }, ...periods.map((period, index) =>
+        h("span", {
+          class: "period" + (index === nowIndex ? " now" : ""),
+          title: index === nowIndex ? translate("now_period") : null,
+        }, period.time + " " + period.temp + "°"))));
+    }
+    return group;
   }
 
   _openEditor(companionAttrs) {
@@ -683,7 +765,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 HaLuaEnhancedClimateCard.pure = {
   slugOf, companionId, statusLabel, clampNumber, configHash, formatClock,
   remainingSeconds, formatCountdown, entriesFromSchedule, scheduleFromEntries,
-  makeTranslator, MESSAGES, DAY_GROUPS,
+  todayPeriods, makeTranslator, MESSAGES, DAY_GROUPS,
 };
 
 // ---------------------------------------------------------------------------
