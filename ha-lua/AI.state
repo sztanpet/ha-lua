@@ -232,6 +232,16 @@ Last updated: 2026-06-25
 
 
 ## Phase
+PATCH v2.7.1 (2026-06-25): fix the enhanced-climate card config editor. HA sets
+an element's hass before setConfig, so the editor's _render ran with
+this._config undefined and threw "can't access property climate_entity" as a
+"Configuration error" the instant the card was added from the picker. Fixed
+521e2be (cards: guard editor _render on !this._config too; card VERSION->0.3.1).
+Released: CHANGELOG 2.7.1, config.yaml->2.7.1 (1d09a32), tag v2.7.1 on the
+release commit, pushed main + tag to both remotes (triggers GHCR build). The
+fix only reaches a user's HA once the add-on runs this image and re-materializes
+the embedded card into /config/www/ha-lua on boot.
+
 Enhanced-climate track RELEASED as v2.7.0 (2026-06-25, enhanced-climate-spec.md).
 M1-M5 done. Per user request the annotated tag `v2.7.0` was placed on edc744f
 (HEAD), NOT the bare release commit 4f3ed78, so two behavior-preserving example
