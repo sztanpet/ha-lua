@@ -1,5 +1,39 @@
 # AI Working State
-Last updated: 2026-06-23
+Last updated: 2026-06-25
+
+## Enhanced-climate M1 — generic transport (2026-06-25, enhanced-climate-spec.md)
+- M1 of the enhanced-climate spec: the reusable daemon foundation a
+  card-configured controller needs (entity publish + inbound commands). Ships
+  in the binary; reusable by any script. M2+ (examples, removal UI, card JS)
+  not yet started.
+- DESIGN CHANGE vs spec §12: the spec planned 3 commits incl. "config: derive
+  and force the REST URL". Dropped — the REST base is DERIVED FROM THE WS URL
+  inside ha.New (user decision), so no config field/commit. M1 is 2 commits.
+  Spec §4.1 + §12 updated to match.
+- Commit 1 `ha: add core REST client` (e4e9020): internal/ha/rest.go adds
+  Client.SetState (POST /states/{id}, 201->created, 200->updated) +
+  RemoveState (DELETE, 404=already-gone). ~10s http.Client field, shares WS
+  token. deriveRESTURL(wsURL): ws->http/wss->https, strip trailing /websocket,
+  then ensure base ends in /api. Handles BOTH ws://supervisor/core/websocket ->
+  http://supervisor/core/api (supervisor WS path lacks the /api REST needs) AND
+  ws://host:8123/api/websocket -> http://host:8123/api (dev, already has /api).
+  ha.New stays 2-arg (url, token); tests are in-package so they set c.restURL
+  directly to an httptest server. Tests: method/path/auth/body, 200/201/404/
+  401/500, derivation table, ctx-cancel.
+- Commit 2 `lua: ha.set_state/remove_state/on_command + lib/card.lua`
+  (0a95c26): bindings wired Deps->Runner->haAPI like call_service/fire_event
+  (Deps.SetState/RemoveState = client.SetState/RemoveState method values).
+  set_state/remove_state are NON-RAISING (value|nil, err, like http/fs) so the
+  per-minute publish can't spam on_exception during an outage; arg-type checks
+  still raise. set_state coerces a numeric state to string (CheckString),
+  marshals the attrs table. on_command(handler) appends an eventHandler for
+  "ha_lua_command" whose fn is a Go wrapper: filters data.script==script id,
+  calls handler(action, data.data). EventTypes() picks it up so OnLoaded
+  subscribes it. NEW: ha.script_id exposed (lua.LString) so libs derive a
+  default publish prefix. examples/lib/card.lua: M.new{kind=...} returns a
+  dot-call table (card.on/publish/remove), publish -> sensor.ha_lua_<kind>_
+  <slug> stamping ha_lua_script marker; kind defaults to ha.script_id.
+- Tests green under -race + staticcheck + lint (0 issues). NOT released.
 
 ## VOCAB RENAME boost->override, override->manual (2026-06-23, 28a15b9)
 - The UI "boost" (timed 10/30/60-min hold) never boosted -- it is a timed
@@ -198,6 +232,10 @@ Last updated: 2026-06-23
 
 
 ## Phase
+Enhanced-climate track IN PROGRESS (enhanced-climate-spec.md): M1 (generic
+transport — REST set/remove + ha.on_command + lib/card.lua) DONE 2026-06-25,
+unreleased; M2–M5 (shared lib/control + new example, removal UI, card JS,
+docs/release) pending.
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
 (milestones 1–7, see thermostat-ui-spec.md). Filesystem plugin COMPLETE
 (see fs-plugin-spec.md). Bundled reference examples COMPLETE (see

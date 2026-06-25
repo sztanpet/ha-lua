@@ -104,11 +104,15 @@ ha-lua only ingests state today; publishing needs the core REST API.
 - `internal/ha`: `Client.SetState(ctx, entityID, state, attrs) (created bool, err)`
   → `POST {restURL}/states/{id}` (200/201); `RemoveState` → `DELETE` (200/404 ok).
   ≈10s `http.Client`; shares the WS token.
-- `internal/config`: add `HomeAssistant.RestURL`. Add-on mode forces
-  `http://supervisor/core/api` (where `URL`/`Token`/`IngressPort` are forced,
-  `config.go:117`); `homeassistant_api: true` already grants it (`config.yaml:14`),
-  no manifest/schema change. Dev derives from `URL` (`ws→http`/`wss→https`, strip
-  trailing `/websocket`).
+- The REST base is **derived from the WS URL inside `ha.New`**, not a config
+  field: the two endpoints share a host but differ in scheme (`ws→http`/
+  `wss→https`) and path tail. After dropping a trailing `/websocket` the base is
+  normalised to end in `/api`, which maps both real forms —
+  `ws://supervisor/core/websocket → http://supervisor/core/api` (add-on, the
+  Supervisor WS path lacks the `/api` REST lives under) and
+  `ws://host:8123/api/websocket → http://host:8123/api` (dev). No
+  `config`/manifest/schema change; `homeassistant_api: true` already grants the
+  core REST API (`config.yaml:14`).
 - `internal/lua`: `Deps.SetState`/`RemoveState`, bindings `ha.set_state`/
   `ha.remove_state`, **non-raising** (`value|nil, err`, like `http`/`fs`) so the
   per-minute publish doesn't spam `on_exception` during a transient outage.
@@ -465,10 +469,11 @@ Green under `-race` + `make check`.
 
 ## 12. Milestones / commits (each compiles + `make test`)
 
-**M1 — generic transport (reusable daemon, ships in the binary):**
-1. `ha: add core REST client for entity set/remove`
-2. `config: derive and force the core REST API base URL`
-3. `lua: add ha.set_state / ha.remove_state / ha.on_command + lib/card.lua`
+**M1 — generic transport (reusable daemon, ships in the binary):** ✅ done
+1. `ha: add core REST client for entity set/remove` (the REST base is derived
+   from the WS URL inside `ha.New`, so the planned separate
+   `config: derive/force the REST URL` commit is unnecessary — §4.1)
+2. `lua: add ha.set_state / ha.remove_state / ha.on_command + lib/card.lua`
 
 **M2 — shared lib + the new example (additive, examples-only):**
 4. `examples: extract pure control helpers to lib/control.lua` (migrate
