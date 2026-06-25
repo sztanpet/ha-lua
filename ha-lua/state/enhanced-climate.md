@@ -17,6 +17,12 @@ adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
 ## Release log (card)
+- **v2.7.7**, card 0.3.15 — every temperature field (target stepper, override-temp
+  stepper, schedule editor) steps by the device's target_temp_step, default 0.1
+  (was: override-temp hardcoded 0.5, editor fixed 0.1, only target honoured the
+  device step). One tempStep computed in _renderNow, threaded through
+  _renderEnhanced / _renderScheduleGroup / _openEditor (_editorStep). Harness
+  asserts the override-temp stepper inherits the device step.
 - **v2.7.6** (tag on 465bf68), card 0.3.13 → 0.3.14:
   - 0.3.13 button refactor — all buttons share one `.btn` style with modifiers
     (.icon mode buttons, .step ± glyphs, .active mode-colour fill, .primary Save,

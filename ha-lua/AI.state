@@ -11,12 +11,11 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Enhanced-climate card consistency + simplification, released **v2.7.6** (card
-0.3.14): every button shares one `.btn` style (consistent schedule Edit button,
-single-line empty schedule) and a behaviour-preserving JS cleanup pass
-(DAY_GROUPS-driven entriesFromSchedule, ?? translator chain, spread command
-helpers, h()-built mode icon, _labelledStepper rename). Full state + release log
-+ build history: **`state/enhanced-climate.md`**.
+Enhanced-climate card, released **v2.7.7** (card 0.3.15): every temperature field
+(target stepper, override-temp stepper, schedule editor) steps by the device's
+target_temp_step, default 0.1 (was override-temp 0.5 / editor 0.1 / only target
+device-stepped). Full state + release log + build history:
+**`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
