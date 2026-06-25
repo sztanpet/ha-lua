@@ -4,6 +4,37 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.0 - 2026-06-25
+
+### Added
+- **`ha.set_state` / `ha.remove_state`** — scripts can now publish and remove
+  Home Assistant entities through the core REST API (the daemon previously only
+  ingested state). Both are non-raising (`value|nil, err`) so a per-minute
+  publish loop can't spam the exception handler during a transient outage.
+- **`ha.on_command(handler)`** — receive `ha_lua_command` events addressed to
+  the script as `handler(action, data)`, the inbound transport that
+  card-configured scripts use. A new `lib/card.lua` helper wraps it together
+  with the publish/remove calls.
+- **Enhanced climate example + card.** A new standalone example,
+  `enhanced_climate.lua`, plus a bundled vanilla-JS Lovelace card
+  (`custom:ha-lua-enhanced-climate-card`) configured entirely from Home
+  Assistant: point it at a climate entity and it provisions a controller with a
+  7-day schedule editor, timed boosts, optional multi-sensor window cooperation,
+  and the climate-native target/HVAC-mode controls of a `tile` card. The card
+  asset is materialized to `/config/www/ha-lua/` and served at
+  `/local/ha-lua/enhanced-climate-card.js`; add it as a dashboard module
+  resource. State is surfaced as a companion
+  `sensor.ha_lua_enhanced_climate_<slug>` entity, and provisioned climates are
+  removed from the example's own Ingress page. See DOCS for the admin-user
+  requirement and the recommended recorder exclude.
+
+### Changed
+- The shared heating-control helpers (desired-setpoint priority, manual-hold
+  detection, the write gate, device-range clamp, and the window
+  any-open/all-closed reduction) are lifted into a pure `lib/control.lua` shared
+  by both the thermostat and enhanced-climate examples. The thermostat example
+  is migrated onto them with no change in behaviour.
+
 ## 2.6.0 - 2026-06-23
 
 ### Changed
