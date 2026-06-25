@@ -9,12 +9,12 @@
 // Add it as a dashboard resource of type "module" pointing at
 //   /local/ha-lua/enhanced-climate-card.js
 //
-// This commit covers the lifecycle, the header (status + held badges), and the
-// climate-native controls (target stepper + HVAC mode) driven by native climate
-// services, plus i18n. The boost/override-temp/schedule editor and the config
-// editor are layered on in the following commits.
+// Covered here: lifecycle, header (status + held badges), the climate-native
+// controls (target stepper + HVAC mode), and the enhanced controls (boost
+// presets + live countdown + cancel, override-temp stepper, window indicator,
+// 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -47,6 +47,29 @@ const MESSAGES = {
     "mode.heat_cool": "Heat / Cool",
     "mode.dry": "Dry",
     "mode.fan_only": "Fan",
+    "boost": "Boost",
+    "boost_target": "Boost target",
+    "stop_boost": "Stop",
+    "window": "Window",
+    "window.open": "open",
+    "window.closed": "closed",
+    "schedule": "Schedule",
+    "edit_schedule": "Edit",
+    "add_entry": "Add entry",
+    "save": "Save",
+    "cancel": "Cancel",
+    "daygroup.combined": "Groups",
+    "daygroup.individual": "Days",
+    "day.everyday": "Every day",
+    "day.weekdays": "Mon–Fri",
+    "day.weekend": "Sat–Sun",
+    "day.0": "Monday",
+    "day.1": "Tuesday",
+    "day.2": "Wednesday",
+    "day.3": "Thursday",
+    "day.4": "Friday",
+    "day.5": "Saturday",
+    "day.6": "Sunday",
   },
   hu: {
     "status.on": "on", // the English word, as in the Ingress UI
@@ -67,11 +90,32 @@ const MESSAGES = {
     "mode.heat_cool": "Fűtés / Hűtés",
     "mode.dry": "Párátlanítás",
     "mode.fan_only": "Ventilátor",
+    "boost": "Túlfűtés",
+    "boost_target": "Túlfűtés cél",
+    "stop_boost": "Leállítás",
+    "window": "Ablak",
+    "window.open": "nyitva",
+    "window.closed": "zárva",
+    "schedule": "Ütemezés",
+    "edit_schedule": "Szerkesztés",
+    "add_entry": "Új bejegyzés",
+    "save": "Mentés",
+    "cancel": "Mégse",
+    "daygroup.combined": "Csoportok",
+    "daygroup.individual": "Napok",
+    "day.everyday": "Minden nap",
+    "day.weekdays": "Hétfő–Péntek",
+    "day.weekend": "Szombat–Vasárnap",
+    "day.0": "Hétfő",
+    "day.1": "Kedd",
+    "day.2": "Szerda",
+    "day.3": "Csütörtök",
+    "day.4": "Péntek",
+    "day.5": "Szombat",
+    "day.6": "Vasárnap",
   },
 };
 
-// makeTranslator returns a t(key, params?, fallback?) bound to a language, with
-// English fallback and {var} substitution.
 function makeTranslator(language) {
   const lang = (language || "en").toLowerCase().slice(0, 2);
   const table = MESSAGES[lang] || MESSAGES.en;
@@ -91,6 +135,21 @@ function makeTranslator(language) {
 // as a static for the chromedp harness).
 // ---------------------------------------------------------------------------
 
+// Each schedule editor entry targets one of these day groups; .days lists the
+// 0=Mon..6=Sun indices the entry expands to on save.
+const DAY_GROUPS = [
+  { value: "everyday", days: [0, 1, 2, 3, 4, 5, 6] },
+  { value: "weekdays", days: [0, 1, 2, 3, 4] },
+  { value: "weekend", days: [5, 6] },
+  { value: "0", days: [0] },
+  { value: "1", days: [1] },
+  { value: "2", days: [2] },
+  { value: "3", days: [3] },
+  { value: "4", days: [4] },
+  { value: "5", days: [5] },
+  { value: "6", days: [6] },
+];
+
 function slugOf(climateEntity) {
   return climateEntity.replace(/^climate\./, "");
 }
@@ -99,8 +158,6 @@ function companionId(climateEntity) {
   return "sensor.ha_lua_enhanced_climate_" + slugOf(climateEntity);
 }
 
-// statusLabel maps the climate mode + hvac_action to a badge word: "heating"
-// while the device is calling for heat, "on" in heat mode, else "off".
 function statusLabel(translate, mode, hvacAction) {
   if (hvacAction === "heating") return translate("status.heating");
   if (mode === "heat") return translate("status.on");
@@ -113,8 +170,6 @@ function clampNumber(value, lo, hi) {
   return value;
 }
 
-// configHash is the effective config the daemon cares about; the card re-fires
-// configure whenever it changes.
 function configHash(config) {
   return JSON.stringify({
     climate_entity: config.climate_entity || "",
@@ -123,17 +178,81 @@ function configHash(config) {
   });
 }
 
-// formatClock renders an ISO timestamp as HH:MM in the user's locale, or ""
-// when unparseable.
 function formatClock(language, isoTime) {
   const date = new Date(isoTime);
   if (isNaN(date.getTime())) return "";
   return date.toLocaleTimeString(language || undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-// Tiny hyperscript builder: h(tag, attrs?, ...children) -> DOM node. `class`
-// sets className, on* set handlers, null/false children/attrs are skipped, text
-// children become escaped text nodes.
+function remainingSeconds(isoExpires) {
+  const end = new Date(isoExpires).getTime();
+  if (isNaN(end)) return 0;
+  return Math.max(0, Math.round((end - Date.now()) / 1000));
+}
+
+function formatCountdown(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  const pad = (value) => String(value).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+}
+
+// entriesFromSchedule collapses the companion's per-day schedule into editor
+// entries, reusing the every-day / Mon–Fri / Sat–Sun groups whenever a
+// transition is shared across all of their days.
+function entriesFromSchedule(schedule) {
+  const byTransition = new Map();
+  const order = [];
+  for (let day = 0; day < 7; day++) {
+    const list = schedule && Array.isArray(schedule[String(day)]) ? schedule[String(day)] : [];
+    for (const transition of list) {
+      const key = transition.time + "|" + transition.temp;
+      if (!byTransition.has(key)) {
+        byTransition.set(key, { time: transition.time, temp: transition.temp, presentDays: new Set() });
+        order.push(key);
+      }
+      byTransition.get(key).presentDays.add(day);
+    }
+  }
+  const entries = [];
+  for (const key of order) {
+    const info = byTransition.get(key);
+    const remaining = new Set(info.presentDays);
+    if ([0, 1, 2, 3, 4, 5, 6].every((day) => remaining.has(day))) {
+      entries.push({ group: "everyday", time: info.time, temp: info.temp });
+      remaining.clear();
+    }
+    if ([0, 1, 2, 3, 4].every((day) => remaining.has(day))) {
+      entries.push({ group: "weekdays", time: info.time, temp: info.temp });
+      [0, 1, 2, 3, 4].forEach((day) => remaining.delete(day));
+    }
+    if ([5, 6].every((day) => remaining.has(day))) {
+      entries.push({ group: "weekend", time: info.time, temp: info.temp });
+      [5, 6].forEach((day) => remaining.delete(day));
+    }
+    [...remaining].sort((a, b) => a - b).forEach((day) => entries.push({ group: String(day), time: info.time, temp: info.temp }));
+  }
+  entries.sort((a, b) => a.time.localeCompare(b.time));
+  return entries;
+}
+
+// scheduleFromEntries expands editor entries back into the per-day payload the
+// daemon expects ({ "0": [...], … }).
+function scheduleFromEntries(entries) {
+  const days = {};
+  for (let day = 0; day < 7; day++) days[String(day)] = [];
+  for (const entry of entries) {
+    const group = DAY_GROUPS.find((candidate) => candidate.value === entry.group);
+    if (!group) continue;
+    for (const day of group.days) days[String(day)].push({ time: entry.time, temp: entry.temp });
+  }
+  for (let day = 0; day < 7; day++) days[String(day)].sort((a, b) => a.time.localeCompare(b.time));
+  return days;
+}
+
+// Tiny hyperscript builder: h(tag, attrs?, ...children) -> DOM node.
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
   for (const key in attrs) {
@@ -174,11 +293,38 @@ const STYLES = `
   select.mode { padding: 8px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
     background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
   .notice, .hint { color: var(--secondary-text-color); }
+  .enhanced { display: flex; flex-direction: column; gap: 12px;
+    border-top: 1px solid var(--divider-color, #ccc); padding-top: 12px; }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  button.boost { border-radius: 999px; border: 1px solid var(--primary-color); background: transparent;
+    color: var(--primary-color); padding: 6px 12px; font: inherit; cursor: pointer; }
+  button.boost:hover { background: color-mix(in oklch, var(--primary-color) 14%, transparent); }
+  .boost-active { display: flex; align-items: center; gap: 10px; }
+  .countdown { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .window.open { color: var(--warning-color, #ffa600); }
+  .window.closed { color: var(--secondary-text-color); }
+  button.edit-schedule { border: 1px solid var(--divider-color, #ccc); background: transparent;
+    color: var(--primary-text-color); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  .editor { display: flex; flex-direction: column; gap: 8px; }
+  .editor-row { display: flex; align-items: center; gap: 6px; }
+  .editor-row select, .editor-row input { padding: 6px; border-radius: 6px;
+    border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color);
+    color: var(--primary-text-color); font: inherit; }
+  .editor-row select { flex: 1; min-width: 0; }
+  .editor-row input[type="time"] { width: 88px; }
+  .editor-row input[type="number"] { width: 64px; }
+  button.rm { border: none; background: transparent; color: var(--error-color, #db4437);
+    cursor: pointer; font-size: 1rem; }
+  button.add { align-self: flex-start; border: 1px dashed var(--divider-color, #ccc); background: transparent;
+    color: var(--primary-text-color); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  .editor-actions { display: flex; gap: 8px; }
+  button.save { border: none; background: var(--primary-color); color: white; border-radius: 8px;
+    padding: 6px 14px; font: inherit; cursor: pointer; }
+  button.cancel { border: 1px solid var(--divider-color, #ccc); background: transparent;
+    color: var(--primary-text-color); border-radius: 8px; padding: 6px 14px; font: inherit; cursor: pointer; }
 `;
 
 class HaLuaEnhancedClimateCard extends HTMLElement {
-  // setConfig validates and stashes the dashboard YAML. climate_entity is the
-  // only required field; HA renders an error card if it is missing.
   setConfig(config) {
     if (!config || !config.climate_entity) {
       throw new Error("enhanced-climate-card: climate_entity is required");
@@ -188,12 +334,20 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     this._scheduleRender();
   }
 
-  // hass is pushed on every state change; provision on config change, then
-  // re-render (rAF-coalesced).
   set hass(hass) {
     this._hass = hass;
     this._maybeConfigure();
     this._scheduleRender();
+  }
+
+  connectedCallback() {
+    // A local 1s timer drives only the boost countdown display; all data comes
+    // from hass push, so there is no polling.
+    this._countdownTimer = setInterval(() => this._tickCountdown(), 1000);
+  }
+
+  disconnectedCallback() {
+    clearInterval(this._countdownTimer);
   }
 
   getCardSize() {
@@ -204,9 +358,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return { climate_entity: "" };
   }
 
-  // _maybeConfigure fires configure whenever the effective config changed since
-  // the last send (first hass, a later editor change, or a re-mount). Driven
-  // from hass, not setConfig, because callApi needs hass.
   _maybeConfigure() {
     if (!this._hass || !this._config) return;
     if (this._configHash === this._sentConfigHash) return;
@@ -217,7 +368,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     });
   }
 
-  // fireCommand posts an ha_lua_command event addressed to enhanced_climate.
   fireCommand(action, data) {
     if (!this._hass) return;
     this._hass.callApi("POST", "events/ha_lua_command", {
@@ -227,7 +377,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     });
   }
 
-  // callClimate calls a native climate service on the configured entity.
   callClimate(service, data) {
     if (!this._hass) return;
     this._hass.callService("climate", service, Object.assign({ entity_id: this._config.climate_entity }, data));
@@ -242,19 +391,17 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     });
   }
 
-  _replace(root) {
-    this.shadowRoot.innerHTML = "";
-    const style = document.createElement("style");
-    style.textContent = STYLES;
-    this.shadowRoot.append(style, root);
+  // _render is the hass-driven render; it is suppressed (optimism-free) while an
+  // input is focused or the schedule editor is open so a server push can't yank
+  // the work away. _renderNow forces a render for those local interactions.
+  _render() {
+    if (this._fieldFocused || this._editorOpen) return;
+    this._renderNow();
   }
 
-  _render() {
+  _renderNow() {
     if (!this._config) return;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    // Optimism-free: while an input is focused, skip the re-render so server
-    // pushes can't yank the field away mid-edit (commit happens on blur/Enter).
-    if (this._busy) return;
 
     const hass = this._hass;
     const translate = makeTranslator(hass && hass.language);
@@ -289,45 +436,58 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     if (Number.isFinite(Number(attrs.current_temperature))) {
       content.append(h("div", { class: "current" }, translate("current") + ": " + attrs.current_temperature + "°"));
     }
-    content.append(this._renderTarget(translate, attrs));
+    content.append(this._stepper(translate, {
+      label: translate("target"),
+      value: attrs.temperature,
+      lo: Number(attrs.min_temp),
+      hi: Number(attrs.max_temp),
+      step: Number(attrs.target_temp_step) || 0.5,
+      onCommit: (value) => this.callClimate("set_temperature", { temperature: value }),
+    }));
     content.append(this._renderMode(translate, attrs, mode));
-    if (!companion) {
+
+    if (companionAttrs) {
+      content.append(this._renderEnhanced(translate, companionAttrs));
+    } else {
       content.append(h("div", { class: "hint" }, translate("setting_up")));
     }
     root.append(content);
     this._replace(root);
   }
 
-  // _renderTarget is the native target-temperature stepper: ± nudge and a typed
-  // input, both clamped to the device range and committed through
-  // climate.set_temperature. lastSent (per render) dedupes no-op writes.
-  _renderTarget(translate, attrs) {
-    const lo = Number(attrs.min_temp);
-    const hi = Number(attrs.max_temp);
-    const step = Number(attrs.target_temp_step) || 0.5;
-    const current = Number(attrs.temperature);
-    let lastSent = Number.isFinite(current) ? current : null;
+  _replace(root) {
+    this.shadowRoot.innerHTML = "";
+    const style = document.createElement("style");
+    style.textContent = STYLES;
+    this.shadowRoot.append(style, root);
+  }
 
+  // _stepper is the shared ± / typed numeric control, clamped to [lo, hi] and
+  // committed through onCommit. lastSent (per render) dedupes no-op writes; the
+  // focused field suppresses the hass-driven re-render.
+  _stepper(translate, opts) {
+    const current = Number(opts.value);
+    let lastSent = Number.isFinite(current) ? current : null;
     const commit = (raw) => {
       const parsed = Number(raw);
       if (!Number.isFinite(parsed)) return;
-      const value = clampNumber(Math.round(parsed * 10) / 10, lo, hi);
-      if (value === lastSent) return;
-      lastSent = value;
-      this.callClimate("set_temperature", { temperature: value });
+      const next = clampNumber(Math.round(parsed * 10) / 10, opts.lo, opts.hi);
+      if (next === lastSent) return;
+      lastSent = next;
+      opts.onCommit(next);
     };
-    const base = () => (lastSent != null ? lastSent : (Number.isFinite(lo) ? lo : 20));
+    const base = () => (lastSent != null ? lastSent : (Number.isFinite(opts.lo) ? opts.lo : 20));
 
     const input = h("input", {
       class: "value",
       type: "number",
       inputmode: "decimal",
-      step: String(step),
-      min: Number.isFinite(lo) ? String(lo) : null,
-      max: Number.isFinite(hi) ? String(hi) : null,
+      step: String(opts.step),
+      min: Number.isFinite(opts.lo) ? String(opts.lo) : null,
+      max: Number.isFinite(opts.hi) ? String(opts.hi) : null,
       value: Number.isFinite(current) ? String(current) : "",
-      onfocus: () => { this._busy = true; },
-      onblur: () => { this._busy = false; commit(input.value); },
+      onfocus: () => { this._fieldFocused = true; },
+      onblur: () => { this._fieldFocused = false; commit(input.value); },
       onkeydown: (ev) => {
         if (ev.key === "Enter") {
           input.blur();
@@ -337,26 +497,22 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         }
       },
     });
-    // preventDefault on mousedown keeps the input focused (no blur-commit mid
-    // click) for users typing then nudging.
     const minus = h("button", {
       class: "step", type: "button", "aria-label": translate("decrease"),
       onmousedown: (ev) => ev.preventDefault(),
-      onclick: () => commit(base() - step),
+      onclick: () => commit(base() - opts.step),
     }, "−");
     const plus = h("button", {
       class: "step", type: "button", "aria-label": translate("increase"),
       onmousedown: (ev) => ev.preventDefault(),
-      onclick: () => commit(base() + step),
+      onclick: () => commit(base() + opts.step),
     }, "+");
 
     return h("div", { class: "row" },
-      h("span", { class: "label" }, translate("target")),
+      h("span", { class: "label" }, opts.label),
       h("div", { class: "stepper" }, minus, input, h("span", { class: "unit" }, "°"), plus));
   }
 
-  // _renderMode is the native HVAC mode selector, built from the entity's own
-  // hvac_modes and committed through climate.set_hvac_mode.
   _renderMode(translate, attrs, mode) {
     const modes = Array.isArray(attrs.hvac_modes) ? attrs.hvac_modes : [];
     if (modes.length === 0) return h("span", {});
@@ -373,12 +529,137 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       h("span", { class: "label" }, translate("mode")),
       select);
   }
+
+  // _renderEnhanced builds the daemon-driven controls from the companion: the
+  // boost row, the override-temp stepper, the window indicator, and the
+  // schedule editor.
+  _renderEnhanced(translate, companionAttrs) {
+    const section = h("div", { class: "enhanced" });
+    section.append(this._renderBoost(translate, companionAttrs));
+    section.append(this._stepper(translate, {
+      label: translate("boost_target"),
+      value: companionAttrs.override_temp,
+      lo: Number(companionAttrs.min_temp),
+      hi: Number(companionAttrs.max_temp),
+      step: 0.5,
+      onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
+    }));
+
+    const windowInfo = companionAttrs.window;
+    if (windowInfo && Array.isArray(windowInfo.sensors) && windowInfo.sensors.length > 0) {
+      section.append(h("div", { class: "row" },
+        h("span", { class: "label" }, translate("window")),
+        h("span", { class: "window " + (windowInfo.open ? "open" : "closed") },
+          translate(windowInfo.open ? "window.open" : "window.closed"))));
+    }
+
+    section.append(this._renderSchedule(translate, companionAttrs));
+    return section;
+  }
+
+  // _renderBoost shows the preset row, or — while an override is active — a live
+  // countdown plus a cancel button.
+  _renderBoost(translate, companionAttrs) {
+    const override = companionAttrs.override;
+    if (override && override.active && override.expires) {
+      const countdown = h("span", { class: "countdown", "data-expires": override.expires },
+        formatCountdown(remainingSeconds(override.expires)));
+      const cancel = h("button", { class: "boost", type: "button",
+        onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_boost"));
+      return h("div", { class: "row" },
+        h("span", { class: "label" }, translate("boost")),
+        h("div", { class: "boost-active" }, countdown, cancel));
+    }
+    const presets = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
+    const buttons = presets.map((minutes) => h("button", { class: "boost", type: "button",
+      onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, "+" + minutes + "m"));
+    return h("div", { class: "row" },
+      h("span", { class: "label" }, translate("boost")),
+      h("div", { class: "presets" }, ...buttons));
+  }
+
+  _renderSchedule(translate, companionAttrs) {
+    if (!this._editorOpen) {
+      return h("div", { class: "row" },
+        h("span", { class: "label" }, translate("schedule")),
+        h("button", { class: "edit-schedule", type: "button",
+          onclick: () => this._openEditor(companionAttrs) }, translate("edit_schedule")));
+    }
+    return this._renderEditor(translate);
+  }
+
+  _openEditor(companionAttrs) {
+    this._editorEntries = entriesFromSchedule(companionAttrs.schedule || {});
+    this._editorBounds = [Number(companionAttrs.min_temp), Number(companionAttrs.max_temp)];
+    this._editorOpen = true;
+    this._renderNow();
+  }
+
+  _closeEditor() {
+    this._editorOpen = false;
+    this._renderNow();
+  }
+
+  _renderEditor(translate) {
+    const entries = this._editorEntries;
+    const [lo, hi] = this._editorBounds;
+    const editor = h("div", { class: "editor" });
+    entries.forEach((entry, index) => editor.append(this._editorRow(translate, entries, index, lo, hi)));
+    editor.append(h("button", { class: "add", type: "button", onclick: () => {
+      entries.push({ group: "weekdays", time: "07:00", temp: clampNumber(21, lo, hi) });
+      this._renderNow();
+    } }, translate("add_entry")));
+    editor.append(h("div", { class: "editor-actions" },
+      h("button", { class: "save", type: "button", onclick: () => {
+        this.fireCommand("schedule", { schedule: scheduleFromEntries(entries) });
+        this._closeEditor();
+      } }, translate("save")),
+      h("button", { class: "cancel", type: "button", onclick: () => this._closeEditor() }, translate("cancel"))));
+    return editor;
+  }
+
+  _editorRow(translate, entries, index, lo, hi) {
+    const entry = entries[index];
+    const combined = DAY_GROUPS.filter((group) => group.days.length > 1);
+    const individual = DAY_GROUPS.filter((group) => group.days.length === 1);
+    const option = (group) => {
+      const node = h("option", { value: group.value }, translate("day." + group.value));
+      if (group.value === entry.group) node.setAttribute("selected", "");
+      return node;
+    };
+    const daySelect = h("select", { onchange: (ev) => { entry.group = ev.target.value; } },
+      h("optgroup", { label: translate("daygroup.combined") }, ...combined.map(option)),
+      h("optgroup", { label: translate("daygroup.individual") }, ...individual.map(option)));
+    const time = h("input", { type: "time", value: entry.time,
+      onchange: (ev) => { entry.time = ev.target.value; } });
+    const temp = h("input", {
+      type: "number", step: "0.1",
+      min: Number.isFinite(lo) ? String(lo) : null,
+      max: Number.isFinite(hi) ? String(hi) : null,
+      value: String(entry.temp),
+      onchange: (ev) => { entry.temp = clampNumber(Number(ev.target.value), lo, hi); ev.target.value = String(entry.temp); },
+    });
+    const remove = h("button", { class: "rm", type: "button",
+      onclick: () => { entries.splice(index, 1); this._renderNow(); } }, "✕");
+    return h("div", { class: "editor-row" }, daySelect, time, temp, remove);
+  }
+
+  // _tickCountdown updates only the boost countdown text each second without a
+  // full re-render; when it reaches zero it reconciles from the next push.
+  _tickCountdown() {
+    if (!this.shadowRoot) return;
+    const el = this.shadowRoot.querySelector(".countdown[data-expires]");
+    if (!el) return;
+    const remaining = remainingSeconds(el.getAttribute("data-expires"));
+    el.textContent = formatCountdown(remaining);
+    if (remaining <= 0) this._scheduleRender();
+  }
 }
 
-// Expose the pure helpers for the chromedp harness (it reads them off the
-// defined element); they have no browser dependency.
 HaLuaEnhancedClimateCard.pure = {
-  slugOf, companionId, statusLabel, clampNumber, configHash, formatClock, makeTranslator, MESSAGES,
+  slugOf, companionId, statusLabel, clampNumber, configHash, formatClock,
+  remainingSeconds, formatCountdown, entriesFromSchedule, scheduleFromEntries,
+  makeTranslator, MESSAGES, DAY_GROUPS,
 };
 
 customElements.define("ha-lua-enhanced-climate-card", HaLuaEnhancedClimateCard);
