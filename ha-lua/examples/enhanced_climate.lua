@@ -23,6 +23,13 @@ local card = require("card").new { kind = "enhanced_climate" }
 -- a timed override drives it to — until the user edits it via the card.
 local DEFAULT_OVERRIDE_TEMP = 23
 
+-- Setpoint (°C) held while any bound window is open, clamped to the device's
+-- min on entities that won't accept it. Writing a low setpoint is how a
+-- self-contained controller actually PAUSES heating (just skipping the write
+-- would leave the device coasting at its last target); the desired is restored
+-- once every window closes again.
+local FROST_TEMP = 15
+
 -- ---------------------------------------------------------------------------
 -- Registry (§7.1). The set of enhanced climates, keyed by climate entity id,
 -- each { climate_entity, window_sensors, presets }. Global-scoped (shared)
@@ -108,6 +115,35 @@ local function load_schedule(e)
   return {}
 end
 
+-- window_sensors_of returns the bound window sensor ids for a climate (the list
+-- the card stored at configure time), or an empty list.
+local function window_sensors_of(e)
+  local cfg = load_registry()[e]
+  if cfg == nil or type(cfg.window_sensors) ~= "table" then return {} end
+  return cfg.window_sensors
+end
+
+-- window_open reduces a climate's bound sensors to one boolean via the shared
+-- control.window_open: open if ANY sensor reads "on", clear only when ALL are
+-- closed. A not-yet-seeded sensor (nil) counts as closed.
+local function window_open(e)
+  local states = {}
+  for _, sensor in ipairs(window_sensors_of(e)) do
+    local state = ha.get_state(sensor)
+    states[#states + 1] = state and state.state or "off"
+  end
+  return control.window_open(states)
+end
+
+-- window_unknown reports whether any bound sensor has not seeded yet. Used only
+-- to suppress manual-change detection until the windows are known.
+local function window_unknown(e)
+  for _, sensor in ipairs(window_sensors_of(e)) do
+    if ha.get_state(sensor) == nil then return true end
+  end
+  return false
+end
+
 -- active_override returns the live timed-override table, or nil, clearing an
 -- expired one so the climate reverts to schedule.
 local function active_override(e, now)
@@ -157,8 +193,9 @@ end
 
 -- apply_climate is the per-climate control step: compute the desired setpoint,
 -- clamp it to the device range, remember it (so manual detection can compare),
--- and write it when the shared gate allows. Window cooperation is layered on in
--- a later commit, so for now no window pauses the write.
+-- and write it when the shared gate allows. While any bound window is open the
+-- climate is held at a frost setpoint instead — that is what pauses heating;
+-- the desired (still remembered) is restored once every window closes.
 local function apply_climate(e, now, dow, minute)
   local desired_temp = desired(e, now, dow, minute)
   if desired_temp == nil then
@@ -168,7 +205,18 @@ local function apply_climate(e, now, dow, minute)
   local lo, hi = temp_bounds(e)
   desired_temp = control.clamp_bounds(desired_temp, lo, hi)
   store.set(desired_key(e), desired_temp)
-  if control.should_write(mode(e), false, current_target(e), desired_temp) then
+
+  if mode(e) ~= "heat" then return end
+  local current = current_target(e)
+  if window_open(e) then
+    -- Pause: hold the frost setpoint while any window is open.
+    local frost = control.clamp_bounds(FROST_TEMP, lo, hi)
+    if current == nil or math.abs(current - frost) > 0.05 then
+      set_temp(e, frost)
+    end
+    return
+  end
+  if control.should_write("heat", false, current, desired_temp) then
     set_temp(e, desired_temp)
   end
 end
@@ -204,6 +252,9 @@ ha.on_state_change("climate.*", function(data)
 
   local now, dow, minute = now_parts()
   if active_override(climate_entity, now) then return end -- override wins; ignore nudges
+  -- A window open (or not yet seeded) means we may have written the frost
+  -- setpoint, which must not be mistaken for a user dial change.
+  if window_open(climate_entity) or window_unknown(climate_entity) then return end
 
   local published = store.get(desired_key(climate_entity))
   if not control.is_manual(target, published) then return end
@@ -215,6 +266,23 @@ ha.on_state_change("climate.*", function(data)
     expires = now:add(hold):format(time.RFC3339),
   })
   apply_climate(climate_entity, now, dow, minute) -- republish the new desired immediately
+end)
+
+-- Window immediacy: a bound window opening or closing re-applies the affected
+-- climate(s) within seconds rather than waiting for the next 1-minute tick. One
+-- wildcard handler covers sensors bound to climates added at runtime.
+ha.on_state_change("binary_sensor.*", function(data)
+  local sensor = data.entity_id
+  if type(sensor) ~= "string" then return end
+  local now, dow, minute = now_parts()
+  for climate_entity in pairs(load_registry()) do
+    for _, bound in ipairs(window_sensors_of(climate_entity)) do
+      if bound == sensor then
+        apply_climate(climate_entity, now, dow, minute)
+        break
+      end
+    end
+  end
 end)
 
 -- ---------------------------------------------------------------------------

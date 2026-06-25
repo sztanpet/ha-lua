@@ -159,6 +159,22 @@ func (f *enhancedFixture) seedClimate(entity, attrs string) {
 	}
 }
 
+// setWindow seeds a binary sensor state into the mirror and dispatches its
+// state-change event, exactly as a real window opening/closing would arrive.
+func (f *enhancedFixture) setWindow(sensor, st string) {
+	f.t.Helper()
+	if err := f.tracker.Seed(f.ctx, []ha.StateData{
+		{EntityID: sensor, State: st, Attributes: jsontext.Value("{}")},
+	}); err != nil {
+		f.t.Fatal(err)
+	}
+	f.reg.Dispatch(ha.Event{
+		Type: "state_changed",
+		Data: jsontext.Value(`{"entity_id":"` + sensor + `","new_state":{"entity_id":"` + sensor +
+			`","state":"` + st + `","attributes":{}}}`),
+	})
+}
+
 // allDaySchedule builds a schedule JSON where every weekday has a single
 // 00:00 transition to temp, so schedule.resolve returns temp at any time.
 func allDaySchedule(temp string) string {
@@ -297,4 +313,40 @@ func TestEnhancedClimateManualHold(t *testing.T) {
 			`"state":"heat","attributes":{"temperature":19,"min_temp":7,"max_temp":35}}}`),
 	})
 	f.waitSetTemp(19, "manual hold to the dialed 19")
+}
+
+// TestEnhancedClimateWindow confirms window cooperation: any bound window open
+// pauses heating to the frost setpoint, and only all-closed restores the
+// desired (the multi-sensor any-open/all-closed reduction).
+func TestEnhancedClimateWindow(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1","binary_sensor.w2"]}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "schedule 21 while windows closed")
+
+	// One window opens -> pause to frost (15).
+	f.setWindow("binary_sensor.w1", "on")
+	f.waitSetTemp(15, "window open -> frost")
+
+	// It closes again (the other was never open) -> restore the desired.
+	f.setWindow("binary_sensor.w1", "off")
+	f.waitSetTemp(21, "all closed -> restore desired")
+
+	// Both open -> frost; closing only one must keep it paused (any-open).
+	f.setWindow("binary_sensor.w1", "on")
+	f.setWindow("binary_sensor.w2", "on")
+	f.waitSetTemp(15, "any open -> frost")
+
+	f.setWindow("binary_sensor.w1", "off") // w2 still open
+	// FIFO barrier: a configure dispatched after the close is processed only
+	// once the close has been, so the assertion below is deterministic.
+	f.fireCommand("configure", `{"climate_entity":"climate.barrier"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.barrier"] != nil }, "barrier processed")
+	if temps := f.setTemps(); temps[len(temps)-1] != 15 {
+		t.Fatalf("one of two windows still open must stay paused at frost; last set_temp=%v", temps[len(temps)-1])
+	}
+
+	f.setWindow("binary_sensor.w2", "off") // now all closed
+	f.waitSetTemp(21, "all closed -> restore desired")
 }

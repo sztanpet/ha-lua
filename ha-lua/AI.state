@@ -237,9 +237,24 @@ transport — REST set/remove + ha.on_command + lib/card.lua) DONE 2026-06-25,
 unreleased. M2 IN PROGRESS: commit 4 (extract lib/control.lua, migrate
 thermostat.lua behavior-preserving) DONE 2026-06-25 (3e11155); commit 5
 (enhanced_climate registry + configure/remove handlers) DONE 2026-06-25
-(f580b28); NEXT = commit 6 (control loop via lib/control + bounds clamp), then
-7 (multi-sensor window cooperation), 8 (companion publish). M3 (removal Ingress
-page), M4 (card JS), M5 (docs/release) pending.
+(f580b28); commit 6 (control loop via lib/control + bounds clamp + manual
+detection + schedule/override/settings command handlers) DONE 2026-06-25
+(747aae4); NEXT = commit 7 (multi-sensor window cooperation), then 8 (companion
+publish). M3 (removal Ingress page), M4 (card JS), M5 (docs/release) pending.
+- Commit 6 detail: per-climate store keys schedule:/override:/manual:/
+  override_temp:/desired: ; 1-min tick iterates registry; apply_climate clamps
+  to device bounds + should_write gate; wildcard climate.* on_state_change does
+  manual-hold detection (one handler covers runtime-added climates). Commands
+  schedule/override/settings validate+reapply, no-op on reject. Test fixture
+  now captures call_service (set_temperature) for assertions.
+- DESIGN NOTE for commit 7: spec §7 phrases window pause as should_write
+  returning false on window_open (no write). But for a SELF-CONTAINED
+  controller that doesn't actually pause heating (device holds last setpoint).
+  So enhanced_climate writes a FROST_TEMP (15, clamped to device min) while any
+  window is open and restores the desired when all close — matching what
+  thermostat's separate heating_windows.lua does with frost_temp. Manual
+  detection must be suppressed while a window is open/unknown (else our own
+  frost write looks like a dial change).
 - enhanced_climate.lua: global registry under key "enhanced_climate:registry"
   (map climate_entity -> {climate_entity, window_sensors, presets}); uses
   lib/card.lua (card.on/configure/remove). configure idempotent via
