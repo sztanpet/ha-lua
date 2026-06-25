@@ -20,6 +20,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/config"
 	"github.com/sztanpet/ha-lua/internal/debug"
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/logwriter"
 	luapkg "github.com/sztanpet/ha-lua/internal/lua"
 	"github.com/sztanpet/ha-lua/internal/purge"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
@@ -259,7 +260,11 @@ func main() {
 	sup.Wait()
 }
 
-// openLogFile creates dir if needed and opens (appending) the daemon's log
+// maxLogBytes caps the daemon log's total on-disk footprint (active file plus
+// one rotated backup) so it can never fill the user's /config volume.
+const maxLogBytes = 5 << 20 // 5 MiB
+
+// openLogFile creates dir if needed and opens the daemon's size-bounded log
 // file inside it. The caller keeps the handle for the process lifetime and
 // closes it on exit; the return type is io.WriteCloser because that deferred
 // close is the only thing the caller does with it besides writing.
@@ -267,7 +272,7 @@ func openLogFile(dir string) (io.WriteCloser, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	return os.OpenFile(filepath.Join(dir, "ha-lua.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	return logwriter.New(filepath.Join(dir, "ha-lua.log"), maxLogBytes)
 }
 
 type serviceCallMsg struct {
