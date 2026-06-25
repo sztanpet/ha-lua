@@ -205,6 +205,7 @@ local function desired(e, now, dow, minute)
 end
 
 local function set_temp(e, temp)
+  ha.log("info", "set_temperature " .. e .. " = " .. tostring(temp) .. "°")
   ha.call_service("climate", "set_temperature", { entity_id = e, temperature = temp })
 end
 
@@ -234,7 +235,9 @@ local function publish_companion(e, now, desired_temp)
   local controlled = desired_temp ~= nil
   local state_value = controlled and desired_temp or "off"
 
-  card.publish(slug_of(e), state_value, {
+  -- set_state is non-raising, so log the result here: warn on failure (else an
+  -- outage is invisible), info on first create, debug for the per-minute refresh.
+  local created, err = card.publish(slug_of(e), state_value, {
     ha_lua_climate = e,
     friendly_name = friendly,
     schedule = load_schedule(e),
@@ -251,6 +254,13 @@ local function publish_companion(e, now, desired_temp)
     icon = "mdi:thermostat",
     removal = "Deleting the card keeps this running — remove it in the ha-lua panel",
   })
+  if err then
+    ha.log("warn", "publish companion for " .. e .. " failed: " .. err)
+  elseif created then
+    ha.log("info", "published companion sensor for " .. e)
+  else
+    ha.log("debug", "refreshed companion for " .. e .. " (state " .. tostring(state_value) .. ")")
+  end
 end
 
 -- apply_climate is the per-climate control step: compute the desired setpoint,
@@ -333,6 +343,7 @@ ha.on_state_change("climate.*", function(data)
     temp = target,
     expires = now:add(hold):format(time.RFC3339),
   })
+  ha.log("info", "manual change on " .. climate_entity .. " -> " .. tostring(target) .. "° (held to next transition)")
   apply_climate(climate_entity, now, dow, minute) -- republish the new desired immediately
 end)
 
@@ -346,6 +357,8 @@ ha.on_state_change("binary_sensor.*", function(data)
   for climate_entity in pairs(load_registry()) do
     for _, bound in ipairs(window_sensors_of(climate_entity)) do
       if bound == sensor then
+        ha.log("info", "window " .. sensor .. " (" .. tostring(data.new_state and data.new_state.state) ..
+          ") changed -> re-applying " .. climate_entity)
         apply_climate(climate_entity, now, dow, minute)
         break
       end
@@ -399,6 +412,8 @@ card.on("configure", function(data)
   if config_equal(reg[cfg.climate_entity], cfg) then return end
   reg[cfg.climate_entity] = cfg
   save_registry(reg)
+  ha.log("info", "configure " .. cfg.climate_entity ..
+    " (windows: " .. #cfg.window_sensors .. ", presets: " .. #cfg.presets .. ")")
   local now, dow, minute = now_parts()
   apply_climate(cfg.climate_entity, now, dow, minute) -- start controlling at once
 end)
@@ -413,7 +428,12 @@ local function remove_climate(e)
   reg[e] = nil
   save_registry(reg)
   store.delete(desired_key(e))
-  card.remove(slug_of(e)) -- the companion disappears with it
+  local _, err = card.remove(slug_of(e)) -- the companion disappears with it
+  if err then
+    ha.log("warn", "remove companion for " .. e .. " failed: " .. err)
+  else
+    ha.log("info", "removed enhanced climate " .. e)
+  end
 end
 
 -- remove deprovisions an enhanced climate (also reachable from the Ingress page,
@@ -430,6 +450,7 @@ card.on("schedule", function(data)
   local lo, hi = temp_bounds(e)
   if not schedule.validate(data.schedule, lo, hi) then return end
   store.set(sched_key(e), { days = data.schedule })
+  ha.log("info", "schedule updated for " .. e)
   local now, dow, minute = now_parts()
   apply_climate(e, now, dow, minute)
 end)
@@ -441,6 +462,7 @@ card.on("override", function(data)
   local now, dow, minute = now_parts()
   if data.cancel then
     store.delete(override_key(e))
+    ha.log("info", "override cancelled for " .. e)
   else
     if type(data.minutes) ~= "number" or data.minutes <= 0 or data.minutes > 1440 then return end
     store.set(override_key(e), {
@@ -448,6 +470,7 @@ card.on("override", function(data)
       ends_at = now:add(data.minutes * 60):format(time.RFC3339),
     })
     store.delete(manual_key(e)) -- an override outranks and clears any manual hold
+    ha.log("info", "override " .. data.minutes .. "m for " .. e)
   end
   apply_climate(e, now, dow, minute)
 end)
@@ -462,6 +485,7 @@ card.on("settings", function(data)
     return
   end
   store.set(override_temp_key(e), data.override_temp)
+  ha.log("info", "override_temp set to " .. data.override_temp .. "° for " .. e)
   local now, dow, minute = now_parts()
   apply_climate(e, now, dow, minute) -- if an override is active, the new temp applies now
 end)
@@ -514,6 +538,11 @@ end)
 -- Re-publish every registered climate at load so the companions reappear after
 -- a restart (REST-set states are dropped by an HA restart) before the first
 -- tick — and resume controlling them.
+do
+  local count = 0
+  for _ in pairs(load_registry()) do count = count + 1 end
+  ha.log("info", "enhanced_climate loaded, resuming " .. count .. " climate(s)")
+end
 apply_all(now_parts())
 
 ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/enhanced-climate-errors.log"))
