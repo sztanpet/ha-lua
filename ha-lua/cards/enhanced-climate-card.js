@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.14";
+const VERSION = "0.3.15";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -527,18 +527,21 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // Target stepper and the mode buttons share one row, wrapping to two lines
     // only when there isn't room; labels are dropped (the stepper keeps an
     // aria-label, each mode button a title) to keep it tight.
+    // Every temperature input steps by the device's target_temp_step, falling
+    // back to 0.1 when the device advertises none.
+    const tempStep = Number(attrs.target_temp_step) || 0.1;
     const target = this._stepperControl(translate, {
       label: translate("target"),
       value: attrs.temperature,
       lo: Number(attrs.min_temp),
       hi: Number(attrs.max_temp),
-      step: Number(attrs.target_temp_step) || 0.5,
+      step: tempStep,
       onCommit: (value) => this.callClimate("set_temperature", { temperature: value }),
     });
     content.append(h("div", { class: "climate-controls" }, target, this._renderMode(translate, attrs, mode)));
 
     if (companionAttrs) {
-      content.append(this._renderEnhanced(translate, companionAttrs));
+      content.append(this._renderEnhanced(translate, companionAttrs, tempStep));
     } else {
       content.append(h("div", { class: "hint" }, translate("setting_up")));
     }
@@ -640,7 +643,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   // _renderEnhanced builds the daemon-driven controls from the companion as
   // distinct bordered groups: the override group (presets/countdown +
   // override-temp stepper), an optional window row, and the schedule group.
-  _renderEnhanced(translate, companionAttrs) {
+  _renderEnhanced(translate, companionAttrs, tempStep) {
     const section = h("div", { class: "enhanced" });
 
     section.append(h("div", { class: "group" },
@@ -652,7 +655,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         value: companionAttrs.override_temp,
         lo: Number(companionAttrs.min_temp),
         hi: Number(companionAttrs.max_temp),
-        step: 0.5,
+        step: tempStep,
         onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
       })));
 
@@ -664,7 +667,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
           translate(windowInfo.open ? "window.open" : "window.closed"))));
     }
 
-    section.append(this._renderScheduleGroup(translate, companionAttrs));
+    section.append(this._renderScheduleGroup(translate, companionAttrs, tempStep));
     return section;
   }
 
@@ -703,7 +706,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   // heading, and the full editor below once opened. With no schedule set the
   // group stays a single heading line — the "no schedule set" text becomes the
   // heading's tooltip rather than an extra row.
-  _renderScheduleGroup(translate, companionAttrs) {
+  _renderScheduleGroup(translate, companionAttrs, tempStep) {
     const open = this._editorOpen;
     const { periods, nowIndex } = open
       ? { periods: [], nowIndex: -1 }
@@ -715,7 +718,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         h("span", { class: "head-title", title: empty ? translate("no_schedule") : null },
           translate("schedule")),
         h("button", { class: "btn edit-schedule", type: "button",
-          onclick: () => this._openEditor(companionAttrs) }, translate("edit_schedule"))));
+          onclick: () => this._openEditor(companionAttrs, tempStep) }, translate("edit_schedule"))));
 
     if (open) {
       group.append(this._renderEditor(translate));
@@ -729,9 +732,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return group;
   }
 
-  _openEditor(companionAttrs) {
+  _openEditor(companionAttrs, tempStep) {
     this._editorEntries = entriesFromSchedule(companionAttrs.schedule || {});
     this._editorBounds = [Number(companionAttrs.min_temp), Number(companionAttrs.max_temp)];
+    this._editorStep = tempStep;
     this._editorOpen = true;
     this._renderNow();
   }
@@ -774,7 +778,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const time = h("input", { type: "time", value: entry.time,
       onchange: (ev) => { entry.time = ev.target.value; } });
     const temp = h("input", {
-      type: "number", step: "0.1",
+      type: "number", step: String(this._editorStep || 0.1),
       min: Number.isFinite(lo) ? String(lo) : null,
       max: Number.isFinite(hi) ? String(hi) : null,
       value: String(entry.temp),

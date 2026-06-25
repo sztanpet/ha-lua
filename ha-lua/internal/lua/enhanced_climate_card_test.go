@@ -102,6 +102,18 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("first preset = %q, want +10m", firstPreset)
 	}
 
+	// Both steppers inherit the device's target_temp_step (0.5 in the seed); the
+	// override-temp stepper (the 2nd .stepper) is no longer a hardcoded step.
+	var overrideStep string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__card.shadowRoot.querySelectorAll(".stepper .value")[1].getAttribute("step")`, &overrideStep),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if overrideStep != "0.5" {
+		t.Errorf("override-temp step = %q, want 0.5 (device target_temp_step)", overrideStep)
+	}
+
 	// Grid sizing is declared (no resize warning) but not pinned full-width, so
 	// the user's own layout options win.
 	var gridCols, gridRows string
