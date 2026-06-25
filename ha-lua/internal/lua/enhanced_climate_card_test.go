@@ -102,6 +102,22 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("first preset = %q, want +10m", firstPreset)
 	}
 
+	// Grid sizing is declared (no resize warning) but not pinned full-width, so
+	// the user's own layout options win.
+	var gridCols, gridRows string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`String(window.__card.getGridOptions().columns)`, &gridCols),
+		chromedp.Evaluate(`String(window.__card.getGridOptions().rows)`, &gridRows),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if gridCols == "full" {
+		t.Error("getGridOptions pins columns:full, forcing full-width")
+	}
+	if gridRows != "auto" {
+		t.Errorf("getGridOptions rows = %q, want auto", gridRows)
+	}
+
 	// Mode renders as buttons (like HA's own card), not a <select>; clicking the
 	// first one (off) calls set_hvac_mode.
 	var modeBtns int
