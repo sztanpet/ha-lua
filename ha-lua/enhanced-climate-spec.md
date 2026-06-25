@@ -1,11 +1,12 @@
 # Enhanced-climate example & card — HA-configured spec
 
-Status: proposed (2026-06-25, rev 5 — standalone new example, not a rework)
+Status: proposed (2026-06-25, rev 6 — card UI implementation specced)
 Scope: a general daemon capability (`ha.set_state`/`ha.remove_state`/
 `ha.on_command` + `lib/card.lua`), a **new standalone example**
-(`examples/enhanced_climate.lua`) that uses it, and the
-**`custom:ha-lua-enhanced-climate-card`** interface. The card JS is a separate
-deliverable; this spec defines the contract it relies on.
+(`examples/enhanced_climate.lua`) that uses it, the
+**`custom:ha-lua-enhanced-climate-card`** contract (§9), and the **card UI
+implementation** (§10). The card is a bundled vanilla JS asset materialized into
+`/config/www`.
 
 ## 0. Terminology & relationship to the existing example
 
@@ -227,7 +228,7 @@ explicit surface is simpler and has no silent-failure mode. Because deleting a
 card therefore does *not* remove the enhanced climate, the companion carries the
 subtle more-info pointer (§6).
 
-## 9. Card interface (`custom:ha-lua-enhanced-climate-card`, separate deliverable)
+## 9. Card contract (`custom:ha-lua-enhanced-climate-card`)
 
 ```yaml
 type: custom:ha-lua-enhanced-climate-card
@@ -271,7 +272,100 @@ These reconcile from the companion (`ha_lua_climate === climate_entity`) and are
   and `window_sensor` makes it fully GUI-configurable — only `climate_entity` is
   required.
 
-## 10. Testing
+## 10. Card UI implementation (`ha-lua-enhanced-climate-card.js`)
+
+### 10.1 Tech & packaging
+
+- **One self-contained vanilla file**, no build step, no runtime imports — a
+  `customElements.define`d element `extends HTMLElement`, rendering with template
+  strings + manual DOM. This matches the existing Ingress UI (`thermostat.html`
+  is hand-written vanilla JS/CSS, AI.state) and keeps a Go/Lua repo free of an
+  npm/bundler toolchain and of fragile `unpkg`/CDN `import`s. Lit is *not* used.
+- Source lives at `ha-lua/cards/ha-lua-enhanced-climate-card.js` (reference asset).
+- The add-on **materializes** it to `/config/www/ha-lua/enhanced-climate-card.js`
+  on boot (best-effort, mirroring the examples `Materialize`; a forced
+  `CardsDir = /config/www/ha-lua` in add-on mode, dev leaves it empty). It is then
+  served at `/local/ha-lua/enhanced-climate-card.js`; DOCS instruct adding a
+  dashboard **resource** (that URL, type `module`). No HACS dependency.
+- On load: a `console.info` version banner (HA convention) and
+  `window.customCards.push({type, name, description, preview:true})` so it shows
+  in the "add card" picker.
+
+### 10.2 Lifecycle methods
+
+- `setConfig(config)`: require `climate_entity` (throw otherwise → HA renders the
+  error card); stash config; precompute the companion lookup.
+- `set hass(hass)`: stash, then a throttled re-render (rAF-coalesced). On the
+  **first** `hass`, fire `configure` once (idempotent provisioning).
+- `getCardSize()`: ~5 (height hint).
+- `static getConfigElement()` / `static getStubConfig()`: the GUI editor (§10.6)
+  and a default (`{ climate_entity: "" }`) for the picker.
+
+### 10.3 Data sources & reconciliation
+
+- **Two reads:** `hass.states[climate_entity]` for current temp / target / mode /
+  `hvac_action` / `min_temp` / `max_temp`; the companion (found by
+  `Object.values(hass.states).find(e => e.attributes.ha_lua_climate === climate_entity)`)
+  for schedule / override / manual / window / presets.
+- **Optimism-free**, re-render on every `hass`: never write `input.value`
+  optimistically — reflect server truth, preserving focus + caret on the active
+  input. Port the proven patterns from `thermostat.html` (no optimistic write,
+  `lastSent` dedupe, blur/Enter commit, Escape revert) — those exist because the
+  Ingress UI hit ordering/race bugs under `-race` without them (AI.state).
+- A **local 1 s timer drives only the boost countdown** display (remaining derived
+  from `override.expires`); all data comes from `hass` push, so there is **no
+  polling** (unlike the Ingress UI's 5 s poll).
+- Empty states: companion missing → "Setting up…" (configure fired, awaiting the
+  sensor); climate entity `unavailable` → an unavailable notice.
+
+### 10.4 Layout & controls (mirrors the §9 split)
+
+- **Header:** name + status badge (on / heating / off from `hvac_action`+mode,
+  reuse the existing `statusLabel` logic) + a "held until HH:MM" badge when
+  `companion.manual.active`.
+- **Climate-native:** target-temp stepper (±, typed input, clamped to
+  min/max) → `set_temperature`; mode selector built from the entity's
+  `hvac_modes` → `set_hvac_mode`. (Single-setpoint heating climates; dual
+  `target_temp_high/low` range mode is out of scope for v1.)
+- **Enhanced:** boost preset row + live countdown + cancel; `override_temp`
+  stepper; the **7-day schedule editor** (port the existing editor's row model +
+  weekday regrouping from `thermostat.html`); a read-only window indicator when
+  bound.
+
+### 10.5 Command & service helpers
+
+- `fireCommand(action, data)` →
+  `hass.callApi('POST', 'events/ha_lua_command', { script:'enhanced_climate', action, data:{ climate_entity, ...data } })`.
+- `callClimate(service, data)` →
+  `hass.callService('climate', service, { entity_id: climate_entity, ...data })`.
+- Factor these plus the **pure** derivations (status label, remaining-time,
+  schedule regroup, bounds clamp) as free functions so they are unit-testable
+  without a browser (§10.7).
+
+### 10.6 Config editor (`getConfigElement`)
+
+A second element using HA's `ha-entity-picker`, domain-filtered to `climate`
+(required) and `binary_sensor` (window, optional), plus a presets input and an
+optional `name`; dispatches `config-changed`. Makes the card fully
+GUI-configurable — the only required field is the climate entity.
+
+### 10.7 Testing the card
+
+Reuse the project's chromedp approach (the Ingress UI's browser tests), but with
+a tiny static **harness page** the Go test serves: it `import`s the card module,
+defines a **stub `hass`** (a fake `states` map for the climate entity + companion,
+and `callApi`/`callService` spies), instantiates `<ha-lua-enhanced-climate-card>`,
+and sets `.hass`. The chromedp test then:
+- asserts the rendered DOM (status, target, schedule rows) matches the stub state;
+- clicks the temp stepper / a boost preset / saves a schedule and asserts the
+  right `callService('climate', …)` / `callApi('…events/ha_lua_command', …)`
+  payload was captured;
+- updates the stub `hass` and asserts the card reconciles (optimism-free).
+
+Pure helpers (§10.5) also get plain assertions in the harness. Skips cleanly when
+no browser is present, like the existing browser tests.
+
+## 11. Testing (daemon & example)
 
 **Go — generic transport:** `SetState`/`RemoveState` against `httptest`
 (method/path/auth/body, 200/201/404, ctx-cancel); `config_test` RestURL force +
@@ -287,10 +381,10 @@ derive; capturing-stub tests for `ha.set_state`/`ha.on_command` (non-raising).
 5. Command round-trips: `settings` (bounds-rejected out of range), `schedule`
    round-trip, `override` start/cancel — each re-publishes the companion.
 
-The existing `thermostat.lua` tests are untouched. No browser test (card JS out
-of scope). Green under `-race` + `make check`.
+The existing `thermostat.lua` tests are untouched; card UI tests are in §10.7.
+Green under `-race` + `make check`.
 
-## 11. Milestones / commits (each compiles + `make test`)
+## 12. Milestones / commits (each compiles + `make test`)
 
 **M1 — generic transport (reusable daemon, ships in the binary):**
 1. `ha: add core REST client for entity set/remove`
@@ -305,21 +399,30 @@ of scope). Green under `-race` + `make check`.
 
 **M3 — removal UI:** 8. `examples: enhanced_climate Ingress removal page`
 
-**M4 — card (separate deliverable):** `custom:ha-lua-enhanced-climate-card` JS +
-config editor + a dashboard-resource install note in DOCS.
+**M4 — card UI (§10):**
+9.  `config: materialize bundled cards into /config/www/ha-lua` (small Go
+    change: `CardsDir` forced in add-on mode, best-effort `Materialize`)
+10. `cards: enhanced-climate-card render + climate-native controls`
+11. `cards: enhanced-climate-card boost + override-temp + schedule editor`
+12. `cards: enhanced-climate-card config editor (getConfigElement)`
+13. `cards: enhanced-climate-card chromedp harness test` (§10.7)
 
-**M5 — docs/release:** DOCS (`ha.set_state`/`on_command`, the card config, the
-entity model, restart caveat) + CHANGELOG + **minor** version bump (new APIs + new
-example; existing example untouched, nothing breaks).
+**M5 — docs/release:** DOCS (`ha.set_state`/`on_command`, the card config + the
+dashboard-resource install, the entity model, restart caveat) + CHANGELOG +
+**minor** version bump (new APIs + new example + bundled card; existing example
+untouched, nothing breaks).
 
-> M1 ships in the binary and is reusable by any script. M2–M3 are examples-only
-> (reference tree, never loaded — AI.state); a user copies `enhanced_climate.lua`
-> into `/config/ha-lua/scripts/` to use it. The existing `thermostat.lua` is left
-> entirely alone. M4 is the only non-Lua/Go deliverable.
+> M1 + the M4 materialization ship in the binary; M1 is reusable by any script.
+> M2–M3 are examples-only (reference tree, never loaded — AI.state); a user copies
+> `enhanced_climate.lua` into `/config/ha-lua/scripts/` to use it. The existing
+> `thermostat.lua` is left entirely alone. The card JS (M4 commits 10–13) is the
+> only frontend deliverable.
 
-## 12. Open items
+## 13. Open items
 
 - **Multiple cards, one climate entity** — idempotent `configure` makes this
   safe; last writer of `window_sensor`/`presets` wins (cosmetic).
 - **Example name** — `enhanced_climate.lua` chosen for consistency with the
   concept/entity/card naming; rename if preferred before M2.
+- **Card i18n** — the Ingress UI localizes (hu/en). The card can reuse the same
+  strings via `hass.language`; deferred to a follow-up unless wanted in v1.
