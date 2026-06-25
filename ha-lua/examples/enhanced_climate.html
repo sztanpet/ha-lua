@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enhanced climates — ha-lua</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --accent: oklch(0.55 0.18 25);
+      /* danger hover/border derived from the accent, not hand-picked */
+      --accent-hover: oklch(from var(--accent) calc(l - 0.08) c h);
+      --line: color-mix(in oklch, currentColor 18%, transparent);
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0 auto;
+      padding: 1.5rem;
+      max-width: 40rem;
+      line-height: 1.4;
+    }
+
+    h1 {
+      font-size: 1.3rem;
+      margin: 0 0 .25rem;
+    }
+
+    p.intro {
+      margin: 0 0 1.25rem;
+      opacity: .75;
+      font-size: .9rem;
+    }
+
+    ul.climates {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    li.climate {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .75rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: .6rem;
+      margin-bottom: .6rem;
+    }
+
+    li.empty {
+      opacity: .6;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .meta {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .name {
+      font-weight: 600;
+    }
+
+    .sub {
+      font-size: .82rem;
+      opacity: .65;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    button.remove {
+      flex: none;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      border-radius: .5rem;
+      padding: .4rem .9rem;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.remove:hover {
+      background: var(--accent);
+      color: white;
+    }
+
+    button.remove:disabled {
+      opacity: .5;
+      cursor: default;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Enhanced climates</h1>
+  <p class="intro">
+    Climate entities provisioned through the enhanced-climate card. Deleting a card from a dashboard does
+    <strong>not</strong> remove its configuration — remove it here.
+  </p>
+  <ul id="list" class="climates"></ul>
+
+  <script>
+    const apiURL = (path) => "./api/" + path;
+
+    async function load() {
+      const response = await fetch(apiURL("list"));
+      const data = await response.json();
+      // An empty Lua table serialises as {}, not [], so guard with Array.isArray.
+      render(Array.isArray(data.climates) ? data.climates : []);
+    }
+
+    function render(climates) {
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+      if (climates.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "empty";
+        empty.textContent = "No enhanced climates configured.";
+        list.appendChild(empty);
+        return;
+      }
+      for (const climate of climates) {
+        const row = document.createElement("li");
+        row.className = "climate";
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const name = document.createElement("span");
+        name.className = "name";
+        name.textContent = climate.name || climate.climate_entity;
+        const sub = document.createElement("span");
+        sub.className = "sub";
+        const windowCount = (climate.window_sensors || []).length;
+        sub.textContent = climate.climate_entity + " · " + windowCount + " window sensor(s)";
+        meta.appendChild(name);
+        meta.appendChild(sub);
+
+        const button = document.createElement("button");
+        button.className = "remove";
+        button.textContent = "Remove";
+        button.onclick = () => remove(climate.climate_entity, button);
+
+        row.appendChild(meta);
+        row.appendChild(button);
+        list.appendChild(row);
+      }
+    }
+
+    async function remove(entity, button) {
+      button.disabled = true;
+      await fetch(apiURL("remove"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ climate_entity: entity }),
+      });
+      load();
+    }
+
+    load();
+  </script>
+</body>
+
+</html>

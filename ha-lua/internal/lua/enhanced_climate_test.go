@@ -38,6 +38,7 @@ type stateCall struct {
 
 type enhancedFixture struct {
 	reg     *Registry
+	router  *Router
 	global  *store.GlobalStore
 	tracker *state.Tracker
 	ctx     context.Context
@@ -60,6 +61,7 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "card.lua"), filepath.Join(libDir, "card.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "enhanced_climate.lua"), filepath.Join(dir, "enhanced_climate.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "enhanced_climate.html"), filepath.Join(dir, "enhanced_climate.html"))
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -68,9 +70,10 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 	tracker := state.New(writeDB, readDB)
 	global := store.NewGlobal(writeDB, readDB)
 	reg := NewRegistry()
+	router := NewRouter(reg)
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	f := &enhancedFixture{reg: reg, global: global, tracker: tracker, t: t}
+	f := &enhancedFixture{reg: reg, router: router, global: global, tracker: tracker, t: t}
 	callService := func(_ context.Context, domain, service string, data jsontext.Value) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -83,6 +86,7 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 		Scheduler:   sched,
 		Global:      global,
 		Root:        openTestRoot(t, dir),
+		Router:      router,
 		NewKV:       func(id string) *store.Store { return store.New(writeDB, readDB, id) },
 		CallService: callService,
 		SetState: func(_ context.Context, entityID, st string, attrs jsontext.Value) (bool, error) {
@@ -472,5 +476,67 @@ func TestEnhancedClimateCompanion(t *testing.T) {
 	}
 	if !f.removedCompanion(companion) {
 		t.Fatalf("remove did not remove_state the companion %s", companion)
+	}
+}
+
+// TestEnhancedClimateRemovalPage drives the Ingress removal page: /api/list
+// reports the registry, GET / serves the HTML, and POST /api/remove
+// deprovisions a climate (removing its companion) while a bad body is rejected.
+func TestEnhancedClimateRemovalPage(t *testing.T) {
+	f := newEnhancedFixture(t)
+	waitRoute(t, f.router, "GET", "/api/list")
+
+	f.seedClimate("climate.lr", `{"friendly_name":"Living Room"}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"]}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
+
+	// /api/list reports the climate with its friendly name.
+	rec := doReq(f.router, "GET", "/api/list", "")
+	if rec.Code != 200 {
+		t.Fatalf("GET /api/list status %d", rec.Code)
+	}
+	var listed struct {
+		Climates []struct {
+			ClimateEntity string   `json:"climate_entity"`
+			Name          string   `json:"name"`
+			WindowSensors []string `json:"window_sensors"`
+		} `json:"climates"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode /api/list %q: %v", rec.Body.String(), err)
+	}
+	if len(listed.Climates) != 1 || listed.Climates[0].ClimateEntity != "climate.lr" {
+		t.Fatalf("unexpected list: %+v", listed.Climates)
+	}
+	if listed.Climates[0].Name != "Living Room" || len(listed.Climates[0].WindowSensors) != 1 {
+		t.Errorf("entry detail wrong: %+v", listed.Climates[0])
+	}
+
+	// GET / serves the self-contained HTML page.
+	rec = doReq(f.router, "GET", "/", "")
+	if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("GET / status %d type %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Body.String(), "<!doctype html>") {
+		t.Errorf("GET / did not return the HTML page")
+	}
+
+	// POST /api/remove deprovisions it (synchronous handler) and removes the
+	// companion.
+	rec = doReq(f.router, "POST", "/api/remove", `{"climate_entity":"climate.lr"}`)
+	if rec.Code != 200 {
+		t.Fatalf("POST /api/remove status %d body %q", rec.Code, rec.Body.String())
+	}
+	if m := f.registry(); m != nil && m["climate.lr"] != nil {
+		t.Errorf("climate.lr still in registry after remove: %+v", m)
+	}
+	if !f.removedCompanion("sensor.ha_lua_enhanced_climate_lr") {
+		t.Errorf("removal page did not remove_state the companion")
+	}
+
+	// A malformed body is rejected.
+	rec = doReq(f.router, "POST", "/api/remove", `not json`)
+	if rec.Code != 400 {
+		t.Errorf("bad body status = %d, want 400", rec.Code)
 	}
 }

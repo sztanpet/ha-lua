@@ -392,16 +392,24 @@ card.on("configure", function(data)
   apply_climate(cfg.climate_entity, now, dow, minute) -- start controlling at once
 end)
 
--- remove deprovisions an enhanced climate (from the Ingress removal page, §8).
--- Deleting the card does NOT fire this — removal is deliberately explicit.
-card.on("remove", function(data)
-  if type(data) ~= "table" or type(data.climate_entity) ~= "string" then return end
+-- remove_climate deprovisions an enhanced climate: drop it from the registry,
+-- forget its desired, and remove the companion. Shared by the card's remove
+-- command and the Ingress removal page so both go through one path.
+local function remove_climate(e)
+  if type(e) ~= "string" then return end
   local reg = load_registry()
-  if reg[data.climate_entity] == nil then return end
-  reg[data.climate_entity] = nil
+  if reg[e] == nil then return end
+  reg[e] = nil
   save_registry(reg)
-  store.delete(desired_key(data.climate_entity))
-  card.remove(slug_of(data.climate_entity)) -- the companion disappears with it
+  store.delete(desired_key(e))
+  card.remove(slug_of(e)) -- the companion disappears with it
+end
+
+-- remove deprovisions an enhanced climate (also reachable from the Ingress page,
+-- §8). Deleting the card does NOT fire this — removal is deliberately explicit.
+card.on("remove", function(data)
+  if type(data) ~= "table" then return end
+  remove_climate(data.climate_entity)
 end)
 
 -- schedule replaces the 7-day schedule, bounded by the device's range.
@@ -445,6 +453,56 @@ card.on("settings", function(data)
   store.set(override_temp_key(e), data.override_temp)
   local now, dow, minute = now_parts()
   apply_climate(e, now, dow, minute) -- if an override is active, the new temp applies now
+end)
+
+-- ---------------------------------------------------------------------------
+-- Ingress removal page (§8). An enhanced climate outlives any card, so removal
+-- is explicit and lives here: a minimal page listing the registry with a remove
+-- button. This covers deliberate teardown and orphans (a card deleted from a
+-- dashboard can't send remove) alike. Served on this example's Ingress panel.
+-- ---------------------------------------------------------------------------
+
+local JSON_HDR = { ["Content-Type"] = "application/json" }
+local TEXT_HDR = { ["Content-Type"] = "text/plain" }
+
+-- list_climates returns the registry as a flat array for the page, resolving a
+-- friendly name from the climate entity when one is available.
+local function list_climates()
+  local out = {}
+  for e, cfg in pairs(load_registry()) do
+    local name = e
+    local entity_state = ha.get_state(e)
+    if entity_state and entity_state.attributes and type(entity_state.attributes.friendly_name) == "string" then
+      name = entity_state.attributes.friendly_name
+    end
+    out[#out + 1] = {
+      climate_entity = e,
+      name = name,
+      window_sensors = cfg.window_sensors or {},
+      presets = cfg.presets or {},
+    }
+  end
+  return out
+end
+
+ha.serve("GET", "/api/list", function()
+  return 200, json.encode({ climates = list_climates() }), JSON_HDR
+end)
+
+ha.serve("POST", "/api/remove", function(req)
+  local ok, body = pcall(json.decode, req.body)
+  if not ok or type(body) ~= "table" or type(body.climate_entity) ~= "string" then
+    return 400, "invalid JSON body", TEXT_HDR
+  end
+  remove_climate(body.climate_entity)
+  return 200, json.encode({ climates = list_climates() }), JSON_HDR
+end)
+
+local PAGE = assert(fs.read("enhanced_climate.html"),
+  "enhanced_climate.html missing next to enhanced_climate.lua")
+
+ha.serve("GET", "/", function()
+  return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
 
 -- Re-publish every registered climate at load so the companions reappear after
