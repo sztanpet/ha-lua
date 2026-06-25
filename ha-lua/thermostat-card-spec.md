@@ -179,9 +179,9 @@ Today these come from static `lib/zones.lua`; they now come from the store.
    (replacing the separate `heating_windows.lua` zones.lua coupling). For
    immediacy, also subscribe `ha.on_state_change("binary_sensor.*", …)` and
    filter to configured window sensors so an opened window pauses within seconds,
-   not up to a minute. **Assumption to confirm:** "optional window sensor
-   disablement" = bind a sensor that pauses heating while open (omit to disable
-   the feature); not a separate on/off toggle.
+   not up to a minute. Semantics: bind an optional sensor that pauses heating
+   while open and restores on close; omit the binding to disable the feature for
+   that climate (there is no separate on/off toggle).
 4. **Companion publish** (§6) on configure / load / tick / mutation.
 5. **Retire `lib/zones.lua`** and its placeholder ids. The schedule store layout
    is unchanged (already per-climate in the store), so only the *list source*
@@ -268,8 +268,6 @@ bold **BREAKING** lead + **major** version bump.
 
 ## 12. Open items
 
-- **Window-sensor semantics** (§7.3) — confirm "bind a sensor, open pauses
-  heating" vs a separate enable/disable toggle.
 - **Orphan entries** — a card deleted from a dashboard leaves its enhanced
   climate; cleanup is via the Ingress UI (§8) or a future TTL. Acceptable for v1.
 - **Multiple cards, one climate entity** — idempotent `configure` makes this
