@@ -4,6 +4,16 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.5 - 2026-06-25
+
+### Changed
+- **Enhanced climate card layout.** The target and HVAC-mode controls now share
+  one row (wrapping only when there's no room); the current mode sits beside the
+  current temperature in the title, split by a divider; the mode name shows as a
+  tooltip rather than a visible label; an empty schedule collapses to a compact
+  marker with the explanation as a tooltip; and the override durations sit inline
+  under an "Override for:" heading, styled to match the mode buttons.
+
 ## 2.7.4 - 2026-06-25
 
 ### Changed
