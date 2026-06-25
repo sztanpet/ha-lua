@@ -231,17 +231,41 @@ presets: [10, 30, 60]                      # optional boost minutes
 name: Living room                          # optional; else friendly_name
 ```
 
+The card **replaces a native `tile` climate card** (the user's current setup:
+`type: tile` with `target-temperature` + `climate-hvac-modes` features), so it
+must cover everything that tile does **and** add the enhanced layer. The split
+is deliberate:
+
+**Climate-native controls — reuse the native climate services, not commands:**
+- current temperature + state + `hvac_action` — read from the climate entity.
+- **target temperature** setter → `climate.set_temperature` (the tile's
+  `target-temperature` feature). No custom command: a setpoint change ≠ published
+  desired *is* the daemon's manual-override signal (hold until the next schedule
+  transition, AI.state M3). The card just shows a "held until HH:MM" badge from
+  the companion's `manual.active`.
+- **HVAC mode** selector → `climate.set_hvac_mode` (the tile's
+  `climate-hvac-modes` feature). The daemon already gates control on `mode==heat`.
+
+These reconcile from `hass.states[climate_entity]` — exactly as the tile does
+today, so they keep working even if the daemon is briefly down (it behaves like a
+plain thermostat, the daemon re-asserts the schedule when it returns).
+
+**Enhanced controls — `ha_lua_command` + the companion sensor:**
+- boost / timed-override preset row + live countdown + cancel,
+- the **7-day schedule editor**,
+- the **override-temp** setting (the temp a boost jumps to),
+- a window-state indicator when a sensor is bound.
+
+These reconcile from the companion (`attributes.ha_lua_climate === climate_entity`).
+All enhanced mutations are **optimism-free** — re-render from the next `hass`
+update, never from local writes.
+
+**Lifecycle / config:**
 - On `setConfig` / first `hass`: fire `configure` (idempotent) so adding the card
   provisions the enhanced climate.
-- Discover the companion sensor by `attributes.ha_lua_climate === climate_entity`.
-- Render from the **climate entity** (current temp, hvac_action, min/max) + the
-  **companion** (schedule, override/boost, window): status line, target/override
-  stepper, boost preset row + live countdown, the **7-day schedule editor**, and
-  a window-state indicator when bound.
-- All mutations fire `ha_lua_command`; **optimism-free** — re-render from the next
-  `hass` update, never from local writes.
-- A config editor (`getConfigElement`) with an entity picker for
-  `climate_entity` / `window_sensor` makes it fully GUI-configurable.
+- A config editor (`getConfigElement`) with entity pickers for `climate_entity`
+  and `window_sensor` makes it fully GUI-configurable — the only required field
+  is `climate_entity`.
 
 ## 10. Testing
 
