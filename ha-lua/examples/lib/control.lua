@@ -3,7 +3,7 @@
 -- Pure heating-control helpers, deliberately free of any ha.* / store.* / time
 -- access so they can be unit-tested directly from Go (like lib/schedule.lua).
 -- The controller does the clock and I/O work and calls in here with plain
--- values. These four decisions — the desired-setpoint priority pick, the
+-- values. These five decisions — the desired-setpoint priority pick, the
 -- manual-hold predicate, the write gate, the device-bounds clamp, and the
 -- window any-open/all-closed reduction — are identical across thermostat.lua
 -- and enhanced_climate.lua, so they live here once rather than as drifting
