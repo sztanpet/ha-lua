@@ -12,10 +12,11 @@ for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
 Enhanced-climate card. Released **v2.7.5** (card 0.3.12). **Unreleased on main**:
-card 0.3.13 — unified every button under one `.btn` style (+ .icon/.step/.active/
-.primary/.ghost/.link/.danger modifiers), schedule Edit button now consistent,
-empty schedule is a single heading line (tooltip). Full state + release log +
-build history: **`state/enhanced-climate.md`**.
+card 0.3.13 (unify every button under one `.btn` style; consistent schedule Edit
+button; single-line empty schedule) + 0.3.14 (JS simplification: DAY_GROUPS-driven
+entriesFromSchedule, ?? translator chain, spread command helpers, h()-built mode
+icon, _labelledStepper rename). Full state + release log + build history:
+**`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

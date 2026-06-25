@@ -17,15 +17,20 @@ adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
 ## Release log (card)
-- **UNRELEASED on main** (card 0.3.13, would be v2.7.6): button refactor — all
-  buttons now share one `.btn` style with modifiers (.icon mode buttons, .step
-  ± glyphs, .active mode-colour fill, .primary Save, .ghost Add, .link/.danger
-  the row ✕); the five old per-button styles are gone. `.group-head` is
-  layout-only (uppercase moved to `.head-title`), so the schedule Edit button
-  matches the rest and isn't uppercased. Empty schedule = single heading line
-  with "no schedule set" as the tooltip. Stepper input matches the 44px/12px
-  button metrics. All test hooks (.step/.mode-btn/.presets/.edit-schedule/
-  .editor .save) preserved.
+- **UNRELEASED on main** (card 0.3.13 → 0.3.14, would be v2.7.6):
+  - 0.3.13 button refactor — all buttons share one `.btn` style with modifiers
+    (.icon mode buttons, .step ± glyphs, .active mode-colour fill, .primary Save,
+    .ghost Add, .link/.danger the row ✕); the five old per-button styles are
+    gone. `.group-head` is layout-only (uppercase moved to `.head-title`), so the
+    schedule Edit button matches the rest and isn't uppercased. Empty schedule =
+    single heading line with "no schedule set" as the tooltip. Stepper input
+    matches the 44px/12px button metrics.
+  - 0.3.14 JS simplification — entriesFromSchedule derives groups from DAY_GROUPS
+    (no hardcoded day arrays; round-trip verified); makeTranslator one ?? chain;
+    fireCommand/callClimate use spread; _renderMode builds the icon via h();
+    _stepper renamed _labelledStepper (vs bare _stepperControl).
+  All test hooks (.step/.mode-btn/.presets/.edit-schedule/.editor .save)
+  preserved across both.
 - **v2.7.5** (tag on 3bc05a4), card 0.3.9 → 0.3.12 — iterative card-layout polish
   (0.3.12: dropped the stray ° span that sat between the setpoint input and the +
   button):
