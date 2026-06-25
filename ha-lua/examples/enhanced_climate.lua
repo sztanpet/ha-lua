@@ -116,6 +116,16 @@ local function temp_bounds(e)
   return lo, hi
 end
 
+-- friendly_name resolves a climate entity's HA friendly_name, falling back to
+-- the entity id itself while the entity has not seeded or carries no name.
+local function friendly_name(e)
+  local state = ha.get_state(e)
+  if state and state.attributes and type(state.attributes.friendly_name) == "string" then
+    return state.attributes.friendly_name
+  end
+  return e
+end
+
 local function load_schedule(e)
   local stored = store.get(sched_key(e))
   if type(stored) == "table" and type(stored.days) == "table" then return stored.days end
@@ -207,12 +217,7 @@ local function publish_companion(e, now, desired_temp)
   local cfg = load_registry()[e]
   if cfg == nil then return end
   local lo, hi = temp_bounds(e)
-
-  local friendly = e
-  local entity_state = ha.get_state(e)
-  if entity_state and entity_state.attributes and type(entity_state.attributes.friendly_name) == "string" then
-    friendly = entity_state.attributes.friendly_name
-  end
+  local friendly = friendly_name(e)
 
   local override_tbl = { active = false }
   local override = active_override(e, now)
@@ -279,13 +284,18 @@ local function apply_climate(e, now, dow, minute)
   publish_companion(e, now, desired_temp)
 end
 
--- The 1-minute tick that drives every registered climate. Override/manual
--- expiry is handled inside desired().
-local function tick()
-  local now, dow, minute = now_parts()
+-- apply_all runs the control step over every registered climate. Shared by the
+-- 1-minute tick and the load-time resume so both go through one path.
+local function apply_all(now, dow, minute)
   for climate_entity in pairs(load_registry()) do
     apply_climate(climate_entity, now, dow, minute)
   end
+end
+
+-- The 1-minute tick that drives every registered climate. Override/manual
+-- expiry is handled inside desired().
+local function tick()
+  apply_all(now_parts())
 end
 
 ha.every("1m", tick)
@@ -471,14 +481,9 @@ local TEXT_HDR = { ["Content-Type"] = "text/plain" }
 local function list_climates()
   local out = {}
   for e, cfg in pairs(load_registry()) do
-    local name = e
-    local entity_state = ha.get_state(e)
-    if entity_state and entity_state.attributes and type(entity_state.attributes.friendly_name) == "string" then
-      name = entity_state.attributes.friendly_name
-    end
     out[#out + 1] = {
       climate_entity = e,
-      name = name,
+      name = friendly_name(e),
       window_sensors = cfg.window_sensors or {},
       presets = cfg.presets or {},
     }
@@ -509,11 +514,6 @@ end)
 -- Re-publish every registered climate at load so the companions reappear after
 -- a restart (REST-set states are dropped by an HA restart) before the first
 -- tick — and resume controlling them.
-do
-  local now, dow, minute = now_parts()
-  for climate_entity in pairs(load_registry()) do
-    apply_climate(climate_entity, now, dow, minute)
-  end
-end
+apply_all(now_parts())
 
 ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/enhanced-climate-errors.log"))
