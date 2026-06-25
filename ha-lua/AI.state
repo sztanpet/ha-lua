@@ -232,14 +232,16 @@ Last updated: 2026-06-25
 
 
 ## Phase
-Enhanced-climate track CODE COMPLETE (enhanced-climate-spec.md), awaiting the
-release tag/push. M1-M4 done; M5 docs/changelog/version-bump DONE 2026-06-25
-(DOCS 5afab4e, CHANGELOG 8d48168, config.yaml version->2.7.0 4f3ed78). REMAINING
-(USER-DRIVEN, per CLAUDE.md release process — NOT done autonomously, outward-
-facing): annotated tag `v2.7.0` on the release commit 4f3ed78, then push main +
-tag to BOTH remotes (origin private mirror + github), which triggers the GHCR
-multi-arch image build. The hourly /loop cron (job 231ded93) has no work left —
-suggest the user CronDelete it.
+Enhanced-climate track RELEASED as v2.7.0 (2026-06-25, enhanced-climate-spec.md).
+M1-M5 done. Per user request the annotated tag `v2.7.0` was placed on edc744f
+(HEAD), NOT the bare release commit 4f3ed78, so two behavior-preserving example
+cleanups landed in the same release rather than a separate one: dbb7590
+(examples: dedupe friendly_name + apply_all in enhanced_climate) and edc744f
+(examples: fix helper count in lib/control header). config.yaml at the tag still
+reads 2.7.0, so the GHCR workflow builds the right version. Pushed main + tag to
+BOTH remotes (origin private mirror + github); the github tag push triggers the
+multi-arch GHCR image build. The hourly /loop cron (job 231ded93) has no work
+left — suggest the user CronDelete it.
 Older detail:
 Enhanced-climate track IN PROGRESS (enhanced-climate-spec.md): M1 (generic
 transport — REST set/remove + ha.on_command + lib/card.lua) DONE 2026-06-25,
