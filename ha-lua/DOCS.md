@@ -126,6 +126,8 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.get_history(entity_id, since, limit)` | History from the local mirror |
 | `ha.call_service(domain, service, data)` | Call any Home Assistant service |
 | `ha.fire_event(type, data)` | Fire a custom event |
+| `ha.set_state(entity_id, state, attrs)` / `ha.remove_state(entity_id)` | Publish or remove an entity through the core REST API (non-raising: returns `value\|nil, err`) |
+| `ha.on_command(handler)` | Receive `ha_lua_command` events addressed to this script as `handler(action, data)` — the transport the cards use |
 | `ha.every(spec, fn)` / `ha.at(time, fn)` / `ha.after(delay, fn)` | Recurring, daily, and one-shot timers (persisted, with startup catch-up) |
 | `ha.serve(method, prefix, fn)` | Serve an HTTP route from a script — see *Web UIs* below |
 | `ha.log(level, msg)` | Log through the daemon's logger |
@@ -235,6 +237,72 @@ To use it, copy all of these from `examples/` into your scripts directory —
 persisted per zone, so they survive restarts. The controller writes a zone's
 setpoint only while its mode is `heat` and no window is open; it never changes
 the hvac mode.
+
+## Enhanced climate card
+
+`enhanced_climate.lua` is an alternative to the thermostat example: instead of
+defining zones in a file and editing them through an Ingress page, you drop a
+**dashboard card** onto a climate entity and configure everything from Home
+Assistant. The card provisions the controller, gives a 7-day schedule editor,
+timed boosts, and optional window cooperation, and replaces a native `tile`
+climate card (current temperature, target, and HVAC mode).
+
+**Install the script** (copy from the read-only examples into your scripts dir):
+
+```sh
+cp /config/ha-lua/examples/enhanced_climate.lua  /config/ha-lua/scripts/
+cp /config/ha-lua/examples/enhanced_climate.html /config/ha-lua/scripts/
+cp -r /config/ha-lua/examples/lib                /config/ha-lua/scripts/
+```
+
+**Register the card asset.** The add-on writes the card's JavaScript to
+`/config/www/ha-lua/enhanced-climate-card.js` on every start, which Home
+Assistant serves at `/local/ha-lua/enhanced-climate-card.js`. Add it once as a
+dashboard resource (*Settings → Dashboards → ⋮ → Resources → Add resource*),
+URL `/local/ha-lua/enhanced-climate-card.js`, type **JavaScript module**. No
+HACS needed.
+
+**Add the card** to a dashboard:
+
+```yaml
+type: custom:ha-lua-enhanced-climate-card
+climate_entity: climate.living_room           # required — the only must-have
+window_sensors: [binary_sensor.living_window] # optional, one or more
+presets: [10, 30, 60]                         # optional boost minutes
+name: Living room                             # optional; else friendly_name
+```
+
+A GUI editor (the visual card editor, with entity pickers) is also provided, so
+the YAML is optional — only the climate entity is required.
+
+**How it works.** The card mirrors two entities: the climate entity itself (for
+current temperature, target, and HVAC mode, driven through native climate
+services so they keep working even if the daemon is briefly down) and a
+**companion sensor** the daemon publishes per climate,
+`sensor.ha_lua_enhanced_climate_<slug>` (slug = the climate object id, e.g.
+`living_room`), which carries the schedule, boost/override, manual hold, and
+window state. The control loop runs in the daemon; the card only edits.
+
+**Removing one.** An enhanced climate is persistent config that outlives the
+card — **deleting the card from a dashboard does not remove it.** Remove it from
+the **Enhanced climate** Ingress page (the add-on's sidebar panel), which lists
+every provisioned climate with a Remove button. This also cleans up climates
+left behind by a card you deleted.
+
+Caveats:
+
+- **Admin user required.** The card provisions and edits by firing a
+  `ha_lua_command` event through Home Assistant's `events/` REST API, which
+  needs an **admin** HA user. Non-admin users still get the climate-native
+  controls (target temperature and HVAC mode), which use ordinary service calls.
+- **Restart transience.** The companion sensors are published over the REST API
+  and are not integration-backed, so a Home Assistant restart drops them; the
+  daemon re-publishes them within a minute (and on every reconnect), so they
+  self-heal.
+- **Recorder.** The companion sensors update at most once a minute and carry
+  stable values, but you can keep them out of the recorder by adding
+  `sensor.ha_lua_enhanced_climate_*` to your recorder `exclude` if you don't
+  need their history.
 
 ## Notes
 
