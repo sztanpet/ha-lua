@@ -10,11 +10,11 @@
 //   /local/ha-lua/enhanced-climate-card.js
 //
 // Covered here: lifecycle, header (status + held badges), the climate-native
-// controls (target stepper + HVAC mode), and the enhanced controls (boost
+// controls (target stepper + HVAC mode), and the enhanced controls (override
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.3";
+const VERSION = "0.3.4";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -47,9 +47,9 @@ const MESSAGES = {
     "mode.heat_cool": "Heat / Cool",
     "mode.dry": "Dry",
     "mode.fan_only": "Fan",
-    "boost": "Boost",
-    "boost_target": "Boost target",
-    "stop_boost": "Stop",
+    "override": "Override",
+    "override_temp": "Override target",
+    "stop_override": "Stop",
     "window": "Window",
     "window.open": "open",
     "window.closed": "closed",
@@ -72,7 +72,7 @@ const MESSAGES = {
     "day.6": "Sunday",
     "editor.climate": "Climate entity (required)",
     "editor.window_sensors": "Window sensors",
-    "editor.presets": "Boost presets (minutes)",
+    "editor.presets": "Override presets (minutes)",
     "editor.name": "Name",
   },
   hu: {
@@ -94,9 +94,9 @@ const MESSAGES = {
     "mode.heat_cool": "Fűtés / Hűtés",
     "mode.dry": "Párátlanítás",
     "mode.fan_only": "Ventilátor",
-    "boost": "Túlfűtés",
-    "boost_target": "Túlfűtés cél",
-    "stop_boost": "Leállítás",
+    "override": "Felülbírálás",
+    "override_temp": "Felülbírálás cél",
+    "stop_override": "Leállítás",
     "window": "Ablak",
     "window.open": "nyitva",
     "window.closed": "zárva",
@@ -119,7 +119,7 @@ const MESSAGES = {
     "day.6": "Vasárnap",
     "editor.climate": "Klíma entitás (kötelező)",
     "editor.window_sensors": "Ablakérzékelők",
-    "editor.presets": "Túlfűtés gombok (perc)",
+    "editor.presets": "Felülbírálás gombok (perc)",
     "editor.name": "Név",
   },
 };
@@ -304,10 +304,10 @@ const STYLES = `
   .enhanced { display: flex; flex-direction: column; gap: 12px;
     border-top: 1px solid var(--divider-color, #ccc); padding-top: 12px; }
   .presets { display: flex; gap: 6px; flex-wrap: wrap; }
-  button.boost { border-radius: 999px; border: 1px solid var(--primary-color); background: transparent;
+  button.override { border-radius: 999px; border: 1px solid var(--primary-color); background: transparent;
     color: var(--primary-color); padding: 6px 12px; font: inherit; cursor: pointer; }
-  button.boost:hover { background: color-mix(in oklch, var(--primary-color) 14%, transparent); }
-  .boost-active { display: flex; align-items: center; gap: 10px; }
+  button.override:hover { background: color-mix(in oklch, var(--primary-color) 14%, transparent); }
+  .override-active { display: flex; align-items: center; gap: 10px; }
   .countdown { font-variant-numeric: tabular-nums; font-weight: 600; }
   .window.open { color: var(--warning-color, #ffa600); }
   .window.closed { color: var(--secondary-text-color); }
@@ -349,7 +349,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   connectedCallback() {
-    // A local 1s timer drives only the boost countdown display; all data comes
+    // A local 1s timer drives only the override countdown display; all data comes
     // from hass push, so there is no polling.
     this._countdownTimer = setInterval(() => this._tickCountdown(), 1000);
   }
@@ -555,13 +555,13 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   // _renderEnhanced builds the daemon-driven controls from the companion: the
-  // boost row, the override-temp stepper, the window indicator, and the
+  // override row, the override-temp stepper, the window indicator, and the
   // schedule editor.
   _renderEnhanced(translate, companionAttrs) {
     const section = h("div", { class: "enhanced" });
-    section.append(this._renderBoost(translate, companionAttrs));
+    section.append(this._renderOverride(translate, companionAttrs));
     section.append(this._stepper(translate, {
-      label: translate("boost_target"),
+      label: translate("override_temp"),
       value: companionAttrs.override_temp,
       lo: Number(companionAttrs.min_temp),
       hi: Number(companionAttrs.max_temp),
@@ -581,24 +581,24 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return section;
   }
 
-  // _renderBoost shows the preset row, or — while an override is active — a live
-  // countdown plus a cancel button.
-  _renderBoost(translate, companionAttrs) {
+  // _renderOverride shows the preset row, or — while an override is active — a
+  // live countdown plus a cancel button.
+  _renderOverride(translate, companionAttrs) {
     const override = companionAttrs.override;
     if (override && override.active && override.expires) {
       const countdown = h("span", { class: "countdown", "data-expires": override.expires },
         formatCountdown(remainingSeconds(override.expires)));
-      const cancel = h("button", { class: "boost", type: "button",
-        onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_boost"));
+      const cancel = h("button", { class: "override", type: "button",
+        onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override"));
       return h("div", { class: "row" },
-        h("span", { class: "label" }, translate("boost")),
-        h("div", { class: "boost-active" }, countdown, cancel));
+        h("span", { class: "label" }, translate("override")),
+        h("div", { class: "override-active" }, countdown, cancel));
     }
     const presets = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
-    const buttons = presets.map((minutes) => h("button", { class: "boost", type: "button",
+    const buttons = presets.map((minutes) => h("button", { class: "override", type: "button",
       onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, "+" + minutes + "m"));
     return h("div", { class: "row" },
-      h("span", { class: "label" }, translate("boost")),
+      h("span", { class: "label" }, translate("override")),
       h("div", { class: "presets" }, ...buttons));
   }
 
@@ -668,7 +668,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return h("div", { class: "editor-row" }, daySelect, time, temp, remove);
   }
 
-  // _tickCountdown updates only the boost countdown text each second without a
+  // _tickCountdown updates only the override countdown text each second without a
   // full re-render; when it reaches zero it reconciles from the next push.
   _tickCountdown() {
     if (!this.shadowRoot) return;
@@ -793,6 +793,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "ha-lua-enhanced-climate-card",
   name: "ha-lua Enhanced Climate",
-  description: "Schedule, boost and window-aware control for a climate entity.",
+  description: "Schedule, override and window-aware control for a climate entity.",
   preview: true,
 });

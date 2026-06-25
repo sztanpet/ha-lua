@@ -37,7 +37,7 @@ const cardHarnessHTML = `<!doctype html>
 </body></html>`
 
 // statesEN is a JSON object literal (valid JS) of the stub hass states: a heat
-// climate plus its companion (controlled at 21, three boost presets, one bound
+// climate plus its companion (controlled at 21, three override presets, one bound
 // window, empty schedule).
 const cardStates = `{
   "climate.lr": { "entity_id": "climate.lr", "state": "heat", "attributes": {
@@ -70,7 +70,7 @@ func serveEnhancedCard(t *testing.T) *httptest.Server {
 }
 
 // TestEnhancedClimateCard drives the real card asset in a browser against a stub
-// hass: it asserts the rendered DOM, that a boost preset fires the right
+// hass: it asserts the rendered DOM, that an override preset fires the right
 // ha_lua_command and the target stepper the right climate service, that the card
 // is optimism-free, that it reconciles from a new hass, and that it localizes.
 func TestEnhancedClimateCard(t *testing.T) {
@@ -100,7 +100,7 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("first preset = %q, want +10m", firstPreset)
 	}
 
-	// Click the first boost preset -> override command for 10 minutes.
+	// Click the first override preset -> override command for 10 minutes.
 	var apiCalls string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__clickAll(".presets button", 0)`, &ok),
@@ -110,7 +110,7 @@ func TestEnhancedClimateCard(t *testing.T) {
 	}
 	for _, want := range []string{`"events/ha_lua_command"`, `"action":"override"`, `"minutes":10`, `"climate_entity":"climate.lr"`} {
 		if !strings.Contains(apiCalls, want) {
-			t.Errorf("boost preset did not fire %s; api calls = %s", want, apiCalls)
+			t.Errorf("override preset did not fire %s; api calls = %s", want, apiCalls)
 		}
 	}
 

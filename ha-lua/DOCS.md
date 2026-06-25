@@ -244,7 +244,7 @@ the hvac mode.
 defining zones in a file and editing them through an Ingress page, you drop a
 **dashboard card** onto a climate entity and configure everything from Home
 Assistant. The card provisions the controller, gives a 7-day schedule editor,
-timed boosts, and optional window cooperation, and replaces a native `tile`
+timed overrides, and optional window cooperation, and replaces a native `tile`
 climate card (current temperature, target, and HVAC mode).
 
 **Install the script** (copy from the read-only examples into your scripts dir):
@@ -268,7 +268,7 @@ HACS needed.
 type: custom:ha-lua-enhanced-climate-card
 climate_entity: climate.living_room           # required — the only must-have
 window_sensors: [binary_sensor.living_window] # optional, one or more
-presets: [10, 30, 60]                         # optional boost minutes
+presets: [10, 30, 60]                         # optional override minutes
 name: Living room                             # optional; else friendly_name
 ```
 
