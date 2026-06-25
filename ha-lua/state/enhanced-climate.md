@@ -16,6 +16,17 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## Unreleased (example script)
+- **UNRELEASED on main** (examples/enhanced_climate.lua, 2178b17): the script
+  was silent except the on_exception error file. Added info-level logging of
+  every HA interaction — set_temperature writes (only fire on change via the
+  should_write gate), each card command (configure/override/schedule/settings/
+  remove), manual-change detection, window-driven re-applies, load-time summary.
+  Per-minute companion refresh is debug; first create is info; a FAILED publish
+  now warns (was swallowed by non-raising set_state). REMINDER: examples are
+  reference-only — the user's live /config/ha-lua/scripts/enhanced_climate.lua
+  must be re-copied for this to take effect.
+
 ## Release log (card)
 - **v2.7.7**, card 0.3.15 — every temperature field (target stepper, override-temp
   stepper, schedule editor) steps by the device's target_temp_step, default 0.1
