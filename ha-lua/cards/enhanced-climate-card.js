@@ -16,7 +16,7 @@
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.11";
+const VERSION = "0.3.12";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -346,7 +346,6 @@ const STYLES = `
   .stepper .value { width: 64px; height: 42px; box-sizing: border-box; text-align: center;
     font-size: 1.15rem; padding: 6px 4px; border: 1px solid var(--divider-color, #ccc);
     border-radius: 8px; background: var(--card-background-color); color: var(--primary-text-color); }
-  .stepper .unit { color: var(--secondary-text-color); }
   .step { width: 40px; height: 42px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
     background: transparent; color: var(--primary-text-color); font-size: 1.3rem; cursor: pointer; }
   .step:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
@@ -612,7 +611,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       onclick: () => commit(base() + opts.step),
     }, "+");
 
-    return h("div", { class: "stepper" }, minus, input, h("span", { class: "unit" }, "°"), plus);
+    return h("div", { class: "stepper" }, minus, input, plus);
   }
 
   // _stepper wraps _stepperControl in a labelled row (used by the override-temp

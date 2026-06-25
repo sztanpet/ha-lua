@@ -11,8 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one row (wrapping only when there's no room); the current mode sits beside the
   current temperature in the title, split by a divider; the mode name shows as a
   tooltip rather than a visible label; an empty schedule collapses to a compact
-  marker with the explanation as a tooltip; and the override durations sit inline
-  under an "Override for:" heading, styled to match the mode buttons.
+  marker with the explanation as a tooltip; the override durations sit inline
+  under an "Override for:" heading, styled to match the mode buttons; and the
+  setpoint field no longer shows a stray ° next to the +/− buttons.
 
 ## 2.7.4 - 2026-06-25
 
