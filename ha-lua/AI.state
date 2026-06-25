@@ -253,13 +253,21 @@ preceded by a9205ca (examples: surface override_temp on the companion — the
 card's stepper needs it always, not just when an override is active). Commit 13
 (config editor getConfigElement, §10.6 — ha-entity-picker climate +
 ha-entities-picker window_sensors + presets/name inputs; dispatches
-config-changed; built once; NOT in the harness) DONE 2026-06-25 (b5bd0e4). NEXT =
-commit 14 (chromedp harness test, §10.8 — a static harness page that imports the
-card, stubs hass with a fake states map + callApi/callService spies, asserts
-rendered DOM/state, a service+command payload from a click, optimism-free
-reconcile, and a hu localization assertion; chromium IS present so it runs).
-Then M5 (docs/release: DOCS + CHANGELOG + minor version bump). Pre-M2-detail
-below kept for reference.
+config-changed; built once; NOT in the harness) DONE 2026-06-25 (b5bd0e4).
+Commit 14 (chromedp harness test, §10.8 — harness page serves the card from the
+cards embed FS + stub hass with callApi/callService spies; asserts render,
+boost-preset command, target-stepper service, optimism-free, reconcile, hu
+"Cél" label, schedule-save command) DONE 2026-06-25 (4292ab6), runs against the
+local chromium. M4 COMPLETE. NEXT = M5 (docs/release): DOCS.md (ha.set_state/
+remove_state/on_command, the card config + dashboard-resource install at
+/local/ha-lua/enhanced-climate-card.js type:module, the entity model, the
+restart caveat, **the card needs an admin HA user** to fire ha_lua_command via
+events/, and a recommended recorder exclude for
+sensor.ha_lua_enhanced_climate_*) + CHANGELOG.md (minor) + version bump in
+config.yaml. RELEASE GATE: the tag + push-to-two-remotes step (which triggers
+the GHCR image build) is OUTWARD-FACING — do NOT tag/push autonomously; do the
+docs/changelog/version commits, then ASK the user before tagging/pushing.
+Pre-M2-detail below kept for reference.
 - CARD TEST APPROACH for commit 14: the card is a CLASSIC script exposing
   HaLuaEnhancedClimateCard.pure as a static; load it in the harness page via
   <script src> and read customElements.get("ha-lua-enhanced-climate-card") +
