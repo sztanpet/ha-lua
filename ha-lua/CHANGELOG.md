@@ -4,6 +4,19 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.3 - 2026-06-25
+
+### Fixed
+- **Enhanced climate card was always full-width.** The card forced itself to the
+  full section width and ignored the per-card layout options; it now declares a
+  normal, resizable default span.
+
+### Changed
+- **Enhanced climate card override section.** Removed the redundant divider line
+  above the controls; the override duration buttons now always appear (falling
+  back to 10/30/60 minutes when the card configures no presets); and a new
+  custom-duration button lets you enter any minute count.
+
 ## 2.7.2 - 2026-06-25
 
 ### Changed
