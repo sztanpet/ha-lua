@@ -3,6 +3,7 @@ package ha
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // mockServer runs a minimal HA WebSocket server for testing.
@@ -331,6 +333,152 @@ func TestSendCommandWaitResult(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("error %q does not carry HA's message", err)
+	}
+}
+
+// The REST base is derived from the WS URL: ws→http / wss→https, the trailing
+// /websocket dropped, and the result normalised to end in /api so both the
+// Supervisor and a direct-HA URL resolve to the right place.
+func TestDeriveRESTURL(t *testing.T) {
+	cases := []struct{ ws, want string }{
+		{"ws://supervisor/core/websocket", "http://supervisor/core/api"},
+		{"ws://localhost:8123/api/websocket", "http://localhost:8123/api"},
+		{"wss://ha.example.com/api/websocket", "https://ha.example.com/api"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := deriveRESTURL(tc.ws); got != tc.want {
+			t.Errorf("deriveRESTURL(%q) = %q, want %q", tc.ws, got, tc.want)
+		}
+	}
+}
+
+// SetState must POST to /states/{id} with the bearer token and a JSON body,
+// returning created=true only on HTTP 201. (restURL is overridden to the test
+// server; New normally derives it from the WS URL.)
+func TestSetState(t *testing.T) {
+	var gotMethod, gotPath, gotAuth, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		if r.URL.Path == "/states/sensor.new" {
+			w.WriteHeader(http.StatusCreated)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("ws://x/api/websocket", "tok")
+	c.restURL = srv.URL
+	ctx := context.Background()
+
+	created, err := c.SetState(ctx, "sensor.existing", "21.5", jsontext.Value(`{"unit_of_measurement":"°C"}`))
+	if err != nil {
+		t.Fatalf("set existing: %v", err)
+	}
+	if created {
+		t.Error("updating an existing entity must report created=false")
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("method: got %q, want POST", gotMethod)
+	}
+	if gotPath != "/states/sensor.existing" {
+		t.Errorf("path: got %q", gotPath)
+	}
+	if gotAuth != "Bearer tok" {
+		t.Errorf("auth: got %q", gotAuth)
+	}
+	if !strings.Contains(gotBody, `"state":"21.5"`) || !strings.Contains(gotBody, "°C") {
+		t.Errorf("body: got %q", gotBody)
+	}
+
+	created, err = c.SetState(ctx, "sensor.new", "on", nil)
+	if err != nil {
+		t.Fatalf("set new: %v", err)
+	}
+	if !created {
+		t.Error("a freshly created entity (201) must report created=true")
+	}
+}
+
+// SetState surfaces an unexpected status as an error rather than silently
+// succeeding.
+func TestSetStateError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("ws://x/api/websocket", "tok")
+	c.restURL = srv.URL
+	if _, err := c.SetState(context.Background(), "sensor.x", "1", nil); err == nil {
+		t.Fatal("expected an error on a 401 response")
+	}
+}
+
+// RemoveState must DELETE /states/{id}; a 404 (already gone) is success, other
+// non-200 statuses are errors.
+func TestRemoveState(t *testing.T) {
+	var gotMethod, gotPath string
+	status := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		w.WriteHeader(status)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("ws://x/api/websocket", "tok")
+	c.restURL = srv.URL
+	ctx := context.Background()
+
+	if err := c.RemoveState(ctx, "sensor.x"); err != nil {
+		t.Fatalf("remove (200): %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/states/sensor.x" {
+		t.Errorf("got %s %s", gotMethod, gotPath)
+	}
+
+	status = http.StatusNotFound
+	if err := c.RemoveState(ctx, "sensor.gone"); err != nil {
+		t.Errorf("remove of an absent entity (404) must succeed, got %v", err)
+	}
+
+	status = http.StatusInternalServerError
+	if err := c.RemoveState(ctx, "sensor.x"); err == nil {
+		t.Error("expected an error on a 500 response")
+	}
+}
+
+// With no REST base (an empty WS URL), both calls error instead of hitting a
+// bogus endpoint.
+func TestRESTNotConfigured(t *testing.T) {
+	c := New("", "tok")
+	if _, err := c.SetState(context.Background(), "sensor.x", "1", nil); err == nil {
+		t.Error("set_state must error when no REST URL is configured")
+	}
+	if err := c.RemoveState(context.Background(), "sensor.x"); err == nil {
+		t.Error("remove_state must error when no REST URL is configured")
+	}
+}
+
+// A cancelled context aborts the request rather than blocking on a stuck server.
+func TestSetStateContextCancel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("ws://x/api/websocket", "tok")
+	c.restURL = srv.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.SetState(ctx, "sensor.x", "1", nil); err == nil {
+		t.Error("expected a context-cancelled error")
 	}
 }
 

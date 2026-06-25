@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -23,9 +24,18 @@ const readLimit = 64 << 20 // 64 MiB
 
 // Client connects to the HA WebSocket API. It handles auth, seeding, and
 // subscription management. Consumers receive events on the Events channel.
+// The same instance also drives the core REST API (SetState/RemoveState),
+// which shares the WS token.
 type Client struct {
 	url   string
 	token string
+
+	// restURL is the base of the core REST API (…/api), derived from the WS
+	// URL in New and used by SetState and RemoveState. Empty when no WS URL was
+	// given, in which case those calls return an error rather than hitting a
+	// bogus endpoint.
+	restURL    string
+	httpClient *http.Client
 
 	// msgID increases monotonically across reconnects. HA only requires
 	// IDs to increase within a connection, so never resetting it is both
@@ -59,14 +69,19 @@ type cmdResult struct {
 	errMsg  string
 }
 
-// New creates a Client. Call Start to begin connecting.
+// New creates a Client for the WebSocket endpoint url. The core REST API base
+// (used by SetState/RemoveState) is derived from url — the WS and REST
+// endpoints share a host and token but differ in scheme and path tail. token
+// authenticates both. Call Start to begin connecting.
 func New(url, token string) *Client {
 	return &Client{
-		url:     url,
-		token:   token,
-		Events:  make(chan Event, 256),
-		States:  make(chan []StateData, 1),
-		pending: make(map[int]chan cmdResult),
+		url:        url,
+		token:      token,
+		restURL:    deriveRESTURL(url),
+		httpClient: &http.Client{Timeout: restTimeout},
+		Events:     make(chan Event, 256),
+		States:     make(chan []StateData, 1),
+		pending:    make(map[int]chan cmdResult),
 	}
 }
 
