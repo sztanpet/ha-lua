@@ -17,8 +17,9 @@ adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
 ## Release log (card)
-- **UNRELEASED on main** (card 0.3.9 → 0.3.11), awaiting a release (would be
-  v2.7.5). Iterative card-layout polish:
+- **v2.7.5** (tag on 3bc05a4), card 0.3.9 → 0.3.12 — iterative card-layout polish
+  (0.3.12: dropped the stray ° span that sat between the setpoint input and the +
+  button):
   - 0.3.9: mode name is the button title (tooltip) + aria-label only, NOT a
     visible label (reverted the 0.3.8 visible label per user).
   - 0.3.10: target stepper + mode buttons share one wrapping row (labels

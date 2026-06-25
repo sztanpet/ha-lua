@@ -11,11 +11,11 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Enhanced-climate card layout polish. Released **v2.7.4** (card 0.3.8);
-**unreleased on main**: card 0.3.9–0.3.11 (mode-name-as-tooltip; target+mode on
-one row; current mode beside current temp with a divider; compact empty
-schedule; override durations inline under "Override for:" styled like the mode
-buttons). Full state + release log + build history: **`state/enhanced-climate.md`**.
+Enhanced-climate card layout polish, released **v2.7.5** (card 0.3.12):
+mode-name-as-tooltip; target+mode on one row; current mode beside current temp
+with a divider; compact empty schedule; override durations inline under
+"Override for:" styled like the mode buttons; dropped the stray ° beside the
+setpoint. Full state + release log + build history: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
