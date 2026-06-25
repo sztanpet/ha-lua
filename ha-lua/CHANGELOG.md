@@ -4,6 +4,14 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.7 - 2026-06-25
+
+### Fixed
+- **Enhanced climate card step sizes.** Every temperature field — the target
+  stepper, the override-temp stepper, and the schedule editor — now steps by the
+  climate device's `target_temp_step` (falling back to 0.1°), instead of the
+  override-temp being stuck at 0.5° and the editor at a fixed 0.1°.
+
 ## 2.7.6 - 2026-06-25
 
 ### Changed
