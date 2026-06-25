@@ -247,11 +247,9 @@ card into /config/www/ha-lua on boot):
   schedule in separate bordered groups; schedule shows today's periods inline
   (read-only, active highlighted) via new pure todayPeriods helper, edit still
   opens the 7-day editor. Harness test extended for mode buttons + today strip.
-STILL-OPEN USER ISSUE (not a diagnosed code bug): card stuck at "Setting up…" =
-companion sensor.ha_lua_enhanced_climate_<slug> never published. Most likely the
-example script wasn't copied into /config/ha-lua/scripts/ (examples/ is never
-loaded), or the HA user isn't admin (events API), or set_state errors (check
-enhanced-climate-errors.log). Awaiting the user's checks.
+RESOLVED (2026-06-25): the "Setting up…" report (companion sensor never
+published) was user error, not a code bug — the card works fine once the example
+is deployed correctly. No code change.
 
 PATCH v2.7.1 (2026-06-25): fix the enhanced-climate card config editor. HA sets
 an element's hass before setConfig, so the editor's _render ran with
