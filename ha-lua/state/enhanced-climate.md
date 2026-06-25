@@ -16,6 +16,19 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## Unreleased (card 0.3.16)
+- override + schedule sections are now <fieldset> with <legend> as the title
+  (legend rides the border → no separate heading row, saves vertical space).
+- override mirrors thermostat.html: duration buttons render "10m" (was "+10m"),
+  durations + the bare override-temp stepper share one wrapping .override-controls
+  row inside the fieldset; an active override shows countdown + "overriding to X°"
+  (new i18n overriding_to) + cancel. i18n override_for renamed back to override.
+- window-sensor picker fix: ha-entities-picker was wrapped in a <label> (invalid;
+  swallowed its add/remove clicks so selections never stuck) — now set .label and
+  append directly like the working climate picker.
+- removed dead _labelledStepper + .group-head/.head-title/.override-head CSS.
+- harness: preset label "10m", hu anchor on the override <legend> ("Felülbírálás").
+
 ## Unreleased (example script)
 - **UNRELEASED on main** (examples/enhanced_climate.lua, 2178b17): the script
   was silent except the on_exception error file. Added info-level logging of

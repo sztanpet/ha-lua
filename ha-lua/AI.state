@@ -11,12 +11,19 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Enhanced-climate. Card released **v2.7.7** (0.3.15: device-stepped temp inputs).
-**Unreleased on main**: examples/enhanced_climate.lua now logs every HA
-interaction at info (set_temperature, card commands, manual detection, window
-changes, startup; warns on failed companion publish). NOTE: examples are
-reference-only — the user must re-copy it into /config/ha-lua/scripts/. Full
-state + release log + build history: **`state/enhanced-climate.md`**.
+Multi-part batch (2026-06-25), unreleased on main: (1) cmd: daemon log bounded to
+5 MiB via new internal/logwriter (active + one .1 backup, total ≤ budget); (2)
+lua: per-script event buffer 64->256 (user asked "10" but that's BELOW the
+existing 64 — raised instead to cut drops; real cause is enhanced_climate's
+wildcard binary_sensor.*/climate.* subscriptions); (3) card 0.3.16: override +
+schedule are <fieldset>/<legend> (saves vertical space), override mirrors
+thermostat.html (durations "10m" not "+10m", countdown + "overriding to X°" +
+cancel), window-sensor picker fixed (was wrapped in a <label> that swallowed its
+clicks — now .label + direct append like the climate picker). valve_watch.lua is
+INDEPENDENT of thermostat.lua/enhanced_climate (only require"zones" + ha.every) —
+works as long as lib/zones.lua stays. NOT released yet. enhanced_climate.lua
+logging change still also needs re-copy into /config scripts. Card last RELEASED
+**v2.7.7** (0.3.15). Full card detail + release log: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

@@ -7,6 +7,18 @@ Status: **COMPLETE — milestones 1–12.** Released as add-on 1.0.0; the daemon
 been stable since. Later tracks (thermostat UI, fs plugin, bundled examples,
 enhanced climate) build on it — see their own state files.
 
+## Post-1.0 daemon changes (unreleased on main, 2026-06-25)
+- **Bounded daemon log** (internal/logwriter): ha-lua.log capped at 5 MiB total
+  (active file + one `.1` backup, each ≤ budget/2 so the sum stays under budget,
+  retaining the previous segment). main.openLogFile now returns logwriter.New.
+  The per-script ha.exceptions.log_file paths are still unbounded (separate, only
+  written on errors) — cap those too if it ever matters.
+- **Per-script event buffer 64 -> 256** (internal/lua/runner.go): wildcard
+  subscriptions (enhanced_climate's binary_sensor.*/climate.*) can overflow the
+  channel and drop events (Send warns "event channel full, dropping"). 256 matches
+  the upstream ha.Client.Events buffer. A buffer only defers drops under sustained
+  overload — a hot script ultimately needs a narrower subscription.
+
 ## Completed (commits on main)
 - `0740db9` scaffold — module, deps, Makefile, .golangci.yml, tools.go, benchmarks/
 - `647818b` M1 HA client — auth flow, reconnect with backoff, event stream (internal/ha)
