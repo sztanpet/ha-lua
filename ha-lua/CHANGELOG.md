@@ -4,6 +4,14 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.6 - 2026-06-25
+
+### Changed
+- **Enhanced climate card consistency.** Every button now shares one style, so
+  the schedule Edit button matches the rest; an empty schedule collapses to a
+  single heading line (with the explanation as a tooltip). Internal cleanup only
+  otherwise — no behaviour change.
+
 ## 2.7.5 - 2026-06-25
 
 ### Changed
