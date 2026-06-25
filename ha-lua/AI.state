@@ -232,6 +232,13 @@ Last updated: 2026-06-25
 
 
 ## Phase
+UNRELEASED on main (2026-06-25): card grid-sizing fix. The sections dashboard
+warned "This card does not fully support resizing yet…" because the element had
+only getCardSize; added getGridOptions (full-width default, min_columns 6, rows
+auto), card VERSION->0.3.2. User chose NOT to cut a release yet — fix sits on
+main awaiting a future v2.7.2 (or a later bundle). It only reaches a user's HA
+once an image ships and the daemon re-materializes the embedded card.
+
 PATCH v2.7.1 (2026-06-25): fix the enhanced-climate card config editor. HA sets
 an element's hass before setConfig, so the editor's _render ran with
 this._config undefined and threw "can't access property climate_entity" as a
