@@ -14,7 +14,7 @@
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -705,7 +705,9 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (!this._hass) return;
+    // HA sets hass before setConfig, so _render runs once with no config yet;
+    // wait until both arrive before touching this._config.
+    if (!this._hass || !this._config) return;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     // The pickers are live HA elements; rebuilding on every hass would tear down
     // a focused one, so build the form once.
