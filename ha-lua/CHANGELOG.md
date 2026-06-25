@@ -4,6 +4,23 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.2 - 2026-06-25
+
+### Changed
+- **Enhanced climate card UI.** HVAC mode is now a row of icon buttons like
+  Home Assistant's own climate card (was a dropdown); the override and schedule
+  controls sit in separate labelled sections; and the schedule shows today's
+  running periods inline with the active one highlighted, instead of only
+  appearing inside the editor. The timed hold is labelled **Override**
+  everywhere now (it was still called "Boost" on this card, out of step with the
+  rest of the project).
+
+### Fixed
+- **Enhanced climate card resizing.** The sections dashboard no longer warns
+  that the card "does not fully support resizing" — it declares its grid sizing.
+- **Enhanced climate card setpoint field.** The target / override number inputs
+  now match the height of their +/− buttons (they rendered shorter).
+
 ## 2.7.1 - 2026-06-25
 
 ### Fixed
