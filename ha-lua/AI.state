@@ -235,10 +235,18 @@ Last updated: 2026-06-25
 Enhanced-climate track IN PROGRESS (enhanced-climate-spec.md): M1 (generic
 transport — REST set/remove + ha.on_command + lib/card.lua) DONE 2026-06-25,
 unreleased. M2 IN PROGRESS: commit 4 (extract lib/control.lua, migrate
-thermostat.lua behavior-preserving) DONE 2026-06-25 (3e11155); NEXT = commit 5
-(enhanced_climate registry + configure/remove handlers), then 6 (control loop +
-bounds), 7 (multi-sensor window), 8 (companion publish). M3 (removal Ingress
+thermostat.lua behavior-preserving) DONE 2026-06-25 (3e11155); commit 5
+(enhanced_climate registry + configure/remove handlers) DONE 2026-06-25
+(f580b28); NEXT = commit 6 (control loop via lib/control + bounds clamp), then
+7 (multi-sensor window cooperation), 8 (companion publish). M3 (removal Ingress
 page), M4 (card JS), M5 (docs/release) pending.
+- enhanced_climate.lua: global registry under key "enhanced_climate:registry"
+  (map climate_entity -> {climate_entity, window_sensors, presets}); uses
+  lib/card.lua (card.on/configure/remove). configure idempotent via
+  config_equal. Test harness internal/lua/enhanced_climate_test.go: newEnhanced
+  Fixture loads the real script under a Supervisor, fireCommand dispatches
+  ha_lua_command via reg.Dispatch, waitRegistry polls global.Get. SetState/
+  RemoveState are no-op in the fixture until commit 8 needs to assert on them.
 Core daemon COMPLETE (milestones 1–12). Thermostat UI track COMPLETE
 (milestones 1–7, see thermostat-ui-spec.md). Filesystem plugin COMPLETE
 (see fs-plugin-spec.md). Bundled reference examples COMPLETE (see
