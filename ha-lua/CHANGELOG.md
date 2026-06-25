@@ -4,6 +4,15 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.1 - 2026-06-25
+
+### Fixed
+- **Enhanced climate card config editor.** Adding the card from the dashboard
+  picker raised "Configuration error: can't access property climate_entity,
+  this._config is undefined" instead of showing the entity-picker form. Home
+  Assistant assigns the editor's `hass` before its config, so the editor now
+  waits for both before rendering.
+
 ## 2.7.0 - 2026-06-25
 
 ### Added
