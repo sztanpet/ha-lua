@@ -232,6 +232,15 @@ Last updated: 2026-06-25
 
 
 ## Phase
+PATCH v2.7.4 RELEASED (2026-06-25): enhanced-climate-card native-look polish,
+tag v2.7.4 on release commit 674d002, pushed main + tag to both remotes (GHCR
+build). Card VERSION 0.3.8: default grid span 12 cols (was 6, still resizable);
+HVAC mode = rounded flex buttons with the mode name labelled under each icon
+(not bare icon circles); current temperature moved into the card title as a
+subtitle (own .current row dropped); title uses HA's exact .card-header CSS
+(--ha-card-header-* vars, --ha-font-size-2xl, --ha-font-weight-normal,
+-0.012em). Harness asserts the visible mode label.
+
 PATCH v2.7.3 RELEASED (2026-06-25): more enhanced-climate-card fixes, tag
 v2.7.3 on release commit 8f215e5, pushed main + tag to both remotes (GHCR
 build). Card VERSION 0.3.7. Contents:
