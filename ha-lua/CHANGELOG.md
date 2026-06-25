@@ -4,6 +4,16 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.7.4 - 2026-06-25
+
+### Changed
+- **Enhanced climate card now reads like a native Home Assistant card.** The
+  HVAC mode is a row of rounded buttons with the mode name labelled under each
+  icon (not bare icon circles); the current temperature sits in the card title
+  as a subtitle instead of its own row; the title uses Home Assistant's own
+  card-header typography; and the card defaults to a full 12-column span (still
+  resizable).
+
 ## 2.7.3 - 2026-06-25
 
 ### Fixed
