@@ -14,7 +14,7 @@
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -360,6 +360,18 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
   getCardSize() {
     return 5;
+  }
+
+  // getGridOptions declares sizing for the sections dashboard so HA stops
+  // warning that the card "does not fully support resizing". The body height
+  // varies (the schedule editor expands), so rows is auto; the card defaults to
+  // a full-width section span but can be shrunk to half.
+  getGridOptions() {
+    return {
+      columns: "full",
+      rows: "auto",
+      min_columns: 6,
+    };
   }
 
   static getStubConfig() {
