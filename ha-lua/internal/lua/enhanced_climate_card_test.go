@@ -204,6 +204,26 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("hu target label = %q, want Cél", label)
 	}
 
+	// Override durations are visible even when the card configured none (fallback
+	// presets), plus a custom-duration button.
+	noPresets := strings.Replace(cardStates, `"presets": [10, 30, 60]`, `"presets": []`, 1)
+	var presetCount int
+	var hasCustom bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+noPresets+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".presets .custom")`, &ok),
+		chromedp.Evaluate(`window.__card.shadowRoot.querySelectorAll(".presets button").length`, &presetCount),
+		chromedp.Evaluate(`!!window.__shadow(".presets .custom")`, &hasCustom),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !hasCustom {
+		t.Error("override has no custom-duration button")
+	}
+	if presetCount < 4 { // 3 fallback durations + custom
+		t.Errorf("default override presets = %d, want >= 4 (defaults + custom)", presetCount)
+	}
+
 	// Inline schedule: today's periods render read-only (two per day here)
 	// without opening the editor.
 	day := `[{"time":"06:00","temp":21},{"time":"22:00","temp":18}]`

@@ -14,7 +14,7 @@
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.6";
+const VERSION = "0.3.7";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -50,6 +50,8 @@ const MESSAGES = {
     "override": "Override",
     "override_temp": "Override target",
     "stop_override": "Stop",
+    "custom_minutes": "Custom minutes",
+    "custom_minutes_prompt": "Override for how many minutes?",
     "window": "Window",
     "window.open": "open",
     "window.closed": "closed",
@@ -99,6 +101,8 @@ const MESSAGES = {
     "override": "Felülbírálás",
     "override_temp": "Felülbírálás cél",
     "stop_override": "Leállítás",
+    "custom_minutes": "Egyéni időtartam",
+    "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
     "window": "Ablak",
     "window.open": "nyitva",
     "window.closed": "zárva",
@@ -164,6 +168,11 @@ const DAY_GROUPS = [
 
 // HVAC mode -> mdi icon, mirroring Home Assistant's own climate card so the
 // mode buttons read the same. Modes without an entry fall back to a text label.
+// Fallback override durations (minutes) shown when the card config sets no
+// presets, so the buttons are always there to tap. The daemon accepts any
+// 1..1440, so these are just suggestions.
+const DEFAULT_PRESETS = [10, 30, 60];
+
 const MODE_ICONS = {
   off: "mdi:power",
   heat: "mdi:fire",
@@ -341,8 +350,7 @@ const STYLES = `
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
   .mode-btn ha-icon { --mdc-icon-size: 22px; }
   .notice, .hint { color: var(--secondary-text-color); }
-  .enhanced { display: flex; flex-direction: column; gap: 12px;
-    border-top: 1px solid var(--divider-color, #ccc); padding-top: 12px; }
+  .enhanced { display: flex; flex-direction: column; gap: 12px; }
   .group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; padding: 10px 12px;
     display: flex; flex-direction: column; gap: 10px; }
   .group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -661,10 +669,22 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override"));
       return h("div", { class: "override-active" }, countdown, cancel);
     }
-    const presets = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
+    const configured = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
+    const presets = configured.length ? configured : DEFAULT_PRESETS;
     const buttons = presets.map((minutes) => h("button", { class: "override", type: "button",
       onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, "+" + minutes + "m"));
-    return h("div", { class: "presets" }, ...buttons);
+    // A custom-duration button: prompt for an arbitrary minute count.
+    const custom = h("button", {
+      class: "override custom", type: "button",
+      title: translate("custom_minutes"), "aria-label": translate("custom_minutes"),
+      onclick: () => {
+        const raw = window.prompt(translate("custom_minutes_prompt"), "45");
+        if (raw == null) return;
+        const minutes = parseInt(raw, 10);
+        if (Number.isFinite(minutes) && minutes > 0) this.fireCommand("override", { minutes });
+      },
+    }, "…");
+    return h("div", { class: "presets" }, ...buttons, custom);
   }
 
   // _renderScheduleGroup shows today's running schedule inline (like
