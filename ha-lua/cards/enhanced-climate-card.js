@@ -9,14 +9,14 @@
 // Add it as a dashboard resource of type "module" pointing at
 //   /local/ha-lua/enhanced-climate-card.js
 //
-// Covered here: lifecycle, header (name + current temp · mode, held badge),
-// the climate-native controls (target stepper + HVAC mode icon buttons on one
-// row),
-// and the enhanced controls (override
-// presets + live countdown + cancel, override-temp stepper, window indicator,
-// 7-day schedule editor), all with i18n. The config editor follows.
+// Covered here: lifecycle, header (name + current temp · mode, held badge), the
+// climate-native controls (target stepper + HVAC mode icon buttons on one row),
+// and the enhanced controls (override presets + live countdown + cancel,
+// override-temp stepper, window indicator, 7-day schedule editor), all with
+// i18n. Every button shares the one `.btn` style (see STYLES). The config editor
+// follows.
 
-const VERSION = "0.3.12";
+const VERSION = "0.3.13";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -168,13 +168,13 @@ const DAY_GROUPS = [
   { value: "6", days: [6] },
 ];
 
-// HVAC mode -> mdi icon, mirroring Home Assistant's own climate card so the
-// mode buttons read the same. Modes without an entry fall back to a text label.
 // Fallback override durations (minutes) shown when the card config sets no
 // presets, so the buttons are always there to tap. The daemon accepts any
 // 1..1440, so these are just suggestions.
 const DEFAULT_PRESETS = [10, 30, 60];
 
+// HVAC mode -> mdi icon, mirroring Home Assistant's own climate card so the
+// mode buttons read the same. Modes without an entry fall back to a text label.
 const MODE_ICONS = {
   off: "mdi:power",
   heat: "mdi:fire",
@@ -343,43 +343,45 @@ const STYLES = `
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .label { color: var(--secondary-text-color); }
   .stepper { display: flex; align-items: center; gap: 6px; }
-  .stepper .value { width: 64px; height: 42px; box-sizing: border-box; text-align: center;
+  .stepper .value { width: 64px; height: 44px; box-sizing: border-box; text-align: center;
     font-size: 1.15rem; padding: 6px 4px; border: 1px solid var(--divider-color, #ccc);
-    border-radius: 8px; background: var(--card-background-color); color: var(--primary-text-color); }
-  .step { width: 40px; height: 42px; border-radius: 8px; border: 1px solid var(--divider-color, #ccc);
-    background: transparent; color: var(--primary-text-color); font-size: 1.3rem; cursor: pointer; }
-  .step:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
+    border-radius: 12px; background: var(--card-background-color); color: var(--primary-text-color); }
   .climate-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
   .modes { display: flex; gap: 6px; flex-wrap: wrap; }
-  .mode-btn, button.override { min-width: 44px; height: 44px; padding: 0 10px; display: inline-flex;
-    align-items: center; justify-content: center; border: 1px solid var(--divider-color, #ccc);
-    border-radius: 12px; background: transparent; color: var(--secondary-text-color); cursor: pointer;
-    font: inherit; }
-  .mode-btn:hover, button.override:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
-  .mode-btn.active { background: var(--mode-color, var(--primary-color));
+
+  /* One button look for every control; modifiers only tweak it. */
+  .btn { min-width: 44px; height: 44px; padding: 0 12px; display: inline-flex; align-items: center;
+    justify-content: center; gap: 6px; border: 1px solid var(--divider-color, #ccc); border-radius: 12px;
+    background: transparent; color: var(--primary-text-color); font: inherit; cursor: pointer; }
+  .btn:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
+  .btn.icon { width: 44px; padding: 0; color: var(--secondary-text-color); }
+  .btn.icon ha-icon { --mdc-icon-size: 24px; }
+  .btn.step { width: 44px; padding: 0; font-size: 1.3rem; }
+  .btn.active { background: var(--mode-color, var(--primary-color));
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
-  .mode-btn ha-icon { --mdc-icon-size: 24px; }
+  .btn.primary { background: var(--primary-color); border-color: var(--primary-color);
+    color: var(--text-primary-color, #fff); }
+  .btn.primary:hover { background: color-mix(in oklch, var(--primary-color) 88%, black); }
+  .btn.ghost { border-style: dashed; color: var(--secondary-text-color); align-self: flex-start; }
+  .btn.link { border: none; min-width: 0; width: auto; height: auto; padding: 6px; }
+  .btn.danger { color: var(--error-color, #db4437); }
+
   .notice, .hint { color: var(--secondary-text-color); }
   .enhanced { display: flex; flex-direction: column; gap: 12px; }
   .group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; padding: 10px 12px;
     display: flex; flex-direction: column; gap: 10px; }
-  .group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  .group-head, .override-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+  .group-head { justify-content: space-between; }
+  .head-title { font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
     color: var(--secondary-text-color); }
   .today { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .92rem;
     color: var(--secondary-text-color); }
   .today .period.now { color: var(--primary-color); font-weight: 700; }
-  .today.muted { font-style: italic; }
-  .override-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
-  .head-title { font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--secondary-text-color); }
   .presets { display: flex; gap: 6px; flex-wrap: wrap; }
   .override-active { display: flex; align-items: center; gap: 10px; }
   .countdown { font-variant-numeric: tabular-nums; font-weight: 600; }
   .window.open { color: var(--warning-color, #ffa600); }
   .window.closed { color: var(--secondary-text-color); }
-  button.edit-schedule { border: 1px solid var(--divider-color, #ccc); background: transparent;
-    color: var(--primary-text-color); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
   .editor { display: flex; flex-direction: column; gap: 8px; }
   .editor-row { display: flex; align-items: center; gap: 6px; }
   .editor-row select, .editor-row input { padding: 6px; border-radius: 6px;
@@ -388,15 +390,7 @@ const STYLES = `
   .editor-row select { flex: 1; min-width: 0; }
   .editor-row input[type="time"] { width: 88px; }
   .editor-row input[type="number"] { width: 64px; }
-  button.rm { border: none; background: transparent; color: var(--error-color, #db4437);
-    cursor: pointer; font-size: 1rem; }
-  button.add { align-self: flex-start; border: 1px dashed var(--divider-color, #ccc); background: transparent;
-    color: var(--primary-text-color); border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
   .editor-actions { display: flex; gap: 8px; }
-  button.save { border: none; background: var(--primary-color); color: white; border-radius: 8px;
-    padding: 6px 14px; font: inherit; cursor: pointer; }
-  button.cancel { border: 1px solid var(--divider-color, #ccc); background: transparent;
-    color: var(--primary-text-color); border-radius: 8px; padding: 6px 14px; font: inherit; cursor: pointer; }
 `;
 
 class HaLuaEnhancedClimateCard extends HTMLElement {
@@ -601,12 +595,12 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       },
     });
     const minus = h("button", {
-      class: "step", type: "button", "aria-label": translate("decrease"),
+      class: "btn step", type: "button", "aria-label": translate("decrease"),
       onmousedown: (ev) => ev.preventDefault(),
       onclick: () => commit(base() - opts.step),
     }, "−");
     const plus = h("button", {
-      class: "step", type: "button", "aria-label": translate("increase"),
+      class: "btn step", type: "button", "aria-label": translate("increase"),
       onmousedown: (ev) => ev.preventDefault(),
       onclick: () => commit(base() + opts.step),
     }, "+");
@@ -634,7 +628,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       const active = hvacMode === mode;
       const label = translate("mode." + hvacMode, null, hvacMode);
       const button = h("button", {
-        class: "mode-btn" + (active ? " active" : ""),
+        class: "btn icon mode-btn" + (active ? " active" : ""),
         type: "button",
         title: label,
         "aria-label": label,
@@ -694,17 +688,17 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     if (override && override.active && override.expires) {
       const countdown = h("span", { class: "countdown", "data-expires": override.expires },
         formatCountdown(remainingSeconds(override.expires)));
-      const cancel = h("button", { class: "override", type: "button",
+      const cancel = h("button", { class: "btn", type: "button",
         onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override"));
       return h("div", { class: "override-active" }, countdown, cancel);
     }
     const configured = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
     const presets = configured.length ? configured : DEFAULT_PRESETS;
-    const buttons = presets.map((minutes) => h("button", { class: "override", type: "button",
+    const buttons = presets.map((minutes) => h("button", { class: "btn", type: "button",
       onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, "+" + minutes + "m"));
     // A custom-duration button: prompt for an arbitrary minute count.
     const custom = h("button", {
-      class: "override custom", type: "button",
+      class: "btn custom", type: "button",
       title: translate("custom_minutes"), "aria-label": translate("custom_minutes"),
       onclick: () => {
         const raw = window.prompt(translate("custom_minutes_prompt"), "45");
@@ -718,25 +712,26 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
   // _renderScheduleGroup shows today's running schedule inline (like
   // thermostat.html) with the active period highlighted, an Edit button in the
-  // heading, and the full editor below once opened.
+  // heading, and the full editor below once opened. With no schedule set the
+  // group stays a single heading line — the "no schedule set" text becomes the
+  // heading's tooltip rather than an extra row.
   _renderScheduleGroup(translate, companionAttrs) {
+    const open = this._editorOpen;
+    const { periods, nowIndex } = open
+      ? { periods: [], nowIndex: -1 }
+      : todayPeriods(companionAttrs.schedule || {}, new Date());
+    const empty = !open && periods.length === 0;
+
     const group = h("div", { class: "group" },
       h("div", { class: "group-head" },
-        h("span", null, translate("schedule")),
-        h("button", { class: "edit-schedule", type: "button",
+        h("span", { class: "head-title", title: empty ? translate("no_schedule") : null },
+          translate("schedule")),
+        h("button", { class: "btn edit-schedule", type: "button",
           onclick: () => this._openEditor(companionAttrs) }, translate("edit_schedule"))));
 
-    if (this._editorOpen) {
+    if (open) {
       group.append(this._renderEditor(translate));
-      return group;
-    }
-
-    const { periods, nowIndex } = todayPeriods(companionAttrs.schedule || {}, new Date());
-    if (periods.length === 0) {
-      // Empty: a compact dash carrying the explanation as a tooltip, so it
-      // doesn't take a whole "no schedule set" line.
-      group.append(h("div", { class: "today muted", title: translate("no_schedule") }, "—"));
-    } else {
+    } else if (!empty) {
       group.append(h("div", { class: "today" }, ...periods.map((period, index) =>
         h("span", {
           class: "period" + (index === nowIndex ? " now" : ""),
@@ -763,16 +758,16 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const [lo, hi] = this._editorBounds;
     const editor = h("div", { class: "editor" });
     entries.forEach((entry, index) => editor.append(this._editorRow(translate, entries, index, lo, hi)));
-    editor.append(h("button", { class: "add", type: "button", onclick: () => {
+    editor.append(h("button", { class: "btn ghost add", type: "button", onclick: () => {
       entries.push({ group: "weekdays", time: "07:00", temp: clampNumber(21, lo, hi) });
       this._renderNow();
     } }, translate("add_entry")));
     editor.append(h("div", { class: "editor-actions" },
-      h("button", { class: "save", type: "button", onclick: () => {
+      h("button", { class: "btn primary save", type: "button", onclick: () => {
         this.fireCommand("schedule", { schedule: scheduleFromEntries(entries) });
         this._closeEditor();
       } }, translate("save")),
-      h("button", { class: "cancel", type: "button", onclick: () => this._closeEditor() }, translate("cancel"))));
+      h("button", { class: "btn cancel", type: "button", onclick: () => this._closeEditor() }, translate("cancel"))));
     return editor;
   }
 
@@ -797,7 +792,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       value: String(entry.temp),
       onchange: (ev) => { entry.temp = clampNumber(Number(ev.target.value), lo, hi); ev.target.value = String(entry.temp); },
     });
-    const remove = h("button", { class: "rm", type: "button",
+    const remove = h("button", { class: "btn link danger rm", type: "button",
       onclick: () => { entries.splice(index, 1); this._renderNow(); } }, "✕");
     return h("div", { class: "editor-row" }, daySelect, time, temp, remove);
   }
