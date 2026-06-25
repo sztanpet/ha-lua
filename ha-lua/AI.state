@@ -11,10 +11,9 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Enhanced-climate card native-look polish, released **v2.7.4** (card VERSION
-0.3.8): 12-col default span, HA-style labelled mode buttons, current temp in the
-title, HA card-header typography. Full state + release log + build history:
-**`state/enhanced-climate.md`**.
+Enhanced-climate card. Released **v2.7.4** (card 0.3.8); **unreleased on main**:
+card 0.3.9 moves the mode name to the button tooltip/aria-label (not a visible
+label). Full state + release log + build history: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

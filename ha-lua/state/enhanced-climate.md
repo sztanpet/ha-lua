@@ -17,6 +17,10 @@ adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
 ## Release log (card)
+- **UNRELEASED on main** (card 0.3.9): mode name moved from a visible per-button
+  label (briefly added in 0.3.8) to the button title (tooltip) + aria-label only
+  — the icon stays clean, hover/screen-reader still names it. Harness asserts the
+  title attribute. Awaiting a release (would be v2.7.5).
 - **v2.7.4** (674d002): native-look polish, card 0.3.8 — default grid span 12
   cols (was 6, still resizable); HVAC mode = rounded flex buttons with the mode
   name labelled under each icon (not bare circles); current temperature moved
