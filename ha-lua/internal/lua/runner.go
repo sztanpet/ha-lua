@@ -71,7 +71,7 @@ func NewRunner(scriptID, scriptDir string, root *os.Root, tracker *state.Tracker
 		scriptID:  scriptID,
 		scriptDir: scriptDir,
 		root:      root,
-		ch:        make(chan Event, 64),
+		ch:        make(chan Event, 256),
 		reqCh:     make(chan *request),
 		LoadedCh:  make(chan struct{}),
 		timerFns:  make(map[string]*lua.LFunction),
