@@ -70,6 +70,10 @@ const MESSAGES = {
     "day.4": "Friday",
     "day.5": "Saturday",
     "day.6": "Sunday",
+    "editor.climate": "Climate entity (required)",
+    "editor.window_sensors": "Window sensors",
+    "editor.presets": "Boost presets (minutes)",
+    "editor.name": "Name",
   },
   hu: {
     "status.on": "on", // the English word, as in the Ingress UI
@@ -113,6 +117,10 @@ const MESSAGES = {
     "day.4": "Péntek",
     "day.5": "Szombat",
     "day.6": "Vasárnap",
+    "editor.climate": "Klíma entitás (kötelező)",
+    "editor.window_sensors": "Ablakérzékelők",
+    "editor.presets": "Túlfűtés gombok (perc)",
+    "editor.name": "Név",
   },
 };
 
@@ -356,6 +364,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
   static getStubConfig() {
     return { climate_entity: "" };
+  }
+
+  static getConfigElement() {
+    return document.createElement("ha-lua-enhanced-climate-card-editor");
   }
 
   _maybeConfigure() {
@@ -662,7 +674,106 @@ HaLuaEnhancedClimateCard.pure = {
   makeTranslator, MESSAGES, DAY_GROUPS,
 };
 
+// ---------------------------------------------------------------------------
+// Config editor (§10.6). Uses HA's own ha-entity-picker / ha-entities-picker,
+// which are undocumented frontend internals — this element works only inside a
+// live HA frontend and may need adjusting across HA releases. It is NOT covered
+// by the chromedp harness (which has no HA frontend). The only required field is
+// the climate entity; everything else is optional.
+// ---------------------------------------------------------------------------
+
+class HaLuaEnhancedClimateCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _emit() {
+    this.dispatchEvent(new CustomEvent("config-changed", {
+      detail: { config: this._config }, bubbles: true, composed: true,
+    }));
+  }
+
+  _update(patch) {
+    this._config = Object.assign({}, this._config, patch);
+    this._emit();
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    // The pickers are live HA elements; rebuilding on every hass would tear down
+    // a focused one, so build the form once.
+    if (this._built) return;
+    this._built = true;
+
+    const translate = makeTranslator(this._hass.language);
+    const style = document.createElement("style");
+    style.textContent = `
+      .form { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
+      label { display: flex; flex-direction: column; gap: 4px;
+        color: var(--secondary-text-color); font-size: .85rem; }
+      input { padding: 8px; border-radius: 6px; border: 1px solid var(--divider-color, #ccc);
+        background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
+    `;
+    const form = h("div", { class: "form" });
+
+    const climatePicker = document.createElement("ha-entity-picker");
+    climatePicker.hass = this._hass;
+    climatePicker.value = this._config.climate_entity || "";
+    climatePicker.includeDomains = ["climate"];
+    climatePicker.label = translate("editor.climate");
+    climatePicker.required = true;
+    climatePicker.addEventListener("value-changed", (ev) => this._update({ climate_entity: ev.detail.value }));
+    form.append(climatePicker);
+
+    const windowPicker = document.createElement("ha-entities-picker");
+    windowPicker.hass = this._hass;
+    windowPicker.value = this._config.window_sensors || [];
+    windowPicker.includeDomains = ["binary_sensor"];
+    windowPicker.addEventListener("value-changed", (ev) => this._update({ window_sensors: ev.detail.value }));
+    form.append(h("label", {}, translate("editor.window_sensors"), windowPicker));
+
+    const presetsInput = h("input", {
+      type: "text", inputmode: "numeric",
+      value: (this._config.presets || []).join(", "),
+      placeholder: "10, 30, 60",
+      onchange: (ev) => {
+        const presets = ev.target.value.split(",")
+          .map((part) => Number(part.trim()))
+          .filter((minutes) => Number.isFinite(minutes) && minutes > 0);
+        this._update({ presets });
+      },
+    });
+    form.append(h("label", {}, translate("editor.presets"), presetsInput));
+
+    const nameInput = h("input", {
+      type: "text",
+      value: this._config.name || "",
+      onchange: (ev) => {
+        const name = ev.target.value.trim();
+        if (name) {
+          this._update({ name });
+        } else {
+          delete this._config.name;
+          this._emit();
+        }
+      },
+    });
+    form.append(h("label", {}, translate("editor.name"), nameInput));
+
+    this.shadowRoot.innerHTML = "";
+    this.shadowRoot.append(style, form);
+  }
+}
+
 customElements.define("ha-lua-enhanced-climate-card", HaLuaEnhancedClimateCard);
+customElements.define("ha-lua-enhanced-climate-card-editor", HaLuaEnhancedClimateCardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
