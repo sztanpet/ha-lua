@@ -134,15 +134,16 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if modeBtns != 2 {
 		t.Errorf("mode buttons = %d, want 2 (off, heat)", modeBtns)
 	}
-	// Each mode button carries a visible text label, not just an icon.
-	var modeLabel string
+	// Each mode button names the mode via its title (tooltip) / aria-label, not
+	// visible text.
+	var modeTitle string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`window.__text(".modes .mode-btn .mode-label")`, &modeLabel),
+		chromedp.Evaluate(`window.__shadow(".modes .mode-btn").getAttribute("title")`, &modeTitle),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if modeLabel != "Off" {
-		t.Errorf("first mode label = %q, want Off", modeLabel)
+	if modeTitle != "Off" {
+		t.Errorf("first mode button title = %q, want Off", modeTitle)
 	}
 	var modeCalls string
 	if err := chromedp.Run(ctx,

@@ -10,12 +10,12 @@
 //   /local/ha-lua/enhanced-climate-card.js
 //
 // Covered here: lifecycle, header (name + current temp, status + held badges),
-// the climate-native controls (target stepper + labelled HVAC mode buttons),
+// the climate-native controls (target stepper + HVAC mode icon buttons),
 // and the enhanced controls (override
 // presets + live countdown + cancel, override-temp stepper, window indicator,
 // 7-day schedule editor), all with i18n. The config editor follows.
 
-const VERSION = "0.3.8";
+const VERSION = "0.3.9";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -356,7 +356,6 @@ const STYLES = `
   .mode-btn.active { background: var(--mode-color, var(--primary-color));
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
   .mode-btn ha-icon { --mdc-icon-size: 24px; }
-  .mode-btn .mode-label { font-size: .74rem; line-height: 1; }
   .notice, .hint { color: var(--secondary-text-color); }
   .enhanced { display: flex; flex-direction: column; gap: 12px; }
   .group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; padding: 10px 12px;
@@ -607,9 +606,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       h("div", { class: "stepper" }, minus, input, h("span", { class: "unit" }, "°"), plus));
   }
 
-  // _renderMode draws the HVAC modes as a row of round icon buttons (like HA's
+  // _renderMode draws the HVAC modes as a row of rounded icon buttons (like HA's
   // own climate card) rather than a dropdown; the active mode is filled with its
-  // state colour. Modes without a known icon fall back to their translated name.
+  // state colour. The mode name is the button's title/aria-label (tooltip + screen
+  // reader), not visible text. Modes without a known icon fall back to the name.
   _renderMode(translate, attrs, mode) {
     const modes = Array.isArray(attrs.hvac_modes) ? attrs.hvac_modes : [];
     if (modes.length === 0) return h("span", {});
@@ -629,10 +629,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         const haIcon = document.createElement("ha-icon");
         haIcon.setAttribute("icon", icon);
         button.append(haIcon);
+      } else {
+        // No known icon: fall back to the text so the button isn't empty.
+        button.append(label);
       }
-      // Always show the label under the icon so the mode is named, not guessed
-      // from a glyph (also the only content when there is no icon).
-      button.append(h("span", { class: "mode-label" }, label));
       return button;
     });
     return h("div", { class: "row" },
