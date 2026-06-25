@@ -154,6 +154,12 @@ tick / every mutation:
   `override` (`{active, expires, temp}`), `manual` (`{active}`),
   `window` (`{sensor, open}`), `presets`, `min_temp`, `max_temp`, `controlled`,
   plus `unit_of_measurement:"°C"`, `device_class:temperature`, `icon:mdi:thermostat`.
+- one subtle removal-pointer attribute, e.g.
+  `removal: "Deleting the card keeps this running — remove it in the ha-lua panel"`,
+  so a user who clicks through to the entity's **more-info** screen and wonders
+  "how do I get rid of this?" finds the answer. Kept to a single attribute line:
+  this is a rare action (§8), not a prominent control, so it stays understated
+  rather than a banner or a custom more-info component.
 
 **Restart transience:** REST-set states aren't integration-backed, so an HA
 restart drops them; the ≤1-min tick + reconnect-reload re-publish, so they
@@ -190,14 +196,30 @@ Today these come from static `lib/zones.lua`; they now come from the store.
 This is **BREAKING** for anyone running the example as-is (zones.lua goes away) →
 **major** version bump (release process §SemVer).
 
-## 8. Ingress UI alignment
+## 8. Lifecycle & removal (Ingress UI)
 
-The Ingress UI already edits store-backed schedules; it now also reads the
-dynamic registry (enhanced climates appear as cards provision them). It should
-gain an **add** (pick a climate entity) and **remove** flow so users who don't
-use the dashboard card, and orphan cleanup, are both covered (a card removed from
-a dashboard can't send `remove`, so the entry lingers until removed here). Shares
-the same store + mutators as the command handlers.
+An enhanced climate is **persistent config**, like the old `zones.lua` entry — it
+outlives any card. Provisioning is the idempotent `configure` (card on load);
+**removal is explicit, in the Ingress UI**, which lists every enhanced climate
+(reads the registry) with a remove button → fires the same `remove` handler.
+That one place covers both deliberate teardown and orphans (a card deleted from a
+dashboard can't send `remove`, so its entry lingers until removed here). The
+Ingress UI already edits store-backed schedules and shares the same store +
+mutators as the command handlers.
+
+Removal is deliberately **not** automatic. A card heartbeat / TTL was rejected: a
+Lovelace card's JS only runs while its dashboard view is open, so "no keepalive
+for N days" measures whether someone is *looking*, not whether the config is
+still wanted — a dashboard left unopened (phone-only control, a vacation house)
+would get its schedule silently reaped. Reading the Lovelace config to reconcile
+which cards exist couples the daemon to frontend internals and can't see
+YAML-mode dashboards. One explicit removal surface is simpler and has no
+silent-failure mode.
+
+Because deleting a dashboard card therefore does *not* remove the enhanced
+climate, the companion entity carries a subtle pointer (§6) to where removal
+lives, so the answer is discoverable on the entity's more-info screen without a
+prominent control for a rarely-used action.
 
 ## 9. Card interface (`custom:ha-lua-thermostat-card`, separate deliverable)
 
@@ -268,7 +290,5 @@ bold **BREAKING** lead + **major** version bump.
 
 ## 12. Open items
 
-- **Orphan entries** — a card deleted from a dashboard leaves its enhanced
-  climate; cleanup is via the Ingress UI (§8) or a future TTL. Acceptable for v1.
 - **Multiple cards, one climate entity** — idempotent `configure` makes this
   safe; last writer of `window_sensor`/`presets` wins (cosmetic).
