@@ -238,9 +238,14 @@ unreleased. M2 (shared lib/control + the new enhanced_climate.lua example)
 DONE 2026-06-25, commits 4-8 (3e11155, f580b28, 747aae4, f1e274e, ee9d2e9):
 control loop + bounds + manual detection + window cooperation (frost-temp pause)
 + companion sensor publishing, all driven by ha_lua_command via lib/card.lua,
-with Supervisor-driven runner tests. NEXT = M3 (enhanced_climate Ingress removal
-page — a small page listing the registry with a remove button, §8), then M4
-(card JS, §10), M5 (docs/release). Pre-M2-detail below kept for reference.
+with Supervisor-driven runner tests. M3 (enhanced_climate Ingress removal page —
+examples/enhanced_climate.html served at GET /, GET /api/list + POST /api/remove,
+shared remove_climate()) DONE 2026-06-25 (674fcea). NEXT = M4 (card JS, §10:
+commit 10 config materialize CardsDir into /config/www/ha-lua [small Go change];
+11 render+climate-native controls+i18n; 12 boost+override-temp+schedule editor;
+13 config editor getConfigElement; 14 chromedp harness test). Then M5
+(docs/release: DOCS + CHANGELOG + minor version bump). Pre-M2-detail below kept
+for reference.
 M2 (older note): commit 4 (extract lib/control.lua, migrate
 thermostat.lua behavior-preserving) DONE 2026-06-25 (3e11155); commit 5
 (enhanced_climate registry + configure/remove handlers) DONE 2026-06-25
