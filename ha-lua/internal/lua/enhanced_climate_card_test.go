@@ -98,8 +98,8 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if target != "20" {
 		t.Errorf("target value = %q, want 20", target)
 	}
-	if firstPreset != "+10m" {
-		t.Errorf("first preset = %q, want +10m", firstPreset)
+	if firstPreset != "10m" {
+		t.Errorf("first preset = %q, want 10m (no + sign)", firstPreset)
 	}
 
 	// Both steppers inherit the device's target_temp_step (0.5 in the seed); the
@@ -214,17 +214,17 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Localize: Hungarian translates the override-temp label ("Felülbírálás cél").
+	// Localize: Hungarian translates the override fieldset legend ("Felülbírálás").
 	var label string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__apply("hu", `+cardStates+`)`, &ok),
-		chromedp.Poll(`window.__text(".row .label") === "Felülbírálás cél"`, &ok),
-		chromedp.Evaluate(`window.__text(".row .label")`, &label),
+		chromedp.Poll(`window.__text("legend") === "Felülbírálás"`, &ok),
+		chromedp.Evaluate(`window.__text("legend")`, &label),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if label != "Felülbírálás cél" {
-		t.Errorf("hu override-temp label = %q, want Felülbírálás cél", label)
+	if label != "Felülbírálás" {
+		t.Errorf("hu override legend = %q, want Felülbírálás", label)
 	}
 
 	// Override durations are visible even when the card configured none (fallback

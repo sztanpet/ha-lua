@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.15";
+const VERSION = "0.3.16";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -49,7 +49,8 @@ const MESSAGES = {
     "mode.heat_cool": "Heat / Cool",
     "mode.dry": "Dry",
     "mode.fan_only": "Fan",
-    "override_for": "Override for:",
+    "override": "Override",
+    "overriding_to": "overriding to {temp}°",
     "override_temp": "Override target",
     "stop_override": "Stop",
     "custom_minutes": "Custom minutes",
@@ -100,7 +101,8 @@ const MESSAGES = {
     "mode.heat_cool": "Fűtés / Hűtés",
     "mode.dry": "Párátlanítás",
     "mode.fan_only": "Ventilátor",
-    "override_for": "Felülbírálás:",
+    "override": "Felülbírálás",
+    "overriding_to": "felülbírálás {temp}°-ra",
     "override_temp": "Felülbírálás cél",
     "stop_override": "Leállítás",
     "custom_minutes": "Egyéni időtartam",
@@ -365,17 +367,20 @@ const STYLES = `
 
   .notice, .hint { color: var(--secondary-text-color); }
   .enhanced { display: flex; flex-direction: column; gap: 12px; }
-  .group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; padding: 10px 12px;
-    display: flex; flex-direction: column; gap: 10px; }
-  .group-head, .override-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
-  .group-head { justify-content: space-between; }
-  .head-title { font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--secondary-text-color); }
+  /* Each section is a fieldset; its legend rides the border as the title, which
+     saves the whole height of a separate heading row. */
+  fieldset.group { border: 1px solid var(--divider-color, #ccc); border-radius: 10px; margin: 0;
+    padding: 4px 12px 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  fieldset.group legend { padding: 0 6px; font-size: .78rem; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--secondary-text-color); }
+  .override-controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+  .overriding { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .sched-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .today { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .92rem;
     color: var(--secondary-text-color); }
+  .today.muted { font-style: italic; }
   .today .period.now { color: var(--primary-color); font-weight: 700; }
   .presets { display: flex; gap: 6px; flex-wrap: wrap; }
-  .override-active { display: flex; align-items: center; gap: 10px; }
   .countdown { font-variant-numeric: tabular-nums; font-weight: 600; }
   .window.open { color: var(--warning-color, #ffa600); }
   .window.closed { color: var(--secondary-text-color); }
@@ -608,14 +613,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return h("div", { class: "stepper" }, minus, input, plus);
   }
 
-  // _labelledStepper is a stepper preceded by its label, as a justified row
-  // (used by the override-temp control, which keeps a visible label).
-  _labelledStepper(translate, opts) {
-    return h("div", { class: "row" },
-      h("span", { class: "label" }, opts.label),
-      this._stepperControl(translate, opts));
-  }
-
   // _renderMode draws the HVAC modes as rounded icon buttons (like HA's own
   // climate card) rather than a dropdown; the active mode is filled with its
   // state colour. The mode name is the button's title/aria-label (tooltip + screen
@@ -641,23 +638,24 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   // _renderEnhanced builds the daemon-driven controls from the companion as
-  // distinct bordered groups: the override group (presets/countdown +
-  // override-temp stepper), an optional window row, and the schedule group.
+  // fieldsets (legend = title): the override fieldset (durations/countdown +
+  // override-temp stepper sharing one row, like thermostat.html), an optional
+  // window row, and the schedule fieldset.
   _renderEnhanced(translate, companionAttrs, tempStep) {
     const section = h("div", { class: "enhanced" });
 
-    section.append(h("div", { class: "group" },
-      h("div", { class: "override-head" },
-        h("span", { class: "head-title" }, translate("override_for")),
-        this._renderOverride(translate, companionAttrs)),
-      this._labelledStepper(translate, {
-        label: translate("override_temp"),
-        value: companionAttrs.override_temp,
-        lo: Number(companionAttrs.min_temp),
-        hi: Number(companionAttrs.max_temp),
-        step: tempStep,
-        onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
-      })));
+    const overrideTemp = this._stepperControl(translate, {
+      label: translate("override_temp"),
+      value: companionAttrs.override_temp,
+      lo: Number(companionAttrs.min_temp),
+      hi: Number(companionAttrs.max_temp),
+      step: tempStep,
+      onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
+    });
+    section.append(h("fieldset", { class: "group" },
+      h("legend", null, translate("override")),
+      h("div", { class: "override-controls" },
+        this._renderOverride(translate, companionAttrs), overrideTemp)));
 
     const windowInfo = companionAttrs.window;
     if (windowInfo && Array.isArray(windowInfo.sensors) && windowInfo.sensors.length > 0) {
@@ -671,22 +669,23 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return section;
   }
 
-  // _renderOverride shows the preset buttons, or — while an override is active —
-  // a live countdown plus a cancel button. Sits inline after the "Override for:"
-  // heading; buttons share the mode-button styling.
+  // _renderOverride shows the duration buttons, or — while an override is active
+  // — a live countdown, "overriding to X°", and a cancel button (like
+  // thermostat.html). Sits inside the override fieldset next to the temp stepper.
   _renderOverride(translate, companionAttrs) {
     const override = companionAttrs.override;
     if (override && override.active && override.expires) {
-      const countdown = h("span", { class: "countdown", "data-expires": override.expires },
-        formatCountdown(remainingSeconds(override.expires)));
-      const cancel = h("button", { class: "btn", type: "button",
-        onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override"));
-      return h("div", { class: "override-active" }, countdown, cancel);
+      return h("div", { class: "overriding" },
+        h("span", { class: "countdown", "data-expires": override.expires },
+          formatCountdown(remainingSeconds(override.expires))),
+        h("span", null, translate("overriding_to", { temp: companionAttrs.override_temp })),
+        h("button", { class: "btn", type: "button",
+          onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override")));
     }
     const configured = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
     const presets = configured.length ? configured : DEFAULT_PRESETS;
     const buttons = presets.map((minutes) => h("button", { class: "btn", type: "button",
-      onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, "+" + minutes + "m"));
+      onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, minutes + "m"));
     // A custom-duration button: prompt for an arbitrary minute count.
     const custom = h("button", {
       class: "btn custom", type: "button",
@@ -713,23 +712,26 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       : todayPeriods(companionAttrs.schedule || {}, new Date());
     const empty = !open && periods.length === 0;
 
-    const group = h("div", { class: "group" },
-      h("div", { class: "group-head" },
-        h("span", { class: "head-title", title: empty ? translate("no_schedule") : null },
-          translate("schedule")),
-        h("button", { class: "btn edit-schedule", type: "button",
-          onclick: () => this._openEditor(companionAttrs, tempStep) }, translate("edit_schedule"))));
+    // Legend carries the "no schedule set" explanation as a tooltip when empty,
+    // so an empty schedule stays a single line.
+    const fieldset = h("fieldset", { class: "group" },
+      h("legend", { title: empty ? translate("no_schedule") : null }, translate("schedule")));
 
     if (open) {
-      group.append(this._renderEditor(translate));
-    } else if (!empty) {
-      group.append(h("div", { class: "today" }, ...periods.map((period, index) =>
+      fieldset.append(this._renderEditor(translate));
+      return fieldset;
+    }
+    const today = empty
+      ? h("span", { class: "today muted" }, "—")
+      : h("div", { class: "today" }, ...periods.map((period, index) =>
         h("span", {
           class: "period" + (index === nowIndex ? " now" : ""),
           title: index === nowIndex ? translate("now_period") : null,
-        }, period.time + " " + period.temp + "°"))));
-    }
-    return group;
+        }, period.time + " " + period.temp + "°")));
+    fieldset.append(h("div", { class: "sched-line" }, today,
+      h("button", { class: "btn edit-schedule", type: "button",
+        onclick: () => this._openEditor(companionAttrs, tempStep) }, translate("edit_schedule"))));
+    return fieldset;
   }
 
   _openEditor(companionAttrs, tempStep) {
@@ -867,12 +869,16 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
     climatePicker.addEventListener("value-changed", (ev) => this._update({ climate_entity: ev.detail.value }));
     form.append(climatePicker);
 
+    // Like the climate picker: set .label and append directly. Wrapping a
+    // multi-input picker in a <label> (invalid: a label binds one control)
+    // swallowed clicks on its add/remove buttons, so selections never stuck.
     const windowPicker = document.createElement("ha-entities-picker");
     windowPicker.hass = this._hass;
     windowPicker.value = this._config.window_sensors || [];
     windowPicker.includeDomains = ["binary_sensor"];
+    windowPicker.label = translate("editor.window_sensors");
     windowPicker.addEventListener("value-changed", (ev) => this._update({ window_sensors: ev.detail.value }));
-    form.append(h("label", {}, translate("editor.window_sensors"), windowPicker));
+    form.append(windowPicker);
 
     const presetsInput = h("input", {
       type: "text", inputmode: "numeric",
