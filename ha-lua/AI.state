@@ -250,12 +250,23 @@ verbatim as /local/ha-lua/enhanced-climate-card.js, no rename). Commit 11
 (e3fd064). Commit 12 (boost presets + countdown + cancel, override-temp
 stepper, window indicator, 7-day schedule editor) DONE 2026-06-25 (1fbdc27),
 preceded by a9205ca (examples: surface override_temp on the companion — the
-card's stepper needs it always, not just when an override is active). NEXT =
-commit 13 (config editor getConfigElement, §10.6 — ha-entity-picker for
-climate + ha-entities-picker for window_sensors + presets/name; dispatches
-config-changed; only testable inside a live HA frontend), then 14 (chromedp
-harness test, §10.8). Then M5 (docs/release: DOCS + CHANGELOG + minor version
-bump). Pre-M2-detail below kept for reference.
+card's stepper needs it always, not just when an override is active). Commit 13
+(config editor getConfigElement, §10.6 — ha-entity-picker climate +
+ha-entities-picker window_sensors + presets/name inputs; dispatches
+config-changed; built once; NOT in the harness) DONE 2026-06-25 (b5bd0e4). NEXT =
+commit 14 (chromedp harness test, §10.8 — a static harness page that imports the
+card, stubs hass with a fake states map + callApi/callService spies, asserts
+rendered DOM/state, a service+command payload from a click, optimism-free
+reconcile, and a hu localization assertion; chromium IS present so it runs).
+Then M5 (docs/release: DOCS + CHANGELOG + minor version bump). Pre-M2-detail
+below kept for reference.
+- CARD TEST APPROACH for commit 14: the card is a CLASSIC script exposing
+  HaLuaEnhancedClimateCard.pure as a static; load it in the harness page via
+  <script src> and read customElements.get("ha-lua-enhanced-climate-card") +
+  .pure. Stub hass = { language, states:{...}, callApi(spy), callService(spy) }.
+  Reuse the existing chromedp/newBrowserCtx helpers in thermostat_ui_test.go;
+  skip cleanly if no browser. fireCommand -> callApi('POST','events/
+  ha_lua_command',...); callClimate -> callService('climate',...).
 - CARD COMMIT 12 (1fbdc27): unified numeric _stepper helper (target +
   override-temp). Render suppression now uses two flags: _fieldFocused (input
   focus) and _editorOpen (schedule editor); _render() (hass-driven) early-returns
