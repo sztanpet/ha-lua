@@ -240,12 +240,20 @@ control loop + bounds + manual detection + window cooperation (frost-temp pause)
 + companion sensor publishing, all driven by ha_lua_command via lib/card.lua,
 with Supervisor-driven runner tests. M3 (enhanced_climate Ingress removal page —
 examples/enhanced_climate.html served at GET /, GET /api/list + POST /api/remove,
-shared remove_climate()) DONE 2026-06-25 (674fcea). NEXT = M4 (card JS, §10:
-commit 10 config materialize CardsDir into /config/www/ha-lua [small Go change];
-11 render+climate-native controls+i18n; 12 boost+override-temp+schedule editor;
-13 config editor getConfigElement; 14 chromedp harness test). Then M5
-(docs/release: DOCS + CHANGELOG + minor version bump). Pre-M2-detail below kept
-for reference.
+shared remove_climate()) DONE 2026-06-25 (674fcea). M4 IN PROGRESS: commit 10
+(config materialize cards) DONE 2026-06-25 (c16ad75) — new cards/ package
+(embed + best-effort Materialize), config.CardsDir forced /config/www/ha-lua in
+add-on mode, main writes assets pre-connect; shipped file
+cards/enhanced-climate-card.js is the render/lifecycle SKELETON only (served
+verbatim as /local/ha-lua/enhanced-climate-card.js, no rename). NEXT = commit 11
+(render + climate-native target/mode controls + i18n en/hu, §10.4/§10.7), then 12
+(boost + override-temp + schedule editor), 13 (config editor getConfigElement),
+14 (chromedp harness test, §10.8). Then M5 (docs/release: DOCS + CHANGELOG +
+minor version bump). Pre-M2-detail below kept for reference.
+- JS TOOLING (verified 2026-06-25): node v18 present (use `node --check <file>`
+  to syntax-check each card commit) and /usr/bin/chromium present, so commit
+  14's chromedp harness WILL run here (not skip). Commits 11-13 have no
+  behavioral test until 14, so node --check + careful review per commit.
 M2 (older note): commit 4 (extract lib/control.lua, migrate
 thermostat.lua behavior-preserving) DONE 2026-06-25 (3e11155); commit 5
 (enhanced_climate registry + configure/remove handlers) DONE 2026-06-25
