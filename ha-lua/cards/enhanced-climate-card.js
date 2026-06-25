@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.13";
+const VERSION = "0.3.14";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -138,9 +138,7 @@ function makeTranslator(language) {
   const lang = (language || "en").toLowerCase().slice(0, 2);
   const table = MESSAGES[lang] || MESSAGES.en;
   return function translate(key, params, fallback) {
-    let str = table[key];
-    if (str == null) str = MESSAGES.en[key];
-    if (str == null) str = fallback != null ? fallback : key;
+    let str = table[key] ?? MESSAGES.en[key] ?? fallback ?? key;
     if (params) {
       str = str.replace(/\{(\w+)\}/g, (whole, name) => (params[name] != null ? params[name] : whole));
     }
@@ -251,21 +249,19 @@ function entriesFromSchedule(schedule) {
       byTransition.get(key).presentDays.add(day);
     }
   }
+  // Greedily collapse a transition's days into the largest matching groups
+  // (everyday > weekdays > weekend, ordered largest-first in DAY_GROUPS), then
+  // emit whatever single days are left over.
+  const multiDayGroups = DAY_GROUPS.filter((group) => group.days.length > 1);
   const entries = [];
   for (const key of order) {
     const info = byTransition.get(key);
     const remaining = new Set(info.presentDays);
-    if ([0, 1, 2, 3, 4, 5, 6].every((day) => remaining.has(day))) {
-      entries.push({ group: "everyday", time: info.time, temp: info.temp });
-      remaining.clear();
-    }
-    if ([0, 1, 2, 3, 4].every((day) => remaining.has(day))) {
-      entries.push({ group: "weekdays", time: info.time, temp: info.temp });
-      [0, 1, 2, 3, 4].forEach((day) => remaining.delete(day));
-    }
-    if ([5, 6].every((day) => remaining.has(day))) {
-      entries.push({ group: "weekend", time: info.time, temp: info.temp });
-      [5, 6].forEach((day) => remaining.delete(day));
+    for (const group of multiDayGroups) {
+      if (group.days.every((day) => remaining.has(day))) {
+        entries.push({ group: group.value, time: info.time, temp: info.temp });
+        group.days.forEach((day) => remaining.delete(day));
+      }
     }
     [...remaining].sort((a, b) => a - b).forEach((day) => entries.push({ group: String(day), time: info.time, temp: info.temp }));
   }
@@ -354,9 +350,10 @@ const STYLES = `
     justify-content: center; gap: 6px; border: 1px solid var(--divider-color, #ccc); border-radius: 12px;
     background: transparent; color: var(--primary-text-color); font: inherit; cursor: pointer; }
   .btn:hover { background: color-mix(in oklch, var(--primary-text-color) 8%, transparent); }
-  .btn.icon { width: 44px; padding: 0; color: var(--secondary-text-color); }
+  .btn.icon, .btn.step { width: 44px; padding: 0; }
+  .btn.icon { color: var(--secondary-text-color); }
   .btn.icon ha-icon { --mdc-icon-size: 24px; }
-  .btn.step { width: 44px; padding: 0; font-size: 1.3rem; }
+  .btn.step { font-size: 1.3rem; }
   .btn.active { background: var(--mode-color, var(--primary-color));
     border-color: var(--mode-color, var(--primary-color)); color: var(--text-primary-color, #fff); }
   .btn.primary { background: var(--primary-color); border-color: var(--primary-color);
@@ -458,14 +455,14 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     if (!this._hass) return;
     this._hass.callApi("POST", "events/ha_lua_command", {
       script: "enhanced_climate",
-      action: action,
-      data: Object.assign({ climate_entity: this._config.climate_entity }, data),
+      action,
+      data: { climate_entity: this._config.climate_entity, ...data },
     });
   }
 
   callClimate(service, data) {
     if (!this._hass) return;
-    this._hass.callService("climate", service, Object.assign({ entity_id: this._config.climate_entity }, data));
+    this._hass.callService("climate", service, { entity_id: this._config.climate_entity, ...data });
   }
 
   _scheduleRender() {
@@ -608,9 +605,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return h("div", { class: "stepper" }, minus, input, plus);
   }
 
-  // _stepper wraps _stepperControl in a labelled row (used by the override-temp
-  // control inside the override group).
-  _stepper(translate, opts) {
+  // _labelledStepper is a stepper preceded by its label, as a justified row
+  // (used by the override-temp control, which keeps a visible label).
+  _labelledStepper(translate, opts) {
     return h("div", { class: "row" },
       h("span", { class: "label" }, opts.label),
       this._stepperControl(translate, opts));
@@ -627,24 +624,15 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const buttons = modes.map((hvacMode) => {
       const active = hvacMode === mode;
       const label = translate("mode." + hvacMode, null, hvacMode);
-      const button = h("button", {
+      const icon = MODE_ICONS[hvacMode];
+      return h("button", {
         class: "btn icon mode-btn" + (active ? " active" : ""),
         type: "button",
         title: label,
         "aria-label": label,
         style: active ? `--mode-color: var(--state-climate-${hvacMode}-color, var(--primary-color))` : null,
         onclick: () => this.callClimate("set_hvac_mode", { hvac_mode: hvacMode }),
-      });
-      const icon = MODE_ICONS[hvacMode];
-      if (icon) {
-        const haIcon = document.createElement("ha-icon");
-        haIcon.setAttribute("icon", icon);
-        button.append(haIcon);
-      } else {
-        // No known icon: fall back to the text so the button isn't empty.
-        button.append(label);
-      }
-      return button;
+      }, icon ? h("ha-icon", { icon }) : label); // fall back to the text when no icon
     });
     return h("div", { class: "modes" }, ...buttons);
   }
@@ -659,7 +647,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       h("div", { class: "override-head" },
         h("span", { class: "head-title" }, translate("override_for")),
         this._renderOverride(translate, companionAttrs)),
-      this._stepper(translate, {
+      this._labelledStepper(translate, {
         label: translate("override_temp"),
         value: companionAttrs.override_temp,
         lo: Number(companionAttrs.min_temp),
