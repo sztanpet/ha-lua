@@ -15,12 +15,21 @@
 -- To use it: copy this file (and lib/) into /config/ha-lua/scripts/, add the
 -- card to a dashboard, and point it at a climate entity.
 
+local control = require "control"
+local schedule = require "schedule"
 local card = require("card").new { kind = "enhanced_climate" }
 
--- Registry: the set of enhanced climates, keyed by climate entity id, each
--- { climate_entity, window_sensors, presets }. Global-scoped (shared) under one
--- namespaced key so the whole set round-trips as a single value that the
--- control tick and the Ingress removal page can both iterate.
+-- Seed value (°C) for an enhanced climate's override temperature — the setpoint
+-- a timed override drives it to — until the user edits it via the card.
+local DEFAULT_OVERRIDE_TEMP = 23
+
+-- ---------------------------------------------------------------------------
+-- Registry (§7.1). The set of enhanced climates, keyed by climate entity id,
+-- each { climate_entity, window_sensors, presets }. Global-scoped (shared)
+-- under one namespaced key so the whole set round-trips as a single value that
+-- the control tick and the Ingress removal page can both iterate.
+-- ---------------------------------------------------------------------------
+
 local REGISTRY_KEY = "enhanced_climate:registry"
 
 local function load_registry()
@@ -32,6 +41,187 @@ end
 local function save_registry(reg)
   global.set(REGISTRY_KEY, reg)
 end
+
+local function is_registered(climate_entity)
+  return type(climate_entity) == "string" and load_registry()[climate_entity] ~= nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Per-climate dynamic state (schedule / timed override / manual hold /
+-- override temp / last-published desired) lives in this script's own KV store,
+-- keyed by climate entity id.
+-- ---------------------------------------------------------------------------
+
+local function sched_key(e) return "schedule:" .. e end
+local function override_key(e) return "override:" .. e end
+local function manual_key(e) return "manual:" .. e end
+local function override_temp_key(e) return "override_temp:" .. e end
+local function desired_key(e) return "desired:" .. e end
+
+-- now_parts returns the current time userdata plus the schedule's weekday
+-- (0=Mon..6=Sun, converted from Go's Sunday-first weekday) and minute-of-day.
+local function now_parts()
+  local now = time.now()
+  local dow = (now:weekday() + 6) % 7
+  return now, dow, now:hour() * 60 + now:minute()
+end
+
+local function parse_time(text)
+  if type(text) ~= "string" then return nil end
+  return time.parse(time.RFC3339, text) -- nil on parse failure
+end
+
+local function override_temp(e)
+  local value = store.get(override_temp_key(e))
+  if type(value) == "number" then return value end
+  return DEFAULT_OVERRIDE_TEMP
+end
+
+local function mode(e)
+  local state = ha.get_state(e)
+  if state == nil then return nil end
+  return state.state
+end
+
+local function current_target(e)
+  local state = ha.get_state(e)
+  if state and state.attributes then return state.attributes.temperature end
+  return nil
+end
+
+-- temp_bounds returns the climate entity's accepted setpoint range. HA silently
+-- drops a set_temperature outside min_temp/max_temp, so we honour the device's
+-- own limits. Falls back to a permissive 5..35 while the entity has not seeded.
+local function temp_bounds(e)
+  local lo, hi = 5, 35
+  local state = ha.get_state(e)
+  if state and state.attributes then
+    if type(state.attributes.min_temp) == "number" then lo = state.attributes.min_temp end
+    if type(state.attributes.max_temp) == "number" then hi = state.attributes.max_temp end
+  end
+  return lo, hi
+end
+
+local function load_schedule(e)
+  local stored = store.get(sched_key(e))
+  if type(stored) == "table" and type(stored.days) == "table" then return stored.days end
+  return {}
+end
+
+-- active_override returns the live timed-override table, or nil, clearing an
+-- expired one so the climate reverts to schedule.
+local function active_override(e, now)
+  local override = store.get(override_key(e))
+  if type(override) ~= "table" or not override.active or type(override.ends_at) ~= "string" then
+    return nil
+  end
+  local ends = parse_time(override.ends_at)
+  if ends == nil then
+    store.delete(override_key(e))
+    return nil
+  end
+  if now:before(ends) then return override end
+  store.delete(override_key(e))
+  return nil
+end
+
+-- active_manual returns the live manual-hold table, or nil, clearing it once its
+-- `expires` instant has passed. ("expires" not "until" — until is a keyword.)
+local function active_manual(e, now)
+  local manual = store.get(manual_key(e))
+  if type(manual) ~= "table" or type(manual.temp) ~= "number" or type(manual.expires) ~= "string" then
+    return nil
+  end
+  local exp = parse_time(manual.expires)
+  if exp == nil then
+    store.delete(manual_key(e))
+    return nil
+  end
+  if now:before(exp) then return manual end
+  store.delete(manual_key(e))
+  return nil
+end
+
+-- desired picks override > manual > schedule via the shared control.desired,
+-- resolving each source's candidate temperature (and expiring stale holds).
+local function desired(e, now, dow, minute)
+  local override = active_override(e, now) and override_temp(e) or nil
+  local manual = active_manual(e, now)
+  local sched_temp = schedule.resolve(load_schedule(e), dow, minute)
+  return control.desired(override, manual and manual.temp or nil, sched_temp)
+end
+
+local function set_temp(e, temp)
+  ha.call_service("climate", "set_temperature", { entity_id = e, temperature = temp })
+end
+
+-- apply_climate is the per-climate control step: compute the desired setpoint,
+-- clamp it to the device range, remember it (so manual detection can compare),
+-- and write it when the shared gate allows. Window cooperation is layered on in
+-- a later commit, so for now no window pauses the write.
+local function apply_climate(e, now, dow, minute)
+  local desired_temp = desired(e, now, dow, minute)
+  if desired_temp == nil then
+    store.delete(desired_key(e)) -- not controlled (no schedule/override/manual)
+    return
+  end
+  local lo, hi = temp_bounds(e)
+  desired_temp = control.clamp_bounds(desired_temp, lo, hi)
+  store.set(desired_key(e), desired_temp)
+  if control.should_write(mode(e), false, current_target(e), desired_temp) then
+    set_temp(e, desired_temp)
+  end
+end
+
+-- The 1-minute tick that drives every registered climate. Override/manual
+-- expiry is handled inside desired().
+local function tick()
+  local now, dow, minute = now_parts()
+  for climate_entity in pairs(load_registry()) do
+    apply_climate(climate_entity, now, dow, minute)
+  end
+end
+
+ha.every("1m", tick)
+
+-- ---------------------------------------------------------------------------
+-- Manual setpoint change detection (§7.2): this controller is the only thing
+-- that writes the desired, and it writes exactly the desired, so a climate
+-- target that differs from the published desired is an external (user) change.
+-- It becomes an ad-hoc manual hold lasting until the next schedule transition.
+-- One wildcard handler covers every registered climate (they are added at
+-- runtime, so a per-entity registration at load time can't see them).
+-- ---------------------------------------------------------------------------
+
+ha.on_state_change("climate.*", function(data)
+  local climate_entity = data.entity_id
+  if not is_registered(climate_entity) then return end
+  local new_state = data.new_state
+  if new_state == nil or new_state.attributes == nil then return end
+  if new_state.state ~= "heat" then return end
+  local target = new_state.attributes.temperature
+  if type(target) ~= "number" then return end
+
+  local now, dow, minute = now_parts()
+  if active_override(climate_entity, now) then return end -- override wins; ignore nudges
+
+  local published = store.get(desired_key(climate_entity))
+  if not control.is_manual(target, published) then return end
+
+  local _, _, mins_to_next = schedule.resolve(load_schedule(climate_entity), dow, minute)
+  local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
+  store.set(manual_key(climate_entity), {
+    temp = target,
+    expires = now:add(hold):format(time.RFC3339),
+  })
+  apply_climate(climate_entity, now, dow, minute) -- republish the new desired immediately
+end)
+
+-- ---------------------------------------------------------------------------
+-- Command handlers (card → daemon, §5). Every handler validates, mutates only
+-- when valid, then re-applies the climate; a rejected command leaves state
+-- unchanged and the card snaps back from the next hass update (optimism-free).
+-- ---------------------------------------------------------------------------
 
 -- normalize coerces a configure payload into the stored shape, defaulting the
 -- optional lists so later code never has to type-check them.
@@ -62,8 +252,8 @@ local function config_equal(x, y)
 end
 
 -- configure provisions (idempotent upsert) an enhanced climate. Fired by the
--- card on load / config change. Only mutates when the effective config actually
--- changed; control start + companion publish are wired in on top of this.
+-- card on load / config change. Only mutates + re-applies when the effective
+-- config actually changed.
 card.on("configure", function(data)
   if type(data) ~= "table" or type(data.climate_entity) ~= "string" or data.climate_entity == "" then
     return
@@ -73,6 +263,8 @@ card.on("configure", function(data)
   if config_equal(reg[cfg.climate_entity], cfg) then return end
   reg[cfg.climate_entity] = cfg
   save_registry(reg)
+  local now, dow, minute = now_parts()
+  apply_climate(cfg.climate_entity, now, dow, minute) -- start controlling at once
 end)
 
 -- remove deprovisions an enhanced climate (from the Ingress removal page, §8).
@@ -83,6 +275,50 @@ card.on("remove", function(data)
   if reg[data.climate_entity] == nil then return end
   reg[data.climate_entity] = nil
   save_registry(reg)
+  store.delete(desired_key(data.climate_entity))
+end)
+
+-- schedule replaces the 7-day schedule, bounded by the device's range.
+card.on("schedule", function(data)
+  local e = data.climate_entity
+  if not is_registered(e) then return end
+  local lo, hi = temp_bounds(e)
+  if not schedule.validate(data.schedule, lo, hi) then return end
+  store.set(sched_key(e), { days = data.schedule })
+  local now, dow, minute = now_parts()
+  apply_climate(e, now, dow, minute)
+end)
+
+-- override starts or cancels a timed override (a boost to the override temp).
+card.on("override", function(data)
+  local e = data.climate_entity
+  if not is_registered(e) then return end
+  local now, dow, minute = now_parts()
+  if data.cancel then
+    store.delete(override_key(e))
+  else
+    if type(data.minutes) ~= "number" or data.minutes <= 0 or data.minutes > 1440 then return end
+    store.set(override_key(e), {
+      active = true,
+      ends_at = now:add(data.minutes * 60):format(time.RFC3339),
+    })
+    store.delete(manual_key(e)) -- an override outranks and clears any manual hold
+  end
+  apply_climate(e, now, dow, minute)
+end)
+
+-- settings edits the override temperature (the target a boost jumps to),
+-- bounded by the device's range.
+card.on("settings", function(data)
+  local e = data.climate_entity
+  if not is_registered(e) then return end
+  local lo, hi = temp_bounds(e)
+  if type(data.override_temp) ~= "number" or data.override_temp < lo or data.override_temp > hi then
+    return
+  end
+  store.set(override_temp_key(e), data.override_temp)
+  local now, dow, minute = now_parts()
+  apply_climate(e, now, dow, minute) -- if an override is active, the new temp applies now
 end)
 
 ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/enhanced-climate-errors.log"))
