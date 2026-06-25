@@ -232,12 +232,25 @@ Last updated: 2026-06-25
 
 
 ## Phase
-UNRELEASED on main (2026-06-25): card grid-sizing fix. The sections dashboard
-warned "This card does not fully support resizing yet…" because the element had
-only getCardSize; added getGridOptions (full-width default, min_columns 6, rows
-auto), card VERSION->0.3.2. User chose NOT to cut a release yet — fix sits on
-main awaiting a future v2.7.2 (or a later bundle). It only reaches a user's HA
-once an image ships and the daemon re-materializes the embedded card.
+UNRELEASED on main (2026-06-25): a stack of enhanced-climate-card fixes awaiting
+a future v2.7.2 (user chose NOT to cut a release yet after the first one). None
+reach a user's HA until an image ships and the daemon re-materializes the
+embedded card. In order:
+- 0.3.2 (2d? getGridOptions): sections dashboard warned "does not fully support
+  resizing" because the element had only getCardSize; added getGridOptions
+  (full-width default, min_columns 6, rows auto).
+- 0.3.3: stepper numeric input had no height so it rendered shorter than the ±
+  buttons (height:42px box-sizing:border-box).
+- 0.3.4 (a9800d3): boost->override rename in the CARD UI — the 28a15b9 vocab
+  rename hit thermostat.html but the card (written later) still said "Boost".
+  Daemon command was already "override"; renamed labels/i18n keys (en+hu)/CSS
+  classes/_renderBoost + DOCS wording + test comments to match.
+NOTE for the v2.7.2 changelog: bundle 0.3.2 (resize), 0.3.3 (stepper height),
+0.3.4 (override vocab). Also still-open USER ISSUE: card stuck at "Setting up…"
+= companion sensor.ha_lua_enhanced_climate_<slug> never published; most likely
+the example script wasn't copied into /config/ha-lua/scripts/, or the HA user
+isn't admin (events API), or set_state is erroring (check enhanced-climate-
+errors.log). NOT diagnosed as a code bug yet — awaiting the user's checks.
 
 PATCH v2.7.1 (2026-06-25): fix the enhanced-climate card config editor. HA sets
 an element's hass before setConfig, so the editor's _render ran with
