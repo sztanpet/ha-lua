@@ -232,6 +232,15 @@ Last updated: 2026-06-25
 
 
 ## Phase
+Enhanced-climate track CODE COMPLETE (enhanced-climate-spec.md), awaiting the
+release tag/push. M1-M4 done; M5 docs/changelog/version-bump DONE 2026-06-25
+(DOCS 5afab4e, CHANGELOG 8d48168, config.yaml version->2.7.0 4f3ed78). REMAINING
+(USER-DRIVEN, per CLAUDE.md release process — NOT done autonomously, outward-
+facing): annotated tag `v2.7.0` on the release commit 4f3ed78, then push main +
+tag to BOTH remotes (origin private mirror + github), which triggers the GHCR
+multi-arch image build. The hourly /loop cron (job 231ded93) has no work left —
+suggest the user CronDelete it.
+Older detail:
 Enhanced-climate track IN PROGRESS (enhanced-climate-spec.md): M1 (generic
 transport — REST set/remove + ha.on_command + lib/card.lua) DONE 2026-06-25,
 unreleased. M2 (shared lib/control + the new enhanced_climate.lua example)
