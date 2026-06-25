@@ -1,6 +1,6 @@
 # Enhanced-climate example & card — HA-configured spec
 
-Status: proposed (2026-06-25, rev 6 — card UI implementation specced)
+Status: proposed (2026-06-25, rev 7 — card mirrors thermostat.html; i18n in v1)
 Scope: a general daemon capability (`ha.set_state`/`ha.remove_state`/
 `ha.on_command` + `lib/card.lua`), a **new standalone example**
 (`examples/enhanced_climate.lua`) that uses it, the
@@ -274,6 +274,17 @@ These reconcile from the companion (`ha_lua_climate === climate_entity`) and are
 
 ## 10. Card UI implementation (`ha-lua-enhanced-climate-card.js`)
 
+**Guiding principle: the card mirrors `thermostat.html` functionality-wise.** The
+existing Ingress UI is the reference for *what the card does* — the comfort/
+override-temp stepper, the boost hero + presets + countdown, the today strip, the
+per-day 7-day schedule editor with weekday regrouping, the status badge, the
+not-controlled notice, and the hu/en localization. The card re-expresses those
+same behaviors as a Lovelace card (driven by `hass` + the companion entity
+instead of the polled HTTP API, with the climate-native controls of §9 added on
+top). Port behavior and string keys from `thermostat.html`; don't reinvent them.
+Where a behavior already has a hard-won fix (focus/optimism/ordering, AI.state),
+carry the fix over rather than re-deriving it.
+
 ### 10.1 Tech & packaging
 
 - **One self-contained vanilla file**, no build step, no runtime imports — a
@@ -340,7 +351,7 @@ These reconcile from the companion (`ha_lua_climate === climate_entity`) and are
   `hass.callService('climate', service, { entity_id: climate_entity, ...data })`.
 - Factor these plus the **pure** derivations (status label, remaining-time,
   schedule regroup, bounds clamp) as free functions so they are unit-testable
-  without a browser (§10.7).
+  without a browser (§10.8).
 
 ### 10.6 Config editor (`getConfigElement`)
 
@@ -349,7 +360,22 @@ A second element using HA's `ha-entity-picker`, domain-filtered to `climate`
 optional `name`; dispatches `config-changed`. Makes the card fully
 GUI-configurable — the only required field is the climate entity.
 
-### 10.7 Testing the card
+### 10.7 Localization (i18n)
+
+First-class in v1. The card reads HA's user language from `hass.language` and
+translates via an **embedded strings table** (English + Hungarian to start,
+reusing the existing Ingress UI keys where the concepts overlap) with English
+fallback for missing keys. A small `t(key, vars?)` helper does the lookup; **all**
+user-visible text — status badges, the "held until HH:MM" badge, boost / schedule
+/ window labels, weekday names, and the config-editor field labels — goes through
+it, with no hard-coded strings.
+
+This is simpler than the Ingress UI's scheme: because `hass.language` already
+carries the user's choice, the card needs **no `?lang=` query param, no language
+picker, and no localStorage** (all of which the Ingress UI has). Number/weekday/
+time formatting uses the browser locale derived from `hass.language`.
+
+### 10.8 Testing the card
 
 Reuse the project's chromedp approach (the Ingress UI's browser tests), but with
 a tiny static **harness page** the Go test serves: it `import`s the card module,
@@ -360,7 +386,9 @@ and sets `.hass`. The chromedp test then:
 - clicks the temp stepper / a boost preset / saves a schedule and asserts the
   right `callService('climate', …)` / `callApi('…events/ha_lua_command', …)`
   payload was captured;
-- updates the stub `hass` and asserts the card reconciles (optimism-free).
+- updates the stub `hass` and asserts the card reconciles (optimism-free);
+- sets stub `hass.language = "hu"` and asserts the translated DOM (mirrors the
+  existing `LocalizesHungarian` Ingress test).
 
 Pure helpers (§10.5) also get plain assertions in the harness. Skips cleanly when
 no browser is present, like the existing browser tests.
@@ -381,7 +409,7 @@ derive; capturing-stub tests for `ha.set_state`/`ha.on_command` (non-raising).
 5. Command round-trips: `settings` (bounds-rejected out of range), `schedule`
    round-trip, `override` start/cancel — each re-publishes the companion.
 
-The existing `thermostat.lua` tests are untouched; card UI tests are in §10.7.
+The existing `thermostat.lua` tests are untouched; card UI tests are in §10.8.
 Green under `-race` + `make check`.
 
 ## 12. Milestones / commits (each compiles + `make test`)
@@ -402,10 +430,11 @@ Green under `-race` + `make check`.
 **M4 — card UI (§10):**
 9.  `config: materialize bundled cards into /config/www/ha-lua` (small Go
     change: `CardsDir` forced in add-on mode, best-effort `Materialize`)
-10. `cards: enhanced-climate-card render + climate-native controls`
+10. `cards: enhanced-climate-card render + climate-native controls + i18n`
 11. `cards: enhanced-climate-card boost + override-temp + schedule editor`
 12. `cards: enhanced-climate-card config editor (getConfigElement)`
-13. `cards: enhanced-climate-card chromedp harness test` (§10.7)
+13. `cards: enhanced-climate-card chromedp harness test` (§10.8, incl. a hu
+    localization assertion)
 
 **M5 — docs/release:** DOCS (`ha.set_state`/`on_command`, the card config + the
 dashboard-resource install, the entity model, restart caveat) + CHANGELOG +
@@ -424,5 +453,3 @@ untouched, nothing breaks).
   safe; last writer of `window_sensor`/`presets` wins (cosmetic).
 - **Example name** — `enhanced_climate.lua` chosen for consistency with the
   concept/entity/card naming; rename if preferred before M2.
-- **Card i18n** — the Ingress UI localizes (hu/en). The card can reuse the same
-  strings via `hass.language`; deferred to a follow-up unless wanted in v1.
