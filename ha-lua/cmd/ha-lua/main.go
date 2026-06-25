@@ -15,6 +15,7 @@ import (
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 
+	"github.com/sztanpet/ha-lua/cards"
 	bundled "github.com/sztanpet/ha-lua/examples"
 	"github.com/sztanpet/ha-lua/internal/config"
 	"github.com/sztanpet/ha-lua/internal/debug"
@@ -109,6 +110,17 @@ func main() {
 			slog.Warn("examples dir create failed", "dir", cfg.ExamplesDir, "err", err)
 		} else if err := bundled.Materialize(cfg.ExamplesDir); err != nil {
 			slog.Warn("examples materialize failed", "dir", cfg.ExamplesDir, "err", err)
+		}
+	}
+
+	// Materialize the bundled Lovelace card assets into /config/www so HA serves
+	// them at /local/ha-lua/…; refreshed to this build every boot. Best-effort,
+	// and skipped (empty CardsDir) in dev.
+	if cfg.CardsDir != "" {
+		if err := os.MkdirAll(cfg.CardsDir, 0o755); err != nil {
+			slog.Warn("cards dir create failed", "dir", cfg.CardsDir, "err", err)
+		} else if err := cards.Materialize(cfg.CardsDir); err != nil {
+			slog.Warn("cards materialize failed", "dir", cfg.CardsDir, "err", err)
 		}
 	}
 

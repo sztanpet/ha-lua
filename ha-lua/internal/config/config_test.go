@@ -53,6 +53,9 @@ func TestLoadAddonMode(t *testing.T) {
 	if cfg.ExamplesDir != "/config/ha-lua/examples" {
 		t.Errorf("examples_dir: got %q", cfg.ExamplesDir)
 	}
+	if cfg.CardsDir != "/config/www/ha-lua" {
+		t.Errorf("cards_dir: got %q", cfg.CardsDir)
+	}
 	if cfg.Database != "/data/ha-lua.db" {
 		t.Errorf("database: got %q", cfg.Database)
 	}
@@ -90,6 +93,10 @@ http_port: 8100
 	// Dev mode does not materialize examples unless examples_dir is set.
 	if cfg.ExamplesDir != "" {
 		t.Errorf("examples_dir: got %q, want empty in dev mode", cfg.ExamplesDir)
+	}
+	// Likewise it does not materialize cards unless cards_dir is set.
+	if cfg.CardsDir != "" {
+		t.Errorf("cards_dir: got %q, want empty in dev mode", cfg.CardsDir)
 	}
 }
 

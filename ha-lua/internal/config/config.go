@@ -48,6 +48,12 @@ type Config struct {
 	// readable in the File Editor; dev mode leaves it empty (no materialization)
 	// unless set in the YAML. Empty disables materialization entirely.
 	ExamplesDir string `json:"examples_dir" yaml:"examples_dir"`
+	// CardsDir is where the bundled Lovelace card assets are materialized
+	// (overwritten) on boot. Not a user option: add-on mode forces
+	// /config/www/ha-lua so the assets are served by HA at /local/ha-lua/…; dev
+	// mode leaves it empty (no materialization) unless set in the YAML. Empty
+	// disables materialization entirely.
+	CardsDir string `json:"cards_dir" yaml:"cards_dir"`
 
 	StateHistory struct {
 		RetentionDays int    `json:"retention_days" yaml:"retention_days"`
@@ -128,6 +134,9 @@ func load(path string, addon bool) (*Config, error) {
 		// Drop the bundled reference examples beside the scripts dir, refreshed
 		// to this add-on version on every boot. Read-only reference, never run.
 		cfg.ExamplesDir = "/config/ha-lua/examples"
+		// Materialize the bundled Lovelace cards under /config/www so HA serves
+		// them at /local/ha-lua/…; refreshed to this add-on version every boot.
+		cfg.CardsDir = "/config/www/ha-lua"
 	}
 	return &cfg, nil
 }
