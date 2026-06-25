@@ -1,6 +1,7 @@
 # Enhanced-climate example & card — HA-configured spec
 
-Status: proposed (2026-06-25, rev 7 — card mirrors thermostat.html; i18n in v1)
+Status: proposed (2026-06-25, rev 8 — shared lib/control.lua, multiple window
+sensors, direct companion lookup; card mirrors thermostat.html; i18n in v1)
 Scope: a general daemon capability (`ha.set_state`/`ha.remove_state`/
 `ha.on_command` + `lib/card.lua`), a **new standalone example**
 (`examples/enhanced_climate.lua`) that uses it, the
@@ -16,9 +17,11 @@ window-sensor cooperation — an enhanced climate entity. It is keyed by its
 climate entity id.
 
 This is a **new, standalone example**, parallel to the existing, working
-`examples/thermostat.lua`. **Nothing about the existing example changes** — its
-`lib/zones.lua` static model, its Ingress editor UI, and all its tests stay as
-they are. The two are alternative references:
+`examples/thermostat.lua`. The existing example's **behavior, UI, and tests are
+unchanged** — its `lib/zones.lua` static model and its Ingress editor UI stay as
+they are; only the shared pure control helpers it already contains are
+mechanically lifted into `lib/control.lua` (§7.1), a behavior-preserving refactor
+with its own commit. The two are alternative references:
 
 | | `thermostat.lua` (existing) | `enhanced_climate.lua` (new) |
 |--|--|--|
@@ -28,8 +31,9 @@ they are. The two are alternative references:
 
 Because the new example is additive, the release is a **minor** bump (new Lua
 APIs + a new example), **not** the breaking major an in-place rework would have
-been. The pure `lib/schedule.lua` (resolve/validate) is reused by both; only the
-controller wiring differs.
+been. The pure `lib/schedule.lua` (resolve/validate) and the new pure
+`lib/control.lua` (desired-priority, bounds clamp, manual detection, window
+gating) are shared by both controllers; only the impure wiring differs.
 
 ## 1. Goal
 
@@ -39,7 +43,8 @@ Dropping the card on a dashboard and pointing it at `climate.living_room`:
 - **provisions** that enhanced climate in the daemon (no script edit),
 - gives a working **7-day schedule editor**,
 - gives **boost / timed override** + cancel,
-- optionally binds a **window sensor** that pauses heating while open,
+- optionally binds **one or more window sensors** that pause heating while any
+  is open (heating resumes only once all are closed),
 - and **replaces a native `tile` climate card** — it must also do everything the
   tile did (current temp/state, target-temperature, HVAC modes).
 
@@ -52,7 +57,7 @@ control loop), but the *definitions now come from HA at runtime*:
 
 | Concern | Owner | Lives in |
 |---------|-------|----------|
-| Which climate is enhanced, its window sensor, boost presets | **Card config** | dashboard YAML, mirrored to the daemon on load |
+| Which climate is enhanced, its window sensors, boost presets | **Card config** | dashboard YAML, mirrored to the daemon on load |
 | Schedule, active override, window state | **Daemon** | per-climate store |
 | Control loop (desired = override > manual > schedule; write climate) | **Daemon** | `enhanced_climate.lua` |
 | Live temp / setpoint / hvac_action / min/max / mode | **HA** | the climate entity itself |
@@ -69,7 +74,7 @@ dashboard YAML  ──setConfig──▶  card
 
 card (on load / config change)
   ── fire ha_lua_command {script:"enhanced_climate", action:"configure",
-       data:{ climate_entity, window_sensor, presets }} ──▶ daemon
+       data:{ climate_entity, window_sensors, presets }} ──▶ daemon
   (idempotent upsert; no-op if unchanged)
 
 daemon enhanced_climate.lua
@@ -80,15 +85,15 @@ daemon enhanced_climate.lua
 
 card render = climate entity (temp/hvac/mode/min/max, via native services)
             + companion sensor (schedule/boost/override/window/manual)
-  discovers the companion by attr ha_lua_climate == climate_entity
+  looks the companion up by its derived id sensor.ha_lua_enhanced_climate_<slug>
 
 user edits enhanced bits (schedule / boost / cancel / override_temp)
   ── fire ha_lua_command {action, data:{ climate_entity, ... }} ──▶ daemon
   daemon persists + re-publishes ▶ card reconciles from next hass update
 ```
 
-The card config asks only for the climate entity; the companion is **discovered**,
-not configured.
+The card config asks only for the climate entity; the companion's id is
+**derived** from it (slug = the climate object id), not configured.
 
 ## 4. Generic transport (reusable daemon foundation)
 
@@ -139,8 +144,8 @@ command identifies its target with `data.climate_entity`:
 // provisioning — idempotent upsert, fired by the card on load/config change
 { "action":"configure", "data":{
     "climate_entity":"climate.living_room",
-    "window_sensor":"binary_sensor.living_window",   // optional, "" to clear
-    "presets":[10,30,60] } }                         // boost minutes, optional
+    "window_sensors":["binary_sensor.living_window"], // optional, [] to clear
+    "presets":[10,30,60] } }                          // boost minutes, optional
 { "action":"remove", "data":{ "climate_entity":"climate.living_room" } }
 
 // runtime edits (enhanced layer only — temp/mode go via native climate services, §9)
@@ -163,9 +168,11 @@ tick / every mutation:
 
 - **state**: current desired setpoint (°C) when controlled, else `"off"`.
 - **attributes**: `ha_lua_script:"enhanced_climate"`,
-  `ha_lua_climate:<climate_entity>` (the discovery key), `friendly_name`,
+  `ha_lua_climate:<climate_entity>` (a sanity marker, not the lookup key — the
+  card derives the id directly, §10.3), `friendly_name`,
   `schedule` (7-day entries), `override` (`{active, expires, temp}`),
-  `manual` (`{active, until}`), `window` (`{sensor, open}`), `presets`,
+  `manual` (`{active, until}`), `window` (`{sensors, open}` — `open` = any bound
+  sensor open), `presets`,
   `min_temp`, `max_temp`, `controlled`, plus `unit_of_measurement:"°C"`,
   `device_class:temperature`, `icon:mdi:thermostat`.
 - one subtle removal-pointer attribute, e.g.
@@ -177,35 +184,63 @@ tick / every mutation:
 **Restart transience:** REST-set states aren't integration-backed, so an HA
 restart drops them; the ≤1-min tick + reconnect-reload re-publish, so they
 self-heal. `remove` calls `ha.remove_state` so a removed climate's sensor
-disappears.
+disappears. The per-minute republish is **value-stable** (state = desired °C,
+attributes carry only fixed timestamps like `override.expires`/`manual.until`),
+so HA suppresses the no-op `state_changed` and the recorder is not bloated; DOCS
+still recommend a recorder `exclude` for `sensor.ha_lua_enhanced_climate_*` as
+belt-and-suspenders.
 
 ## 7. New example controller (`examples/enhanced_climate.lua`)
 
-Built fresh (not a rework of `thermostat.lua`), reusing the pure `lib/schedule.lua`
-and the new `lib/card.lua`:
+Built fresh (not a rework of `thermostat.lua`), reusing the pure
+`lib/schedule.lua`, the new pure `lib/control.lua` (§7.1), and `lib/card.lua`:
 
 1. **Registry in the store** (global-scoped), keyed by climate entity id:
-   `{climate_entity, window_sensor, presets}`. CRUD via the `configure` / `remove`
-   handlers (§5).
+   `{climate_entity, window_sensors, presets}`. CRUD via the `configure` /
+   `remove` handlers (§5).
 2. **1-min `ha.every` loop iterates the registry.** Per climate,
-   `desired() = override > manual > schedule` (schedule via `lib/schedule.lua`
-   resolve), writing via `climate.set_temperature` only when `mode==heat`, no
-   bound window open, and the value changed (>0.05). Manual detection: a climate
-   target differing from the published desired (>0.1) starts a manual hold until
-   the next schedule transition. `temp_bounds()` reads the climate's
-   `min_temp`/`max_temp` so nothing pushes a setpoint HA silently drops
-   (AI.state 2.3.0).
-3. **Window cooperation built in.** The per-climate `window_sensor` (from config)
-   is checked each tick; for immediacy also `ha.on_state_change("binary_sensor.*", …)`
-   filtered to configured sensors, so an opened window pauses heating within
-   seconds and a close restores it.
+   `control.desired(override, manual, schedule_temp)` picks `override > manual >
+   schedule` (schedule via `lib/schedule.lua` resolve), writing via
+   `climate.set_temperature` only when `control.should_write(mode, window_open,
+   current, target)` holds (`mode==heat`, no bound window open, value changed
+   >0.05). Manual detection: `control.is_manual(target, published_desired)` — a
+   climate target differing from the published desired (>0.1) starts a manual
+   hold until the next schedule transition. `control.clamp_bounds` against the
+   climate's `min_temp`/`max_temp` so nothing pushes a setpoint HA silently
+   drops (AI.state 2.3.0).
+3. **Multi-sensor window cooperation built in.** Each climate's `window_sensors`
+   list (from config) is reduced by `control.window_open(states)` — **open if
+   any bound sensor is open, clear only when all are closed**. Checked each tick;
+   for immediacy also `ha.on_state_change("binary_sensor.*", …)` filtered to
+   configured sensors, so an opened window pauses heating within seconds and the
+   last close restores it.
 4. **Companion publish** (§6) on configure / load / tick / mutation.
 5. **Boost / override:** store `{expires, temp}`; presets from config;
    `override_temp` is the target a boost jumps to (edited via `settings`).
 
-This duplicates some logic from `thermostat.lua` by design — the working example
-stays untouched and the shared pure parts live in `lib/schedule.lua`. If a third
-consumer appears, factor the common controller bits into a lib then (not before).
+### 7.1 Shared pure controller helpers (`lib/control.lua`)
+
+The desired-priority pick, the bounds clamp, the manual-hold predicate, and the
+window any-open/all-closed reduction are **identical** to what `thermostat.lua`
+already does. Rather than copy them into the new example — which would leave two
+drifting copies of hard-won logic (the silent out-of-range drop fix, the manual
+tolerances) — they are lifted into a new **pure** `lib/control.lua` (no
+`ha`/`store`/`time`, so Go-unit-testable like `lib/schedule.lua`):
+
+```lua
+control.desired(override, manual, schedule_temp)  -- priority pick, nil if none
+control.is_manual(target, published_desired)      -- |Δ| > 0.1
+control.should_write(mode, window_open, cur, tgt) -- gate set_temperature
+control.clamp_bounds(value, lo, hi)               -- device min/max clamp
+control.window_open(sensor_states)                -- any open / all closed
+```
+
+`thermostat.lua` is **mechanically migrated** onto these helpers in its own
+behavior-preserving commit (§12) — its UI, its `lib/zones.lua` model, and all its
+existing tests stay green; only the inline copies become `control.*` calls. The
+impure wiring (registry CRUD, the `ha.every` loop, `set_temperature`, publishing)
+stays per-example. This is real deduplication: one copy of each helper, exercised
+by both controllers and by `lib/control`'s own unit tests.
 
 ## 8. Lifecycle & removal (this example's Ingress page)
 
@@ -232,8 +267,8 @@ subtle more-info pointer (§6).
 
 ```yaml
 type: custom:ha-lua-enhanced-climate-card
-climate_entity: climate.living_room        # required — the only must-have
-window_sensor: binary_sensor.living_window # optional
+climate_entity: climate.living_room           # required — the only must-have
+window_sensors: [binary_sensor.living_window] # optional, one or more
 presets: [10, 30, 60]                      # optional boost minutes
 name: Living room                          # optional; else friendly_name
 ```
@@ -262,15 +297,15 @@ when it returns).
 - the **override-temp** setting (the temp a boost jumps to),
 - a window-state indicator when bound.
 
-These reconcile from the companion (`ha_lua_climate === climate_entity`) and are
+These reconcile from the companion (looked up by its derived id, §10.3) and are
 **optimism-free** — re-render from the next `hass` update, never local writes.
 
 **Lifecycle / config:**
 - On `setConfig` / first `hass`: fire `configure` (idempotent) so adding the card
   provisions the enhanced climate.
-- A config editor (`getConfigElement`) with entity pickers for `climate_entity`
-  and `window_sensor` makes it fully GUI-configurable — only `climate_entity` is
-  required.
+- A config editor (`getConfigElement`) with an entity picker for `climate_entity`
+  and a multi-entity picker for `window_sensors` makes it fully GUI-configurable
+  — only `climate_entity` is required.
 
 ## 10. Card UI implementation (`ha-lua-enhanced-climate-card.js`)
 
@@ -306,8 +341,13 @@ carry the fix over rather than re-deriving it.
 
 - `setConfig(config)`: require `climate_entity` (throw otherwise → HA renders the
   error card); stash config; precompute the companion lookup.
-- `set hass(hass)`: stash, then a throttled re-render (rAF-coalesced). On the
-  **first** `hass`, fire `configure` once (idempotent provisioning).
+- `set hass(hass)`: stash, then a throttled re-render (rAF-coalesced). Fire
+  `configure` (idempotent) whenever the **effective config changed** since the
+  last send — keyed off a hash of `{climate_entity, window_sensors, presets}`, so
+  it covers the first `hass`, a later `setConfig` GUI edit, and re-mounts alike;
+  it is **not** a once-per-first-hass call (else an editor change to
+  `window_sensors` would never reach the daemon). Driven from here, not from
+  `setConfig`, because `callApi` needs `hass`.
 - `getCardSize()`: ~5 (height hint).
 - `static getConfigElement()` / `static getStubConfig()`: the GUI editor (§10.6)
   and a default (`{ climate_entity: "" }`) for the picker.
@@ -315,9 +355,10 @@ carry the fix over rather than re-deriving it.
 ### 10.3 Data sources & reconciliation
 
 - **Two reads:** `hass.states[climate_entity]` for current temp / target / mode /
-  `hvac_action` / `min_temp` / `max_temp`; the companion (found by
-  `Object.values(hass.states).find(e => e.attributes.ha_lua_climate === climate_entity)`)
-  for schedule / override / manual / window / presets.
+  `hvac_action` / `min_temp` / `max_temp`; the companion by its **derived id**
+  `hass.states['sensor.ha_lua_enhanced_climate_' + slug]` (slug = the climate
+  object id) for schedule / override / manual / window / presets. No O(n) scan of
+  all states; `ha_lua_climate` on the companion is only a sanity check.
 - **Optimism-free**, re-render on every `hass`: never write `input.value`
   optimistically — reflect server truth, preserving focus + caret on the active
   input. Port the proven patterns from `thermostat.html` (no optimistic write,
@@ -341,7 +382,7 @@ carry the fix over rather than re-deriving it.
 - **Enhanced:** boost preset row + live countdown + cancel; `override_temp`
   stepper; the **7-day schedule editor** (port the existing editor's row model +
   weekday regrouping from `thermostat.html`); a read-only window indicator when
-  bound.
+  any sensor is bound (open/closed from the any-open reduction).
 
 ### 10.5 Command & service helpers
 
@@ -355,10 +396,13 @@ carry the fix over rather than re-deriving it.
 
 ### 10.6 Config editor (`getConfigElement`)
 
-A second element using HA's `ha-entity-picker`, domain-filtered to `climate`
-(required) and `binary_sensor` (window, optional), plus a presets input and an
-optional `name`; dispatches `config-changed`. Makes the card fully
-GUI-configurable — the only required field is the climate entity.
+A second element using HA's `ha-entity-picker` for `climate` (required) and
+`ha-entities-picker` (plural) for the `window_sensors` list of `binary_sensor`s
+(optional), plus a presets input and an optional `name`; dispatches
+`config-changed`. Makes the card fully GUI-configurable — the only required field
+is the climate entity. These HA helper elements are undocumented frontend
+internals: the editor can only be exercised inside a live HA frontend (not the
+§10.8 harness) and may need adjusting across HA frontend releases.
 
 ### 10.7 Localization (i18n)
 
@@ -399,13 +443,20 @@ no browser is present, like the existing browser tests.
 (method/path/auth/body, 200/201/404, ctx-cancel); `config_test` RestURL force +
 derive; capturing-stub tests for `ha.set_state`/`ha.on_command` (non-raising).
 
+**Go — shared pure lib (`lib/control.lua`, like `TestSchedulePureLib`):**
+`desired` priority, `is_manual` tolerance, `should_write` gating, `clamp_bounds`,
+and `window_open` any-open/all-closed — table-driven, no `Runner`. The migrated
+`thermostat.lua` keeps its existing tests green (proves the refactor is
+behavior-preserving).
+
 **Go — new example (via `Runner`, mirroring `TestThermostatAPI`):**
 1. `configure` creates an enhanced climate, starts control, publishes the
    companion; re-`configure` same config is a no-op; changed config updates.
 2. `remove` stops control and `remove_state`s the companion.
 3. Control loop drives a store-defined climate: schedule/override priority,
    write-gating on mode/window/changed, manual-hold detection.
-4. Window pause/restore from a dynamically-bound sensor.
+4. Window pause/restore from dynamically-bound sensors, including the
+   multi-sensor case (any-open pauses, only all-closed restores).
 5. Command round-trips: `settings` (bounds-rejected out of range), `schedule`
    round-trip, `override` start/cancel — each re-publishes the companion.
 
@@ -419,37 +470,51 @@ Green under `-race` + `make check`.
 2. `config: derive and force the core REST API base URL`
 3. `lua: add ha.set_state / ha.remove_state / ha.on_command + lib/card.lua`
 
-**M2 — the new example (additive, examples-only):**
-4. `examples: enhanced_climate registry + configure/remove handlers`
-5. `examples: enhanced_climate control loop + manual-hold + bounds`
-6. `examples: enhanced_climate window cooperation`
-7. `examples: enhanced_climate companion-sensor publishing`
+**M2 — shared lib + the new example (additive, examples-only):**
+4. `examples: extract pure control helpers to lib/control.lua` (migrate
+   `thermostat.lua` onto them — behavior-preserving, existing tests stay green —
+   plus `lib/control` unit tests)
+5. `examples: enhanced_climate registry + configure/remove handlers`
+6. `examples: enhanced_climate control loop via lib/control + bounds`
+7. `examples: enhanced_climate multi-sensor window cooperation`
+8. `examples: enhanced_climate companion-sensor publishing`
 
-**M3 — removal UI:** 8. `examples: enhanced_climate Ingress removal page`
+**M3 — removal UI:** 9. `examples: enhanced_climate Ingress removal page`
 
 **M4 — card UI (§10):**
-9.  `config: materialize bundled cards into /config/www/ha-lua` (small Go
+10. `config: materialize bundled cards into /config/www/ha-lua` (small Go
     change: `CardsDir` forced in add-on mode, best-effort `Materialize`)
-10. `cards: enhanced-climate-card render + climate-native controls + i18n`
-11. `cards: enhanced-climate-card boost + override-temp + schedule editor`
-12. `cards: enhanced-climate-card config editor (getConfigElement)`
-13. `cards: enhanced-climate-card chromedp harness test` (§10.8, incl. a hu
+11. `cards: enhanced-climate-card render + climate-native controls + i18n`
+12. `cards: enhanced-climate-card boost + override-temp + schedule editor`
+13. `cards: enhanced-climate-card config editor (getConfigElement)`
+14. `cards: enhanced-climate-card chromedp harness test` (§10.8, incl. a hu
     localization assertion)
 
 **M5 — docs/release:** DOCS (`ha.set_state`/`on_command`, the card config + the
-dashboard-resource install, the entity model, restart caveat) + CHANGELOG +
-**minor** version bump (new APIs + new example + bundled card; existing example
-untouched, nothing breaks).
+dashboard-resource install, the entity model, restart caveat, **the card needs
+an admin HA user** to fire `ha_lua_command`, and a recommended recorder
+`exclude` for `sensor.ha_lua_enhanced_climate_*`) + CHANGELOG + **minor** version
+bump (new APIs + new example + bundled card + a behavior-preserving
+`thermostat.lua` refactor; nothing breaks).
 
 > M1 + the M4 materialization ship in the binary; M1 is reusable by any script.
 > M2–M3 are examples-only (reference tree, never loaded — AI.state); a user copies
-> `enhanced_climate.lua` into `/config/ha-lua/scripts/` to use it. The existing
-> `thermostat.lua` is left entirely alone. The card JS (M4 commits 10–13) is the
-> only frontend deliverable.
+> `enhanced_climate.lua` into `/config/ha-lua/scripts/` to use it. `thermostat.lua`
+> is touched only by the mechanical `lib/control.lua` migration (commit 4) —
+> behavior and tests unchanged. The card JS (M4 commits 11–14) is the only
+> frontend deliverable.
 
 ## 13. Open items
 
 - **Multiple cards, one climate entity** — idempotent `configure` makes this
-  safe; last writer of `window_sensor`/`presets` wins (cosmetic).
+  safe. `presets` is cosmetic (last writer wins). `window_sensors` is **not**
+  cosmetic — a window binding changes control behavior — so a card lists *every*
+  relevant sensor and the daemon's any-open/all-closed reduction (§7.1) does the
+  right thing; the last `configure` still wins the stored list, so the Ingress
+  page (§8) is the authoritative place to reconcile a climate watched by several
+  cards.
+- **Admin requirement** — firing `ha_lua_command` via `events/` needs an admin HA
+  user; documented (§12 M5), not worked around. Non-admin users keep the
+  climate-native controls (`callService`), which do not require it.
 - **Example name** — `enhanced_climate.lua` chosen for consistency with the
   concept/entity/card naming; rename if preferred before M2.
