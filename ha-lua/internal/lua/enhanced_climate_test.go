@@ -31,6 +31,11 @@ type svcCall struct {
 	data            jsontext.Value
 }
 
+type stateCall struct {
+	entityID, state string
+	attrs           jsontext.Value
+}
+
 type enhancedFixture struct {
 	reg     *Registry
 	global  *store.GlobalStore
@@ -38,8 +43,10 @@ type enhancedFixture struct {
 	ctx     context.Context
 	t       *testing.T
 
-	mu    sync.Mutex
-	calls []svcCall
+	mu      sync.Mutex
+	calls   []svcCall
+	publish []stateCall
+	removed []string
 }
 
 func newEnhancedFixture(t *testing.T) *enhancedFixture {
@@ -78,8 +85,18 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 		Root:        openTestRoot(t, dir),
 		NewKV:       func(id string) *store.Store { return store.New(writeDB, readDB, id) },
 		CallService: callService,
-		SetState:    func(context.Context, string, string, jsontext.Value) (bool, error) { return true, nil },
-		RemoveState: func(context.Context, string) error { return nil },
+		SetState: func(_ context.Context, entityID, st string, attrs jsontext.Value) (bool, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.publish = append(f.publish, stateCall{entityID, st, attrs})
+			return true, nil
+		},
+		RemoveState: func(_ context.Context, entityID string) error {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.removed = append(f.removed, entityID)
+			return nil
+		},
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -147,6 +164,51 @@ func (f *enhancedFixture) fireCommand(action, data string) {
 		Type: "ha_lua_command",
 		Data: jsontext.Value(`{"script":"enhanced_climate","action":"` + action + `","data":` + data + `}`),
 	})
+}
+
+// lastCompanion returns the most recent set_state (state, attributes) for an
+// entity, or "", nil if none.
+func (f *enhancedFixture) lastCompanion(entityID string) (string, map[string]any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.publish) - 1; i >= 0; i-- {
+		if f.publish[i].entityID != entityID {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal(f.publish[i].attrs, &m); err != nil {
+			return f.publish[i].state, nil
+		}
+		return f.publish[i].state, m
+	}
+	return "", nil
+}
+
+// waitCompanion waits until the latest companion for entityID satisfies check.
+func (f *enhancedFixture) waitCompanion(entityID string, check func(state string, attrs map[string]any) bool, desc string) {
+	f.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		state, attrs := f.lastCompanion(entityID)
+		if attrs != nil && check(state, attrs) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	state, attrs := f.lastCompanion(entityID)
+	f.t.Fatalf("timeout waiting for companion %s (%s); last state=%q attrs=%+v", entityID, desc, state, attrs)
+}
+
+// removedCompanion reports whether remove_state was called for entityID.
+func (f *enhancedFixture) removedCompanion(entityID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.removed {
+		if r == entityID {
+			return true
+		}
+	}
+	return false
 }
 
 // seedClimate writes a climate entity into the state mirror as heat mode.
@@ -349,4 +411,66 @@ func TestEnhancedClimateWindow(t *testing.T) {
 
 	f.setWindow("binary_sensor.w2", "off") // now all closed
 	f.waitSetTemp(21, "all closed -> restore desired")
+}
+
+// TestEnhancedClimateCompanion confirms the companion sensor is published with
+// the right state/attributes through configure / mutation, and removed on
+// remove.
+func TestEnhancedClimateCompanion(t *testing.T) {
+	const companion = "sensor.ha_lua_enhanced_climate_lr"
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"friendly_name":"Living Room","min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"],"presets":[10,30,60]}`)
+
+	// Configure publishes the companion: no schedule yet -> "off", not controlled.
+	f.waitCompanion(companion, func(state string, a map[string]any) bool {
+		return state == "off" && a["controlled"] == false
+	}, "initial off / not controlled")
+
+	_, attrs := f.lastCompanion(companion)
+	if attrs["ha_lua_climate"] != "climate.lr" {
+		t.Errorf("ha_lua_climate = %v", attrs["ha_lua_climate"])
+	}
+	if attrs["friendly_name"] != "Living Room" {
+		t.Errorf("friendly_name = %v", attrs["friendly_name"])
+	}
+	if attrs["unit_of_measurement"] != "°C" || attrs["device_class"] != "temperature" {
+		t.Errorf("unit/device_class = %v / %v", attrs["unit_of_measurement"], attrs["device_class"])
+	}
+	if attrs["removal"] == nil || attrs["removal"] == "" {
+		t.Errorf("removal pointer attribute missing")
+	}
+	win, _ := attrs["window"].(map[string]any)
+	if win == nil || win["open"] != false {
+		t.Errorf("window block = %v", attrs["window"])
+	}
+	if sensors, _ := win["sensors"].([]any); len(sensors) != 1 {
+		t.Errorf("window.sensors = %v", win["sensors"])
+	}
+	if presets, _ := attrs["presets"].([]any); len(presets) != 3 {
+		t.Errorf("presets = %v", attrs["presets"])
+	}
+
+	// A schedule makes it controlled, with the desired as the state.
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitCompanion(companion, func(state string, a map[string]any) bool {
+		return state == "21" && a["controlled"] == true
+	}, "controlled at 21")
+
+	// An override is reflected in the override block.
+	f.fireCommand("override", `{"climate_entity":"climate.lr","minutes":30}`)
+	f.waitCompanion(companion, func(_ string, a map[string]any) bool {
+		o, _ := a["override"].(map[string]any)
+		return o != nil && o["active"] == true
+	}, "override active in companion")
+
+	// remove deletes the companion entity.
+	f.fireCommand("remove", `{"climate_entity":"climate.lr"}`)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && !f.removedCompanion(companion) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !f.removedCompanion(companion) {
+		t.Fatalf("remove did not remove_state the companion %s", companion)
+	}
 }

@@ -65,6 +65,13 @@ local function manual_key(e) return "manual:" .. e end
 local function override_temp_key(e) return "override_temp:" .. e end
 local function desired_key(e) return "desired:" .. e end
 
+-- slug_of derives the companion-sensor slug from a climate entity id:
+-- climate.living_room -> living_room (so the card can derive the companion id
+-- without it being configured).
+local function slug_of(e)
+  return (e:gsub("^climate%.", ""))
+end
+
 -- now_parts returns the current time userdata plus the schedule's weekday
 -- (0=Mon..6=Sun, converted from Go's Sunday-first weekday) and minute-of-day.
 local function now_parts()
@@ -191,34 +198,84 @@ local function set_temp(e, temp)
   ha.call_service("climate", "set_temperature", { entity_id = e, temperature = temp })
 end
 
+-- publish_companion writes the sensor.ha_lua_enhanced_climate_<slug> companion
+-- entity (§6) that the card reads: its state is the current desired setpoint
+-- when controlled, else "off"; its attributes carry the schedule, override,
+-- manual, window and preset detail plus the device range and identity markers.
+-- desired_temp is the already-clamped value (or nil when not controlled).
+local function publish_companion(e, now, desired_temp)
+  local cfg = load_registry()[e]
+  if cfg == nil then return end
+  local lo, hi = temp_bounds(e)
+
+  local friendly = e
+  local entity_state = ha.get_state(e)
+  if entity_state and entity_state.attributes and type(entity_state.attributes.friendly_name) == "string" then
+    friendly = entity_state.attributes.friendly_name
+  end
+
+  local override_tbl = { active = false }
+  local override = active_override(e, now)
+  if override then
+    override_tbl = { active = true, expires = override.ends_at, temp = override_temp(e) }
+  end
+
+  local manual_tbl = { active = false }
+  local manual = active_manual(e, now)
+  if manual then
+    manual_tbl = { active = true, ["until"] = manual.expires } -- "until" is a keyword
+  end
+
+  local controlled = desired_temp ~= nil
+  local state_value = controlled and desired_temp or "off"
+
+  card.publish(slug_of(e), state_value, {
+    ha_lua_climate = e,
+    friendly_name = friendly,
+    schedule = load_schedule(e),
+    override = override_tbl,
+    manual = manual_tbl,
+    window = { sensors = window_sensors_of(e), open = window_open(e) },
+    presets = cfg.presets,
+    min_temp = lo,
+    max_temp = hi,
+    controlled = controlled,
+    unit_of_measurement = "°C",
+    device_class = "temperature",
+    icon = "mdi:thermostat",
+    removal = "Deleting the card keeps this running — remove it in the ha-lua panel",
+  })
+end
+
 -- apply_climate is the per-climate control step: compute the desired setpoint,
 -- clamp it to the device range, remember it (so manual detection can compare),
 -- and write it when the shared gate allows. While any bound window is open the
 -- climate is held at a frost setpoint instead — that is what pauses heating;
--- the desired (still remembered) is restored once every window closes.
+-- the desired (still remembered) is restored once every window closes. Every
+-- pass re-publishes the companion, so configure / tick / mutation all refresh
+-- it through this one path.
 local function apply_climate(e, now, dow, minute)
   local desired_temp = desired(e, now, dow, minute)
-  if desired_temp == nil then
-    store.delete(desired_key(e)) -- not controlled (no schedule/override/manual)
-    return
-  end
   local lo, hi = temp_bounds(e)
-  desired_temp = control.clamp_bounds(desired_temp, lo, hi)
-  store.set(desired_key(e), desired_temp)
-
-  if mode(e) ~= "heat" then return end
-  local current = current_target(e)
-  if window_open(e) then
-    -- Pause: hold the frost setpoint while any window is open.
-    local frost = control.clamp_bounds(FROST_TEMP, lo, hi)
-    if current == nil or math.abs(current - frost) > 0.05 then
-      set_temp(e, frost)
+  if desired_temp ~= nil then
+    desired_temp = control.clamp_bounds(desired_temp, lo, hi)
+    store.set(desired_key(e), desired_temp)
+    if mode(e) == "heat" then
+      local current = current_target(e)
+      if window_open(e) then
+        -- Pause: hold the frost setpoint while any window is open.
+        local frost = control.clamp_bounds(FROST_TEMP, lo, hi)
+        if current == nil or math.abs(current - frost) > 0.05 then
+          set_temp(e, frost)
+        end
+      elseif control.should_write("heat", false, current, desired_temp) then
+        set_temp(e, desired_temp)
+      end
     end
-    return
+  else
+    store.delete(desired_key(e)) -- not controlled (no schedule/override/manual)
   end
-  if control.should_write("heat", false, current, desired_temp) then
-    set_temp(e, desired_temp)
-  end
+  publish_companion(e, now, desired_temp)
 end
 
 -- The 1-minute tick that drives every registered climate. Override/manual
@@ -344,6 +401,7 @@ card.on("remove", function(data)
   reg[data.climate_entity] = nil
   save_registry(reg)
   store.delete(desired_key(data.climate_entity))
+  card.remove(slug_of(data.climate_entity)) -- the companion disappears with it
 end)
 
 -- schedule replaces the 7-day schedule, bounded by the device's range.
@@ -388,5 +446,15 @@ card.on("settings", function(data)
   local now, dow, minute = now_parts()
   apply_climate(e, now, dow, minute) -- if an override is active, the new temp applies now
 end)
+
+-- Re-publish every registered climate at load so the companions reappear after
+-- a restart (REST-set states are dropped by an HA restart) before the first
+-- tick — and resume controlling them.
+do
+  local now, dow, minute = now_parts()
+  for climate_entity in pairs(load_registry()) do
+    apply_climate(climate_entity, now, dow, minute)
+  end
+end
 
 ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/enhanced-climate-errors.log"))
