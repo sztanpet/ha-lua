@@ -215,6 +215,32 @@ func (f *enhancedFixture) removedCompanion(entityID string) bool {
 	return false
 }
 
+// companionWrites counts how many set_state calls targeted entityID.
+func (f *enhancedFixture) companionWrites(entityID string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, p := range f.publish {
+		if p.entityID == entityID {
+			n++
+		}
+	}
+	return n
+}
+
+// waitWrites blocks until at least want set_state calls have targeted entityID.
+func (f *enhancedFixture) waitWrites(entityID string, want int, desc string) {
+	f.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if f.companionWrites(entityID) >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.t.Fatalf("timeout waiting for %d writes to %s (%s); got %d", want, entityID, desc, f.companionWrites(entityID))
+}
+
 // seedClimate writes a climate entity into the state mirror as heat mode.
 func (f *enhancedFixture) seedClimate(entity, attrs string) {
 	f.t.Helper()
@@ -544,4 +570,41 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 	if rec.Code != 400 {
 		t.Errorf("bad body status = %d, want 400", rec.Code)
 	}
+}
+
+// TestEnhancedClimateCompanionDedupsUnchanged verifies the controller does not
+// rewrite a companion whose state+attributes are unchanged: an identical
+// re-apply issues no set_state, while a real change still publishes. This is
+// what keeps the 1-minute tick (and every event-driven re-apply) from spamming
+// HA with no-op state_changed writes.
+func TestEnhancedClimateCompanionDedupsUnchanged(t *testing.T) {
+	f := newEnhancedFixture(t)
+	const companion = "sensor.ha_lua_enhanced_climate_lr"
+
+	f.seedClimate("climate.lr", `{"temperature":20,"min_temp":5,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"]}`)
+	f.waitRegistry(func(m map[string]any) bool {
+		return m != nil && m["climate.lr"] != nil
+	}, "configure climate.lr")
+
+	// Seed the window closed and wait until the companion reflects it; this is
+	// the steady state we then re-apply without change.
+	f.setWindow("binary_sensor.w1", "off")
+	f.waitCompanion(companion, func(_ string, attrs map[string]any) bool {
+		w, _ := attrs["window"].(map[string]any)
+		return w != nil && w["open"] == false
+	}, "window closed")
+
+	baseline := f.companionWrites(companion)
+
+	// Re-apply with the window still closed: identical payload, so no write.
+	f.setWindow("binary_sensor.w1", "off")
+	time.Sleep(200 * time.Millisecond) // let the re-apply run (asserting a non-event)
+	if got := f.companionWrites(companion); got != baseline {
+		t.Errorf("unchanged re-apply wrote %d extra companion update(s); want 0", got-baseline)
+	}
+
+	// A real change (window opens) must still publish.
+	f.setWindow("binary_sensor.w1", "on")
+	f.waitWrites(companion, baseline+1, "publish after window opens")
 }

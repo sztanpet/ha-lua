@@ -30,6 +30,14 @@ local DEFAULT_OVERRIDE_TEMP = 23
 -- once every window closes again.
 local FROST_TEMP = 15
 
+-- published caches, per climate entity, the JSON of the last companion payload
+-- we actually wrote and when (os.time seconds). publish_companion consults it to
+-- skip rewriting an unchanged sensor every minute; PUBLISH_HEARTBEAT bounds how
+-- long an unchanged sensor goes without a refresh so it still self-heals after
+-- an HA restart drops it.
+local published = {}
+local PUBLISH_HEARTBEAT = 5 * 60
+
 -- ---------------------------------------------------------------------------
 -- Registry (§7.1). The set of enhanced climates, keyed by climate entity id,
 -- each { climate_entity, window_sensors, presets }. Global-scoped (shared)
@@ -235,9 +243,7 @@ local function publish_companion(e, now, desired_temp)
   local controlled = desired_temp ~= nil
   local state_value = controlled and desired_temp or "off"
 
-  -- set_state is non-raising, so log the result here: warn on failure (else an
-  -- outage is invisible), info on first create, debug for the per-minute refresh.
-  local created, err = card.publish(slug_of(e), state_value, {
+  local attrs = {
     ha_lua_climate = e,
     friendly_name = friendly,
     schedule = load_schedule(e),
@@ -253,13 +259,33 @@ local function publish_companion(e, now, desired_temp)
     device_class = "temperature",
     icon = "mdi:thermostat",
     removal = "Deleting the card keeps this running — remove it in the ha-lua panel",
-  })
+  }
+
+  -- The 1-minute tick re-publishes every companion, but rewriting an unchanged
+  -- sensor each minute is pure noise: every set_state is a state_changed event
+  -- (and a recorder row). So skip the write when state+attrs match the last one
+  -- we actually sent. We still re-publish unchanged data on a slow heartbeat so
+  -- the sensor self-heals after an HA restart drops it (these states are not
+  -- integration-backed, and the state mirror is not pruned on reconnect, so we
+  -- cannot tell from get_state that HA lost it).
+  local snapshot = json.encode({ state = state_value, attrs = attrs })
+  local prev = published[e]
+  if prev and prev.snapshot == snapshot and (os.time() - prev.at) < PUBLISH_HEARTBEAT then
+    return
+  end
+
+  -- set_state is non-raising, so log the result here: warn on failure (else an
+  -- outage is invisible), info on first create, debug for the heartbeat refresh.
+  local created, err = card.publish(slug_of(e), state_value, attrs)
   if err then
     ha.log("warn", "publish companion for " .. e .. " failed: " .. err)
-  elseif created then
-    ha.log("info", "published companion sensor for " .. e)
   else
-    ha.log("debug", "refreshed companion for " .. e .. " (state " .. tostring(state_value) .. ")")
+    published[e] = { snapshot = snapshot, at = os.time() }
+    if created then
+      ha.log("info", "published companion sensor for " .. e)
+    else
+      ha.log("debug", "refreshed companion for " .. e .. " (state " .. tostring(state_value) .. ")")
+    end
   end
 end
 
@@ -428,6 +454,7 @@ local function remove_climate(e)
   reg[e] = nil
   save_registry(reg)
   store.delete(desired_key(e))
+  published[e] = nil -- a re-add must re-publish, not skip against the stale cache
   local _, err = card.remove(slug_of(e)) -- the companion disappears with it
   if err then
     ha.log("warn", "remove companion for " .. e .. " failed: " .. err)
