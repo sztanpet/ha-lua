@@ -16,6 +16,28 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## v2.8.4 (card 0.3.20) — terminate reconcile loop + fix editor picker
+- After 0.3.19 the storm became a bounded ~15s retry (the reconcile backoff): the
+  card never reached its fixed point because `_companionConfigured` was permanently
+  false for konyha_furdo (empty config). Root cause: the companion was ABSENT (HA
+  drops these non-integration entities on restart) and the daemon's configure
+  handler NO-OPED on unchanged config (config_equal true) — so it never
+  republished, and my publish dedup cache stopped the 1-min tick from healing it
+  until the 5-min heartbeat. Deadlock: card asks → daemon ignores → card retries.
+- Daemon fix (ed33763): configure ALWAYS (re)publishes the companion — clears
+  `published[e]` then apply_climate so publish_companion writes even when
+  unchanged; registry write + log still gated on a real change. Test
+  TestEnhancedClimateConfigureRepublishesCompanion (repeat identical configure =>
+  +1 companion write). Card stops as soon as the companion reappears.
+- Editor fix (4bdf9cf): window-sensor field used `ha-entities-picker` (plural) —
+  a frontend internal HA DROPPED, so it rendered as an unknown element (no picker,
+  no label, couldn't configure window sensors). Switched to single
+  `ha-entity-picker` per the user's call ("use a single element picker, it will be
+  fine"). window_sensors stays a LIST (0 or 1 entry) so control/companion code is
+  untouched; label now singular (en "Window sensor", hu "Ablakérzékelő").
+- NOTE: `ha-entities-picker` being gone is the kind of HA-internal churn the card
+  header comment warns about; `ha-entity-picker` (singular) still ships.
+
 ## v2.8.3 (card 0.3.19) — configure storm REAL fix
 - 0.3.18's instance-level reconcile did NOT stop the storm (user confirmed still
   storming on 0.3.18 / add-on 2.8.2). Root cause it missed: HA recreates the card
