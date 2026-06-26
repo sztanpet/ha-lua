@@ -4,6 +4,19 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.5 - 2026-06-26
+
+### Fixed
+- **Enhanced climate card configure storm (definitive).** The reconcile model
+  introduced in 2.8.3 still misbehaved: the card kept re-sending `configure` on a
+  15s timer whenever it judged the companion not to "match", and with 2.8.4
+  republishing the companion on every configure, that turned into a `state_changed`
+  storm severe enough to drop the HA websocket and continuously reload the page.
+  The card now sends `configure` strictly **once** per climate per config (tracked
+  module-side so a recreated element doesn't re-send) — no companion check, no
+  retry — making a storm structurally impossible. The daemon keeps ownership of
+  the companion lifecycle, so the card never needs to chase it.
+
 ## 2.8.4 - 2026-06-26
 
 ### Fixed
