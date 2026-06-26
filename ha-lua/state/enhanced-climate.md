@@ -16,6 +16,26 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## v2.8.5 (card 0.3.21) — configure is fire-once, reconciler DELETED
+- The reconcile model (0.3.19) was fundamentally wrong and kept regressing. User
+  confirmed window.sensors for konyha_furdo is ALWAYS empty (so _companionConfigured
+  SHOULD have matched) yet the card retried every 15s anyway — and 2.8.4's
+  republish-on-every-configure turned that retry into a state_changed storm that
+  dropped the HA WS and constantly reloaded the page.
+- FIX (1a94bb6): deleted _reconcileConfig + _companionConfigured + pendingConfigure
+  + CONFIGURE_RETRY_MS. Configure is now strictly FIRE-ONCE: module-level
+  `sentConfigures` Map (climate_entity -> configHash); _maybeConfigure (called from
+  setConfig + set hass) sends once per distinct config, NO companion check, NO
+  retry. A storm is now structurally impossible regardless of companion state or
+  how often HA rebuilds the card. Daemon keeps companion ownership (tick +
+  republish-on-configure from 2.8.4). Test rewritten: 50 hass updates => exactly 1
+  configure; a real config change => exactly 1 more.
+- Daemon force-republish-on-configure (2.8.4, ed33763) KEPT — it's safe and useful
+  now that the card fires once: each page load => 1 configure => companion refreshed
+  (self-heals an HA-dropped companion on load).
+- LESSON: don't make a card reconcile against server state on a timer; tell the
+  server once and let the server own its own published entities.
+
 ## v2.8.4 (card 0.3.20) — terminate reconcile loop + fix editor picker
 - After 0.3.19 the storm became a bounded ~15s retry (the reconcile backoff): the
   card never reached its fixed point because `_companionConfigured` was permanently

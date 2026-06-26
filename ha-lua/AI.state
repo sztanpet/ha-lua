@@ -11,18 +11,20 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-RELEASED **v2.8.4** (2026-06-26, tag on 0967b41). Two fixes after 0.3.19's
-reconciler turned the storm into a bounded ~15s retry that never terminated.
-(1) DAEMON (ed33763): the reconcile loop deadlocked — companion ABSENT (HA drops
-non-integration entities on restart) + configure NO-OPED on unchanged config
-(config_equal) + publish dedup cache blocked the tick's heal until the 5-min
-heartbeat. Now configure ALWAYS republishes the companion (clears published[e]
-then apply_climate); registry write/log still gated on real change. Card stops
-once the companion reappears. Test TestEnhancedClimateConfigureRepublishesCompanion.
-(2) CARD editor 0.3.20 (4bdf9cf): window-sensor field used `ha-entities-picker`
-(plural) which HA DROPPED → unknown element, no picker/label. Switched to single
-`ha-entity-picker` (user's call); window_sensors stays a LIST (0/1) so control code
-untouched. Full detail: **`state/enhanced-climate.md`**.
+RELEASED **v2.8.5** (2026-06-26, tag on 3946c5b). DEFINITIVE configure-storm fix:
+the whole reconcile-against-companion model (0.3.19) was wrong. User confirmed
+konyha_furdo's window.sensors is ALWAYS empty (so the match check SHOULD have
+passed) yet the card retried every 15s, and 2.8.4's republish-on-configure turned
+that into a state_changed storm that dropped the HA WS and constantly reloaded the
+page. Card 0.3.21 (1a94bb6): DELETED _reconcileConfig/_companionConfigured/
+pendingConfigure/CONFIGURE_RETRY_MS. Configure is now strictly FIRE-ONCE — module-
+level `sentConfigures` Map (entity->configHash), _maybeConfigure sends once per
+distinct config, NO companion check, NO retry => storm structurally impossible.
+Daemon keeps companion ownership (tick + republish-on-configure from 2.8.4, kept).
+Test: 50 hass updates => exactly 1 configure; config change => 1 more. LESSON:
+don't reconcile a card against server state on a timer — tell the server once, let
+it own its published entities. Editor window picker = single ha-entity-picker
+(0.3.20). Full detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -39,6 +41,8 @@ untouched. Full detail: **`state/enhanced-climate.md`**.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.5 (2026-06-26): card 0.3.21 — DEFINITIVE configure-storm fix: deleted the
+  reconciler, configure is now strictly fire-once per config. See `state/enhanced-climate.md`.
 - 2.8.4 (2026-06-26): card 0.3.20 — terminate the reconcile retry loop (daemon
   republishes companion on every configure) + fix editor window picker (ha-entities-
   picker gone → single ha-entity-picker). See `state/enhanced-climate.md`.
