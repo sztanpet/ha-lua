@@ -4,6 +4,19 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.8 - 2026-06-26
+
+### Fixed
+- **Card commands no longer drop the Home Assistant websocket.** The enhanced
+  climate card fired its `ha_lua_command` events with a REST `fetch`. On Firefox
+  152 that fetch to HA's (private-IP) host trips the browser's new Local Network
+  Access check, which tore down the live `wss://` connection as a side effect —
+  so every override/setpoint tap briefly knocked the whole frontend offline
+  ("connection interrupted", orphaned subscriptions, other cards erroring) and
+  forced a card rebuild. Commands now fire over the existing websocket
+  (`fire_event`), opening no new connection: same event delivery, no Local
+  Network Access trigger, no drop. The card now makes no REST calls at all.
+
 ## 2.8.7 - 2026-06-26
 
 ### Added
