@@ -20,12 +20,13 @@ const cardHarnessHTML = `<!doctype html>
 <html><head><meta charset="utf-8"></head><body>
 <script src="/card.js"></script>
 <script>
-  window.__calls = { api: [], service: [] };
+  window.__calls = { api: [], service: [], ws: [] };
   window.__mkHass = (language, states) => ({
     language: language,
     states: states,
     callApi: (method, path, data) => { window.__calls.api.push({ method, path, data }); return Promise.resolve({}); },
     callService: (domain, service, data) => { window.__calls.service.push({ domain, service, data }); return Promise.resolve(); },
+    callWS: (msg) => { window.__calls.ws.push(msg); return Promise.resolve({}); },
   });
   window.__card = document.createElement("ha-lua-enhanced-climate-card");
   window.__card.setConfig({ climate_entity: "climate.lr" });
@@ -170,18 +171,30 @@ func TestEnhancedClimateCard(t *testing.T) {
 		}
 	}
 
-	// Click the first override preset -> override command for 10 minutes.
-	var apiCalls string
+	// Click the first override preset -> override command for 10 minutes, fired
+	// over the websocket (fire_event), not a REST fetch.
+	var cmdCalls string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__clickAll(".presets button", 0)`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls.ws)`, &cmdCalls),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"event_type":"ha_lua_command"`, `"action":"override"`, `"minutes":10`, `"climate_entity":"climate.lr"`} {
+		if !strings.Contains(cmdCalls, want) {
+			t.Errorf("override preset did not fire %s; ws calls = %s", want, cmdCalls)
+		}
+	}
+	// And it must NOT use a REST fetch (that fetch is what tripped Firefox's
+	// Local Network Access and dropped the live websocket).
+	var apiCalls string
+	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`JSON.stringify(window.__calls.api)`, &apiCalls),
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"events/ha_lua_command"`, `"action":"override"`, `"minutes":10`, `"climate_entity":"climate.lr"`} {
-		if !strings.Contains(apiCalls, want) {
-			t.Errorf("override preset did not fire %s; api calls = %s", want, apiCalls)
-		}
+	if strings.Contains(apiCalls, "ha_lua_command") {
+		t.Errorf("command went over REST fetch, want websocket only; api calls = %s", apiCalls)
 	}
 
 	// Click the target stepper's + (second .step in the first stepper) -> native
@@ -272,12 +285,12 @@ func TestEnhancedClimateCard(t *testing.T) {
 		chromedp.Evaluate(`(window.__shadow(".edit-schedule").click(), true)`, &ok),
 		chromedp.Poll(`!!window.__shadow(".editor .save")`, &ok),
 		chromedp.Evaluate(`(window.__shadow(".editor .save").click(), true)`, &ok),
-		chromedp.Evaluate(`JSON.stringify(window.__calls.api)`, &apiCalls),
+		chromedp.Evaluate(`JSON.stringify(window.__calls.ws)`, &cmdCalls),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(apiCalls, `"action":"schedule"`) {
-		t.Errorf("schedule save did not fire a schedule command; api calls = %s", apiCalls)
+	if !strings.Contains(cmdCalls, `"action":"schedule"`) {
+		t.Errorf("schedule save did not fire a schedule command; ws calls = %s", cmdCalls)
 	}
 }
 
@@ -292,7 +305,7 @@ func TestEnhancedClimateCardConfigureNoStorm(t *testing.T) {
 
 	var ok bool
 	var first, afterChange int
-	countConfigures := `window.__calls.api.filter(c => c.path === "events/ha_lua_command" && c.data && c.data.action === "configure").length`
+	countConfigures := `window.__calls.ws.filter(m => m.event_type === "ha_lua_command" && m.event_data && m.event_data.action === "configure").length`
 
 	// 50 hass updates with one config must send configure exactly once.
 	if err := chromedp.Run(ctx,
@@ -308,7 +321,7 @@ func TestEnhancedClimateCardConfigureNoStorm(t *testing.T) {
 
 	// A real config change sends exactly one more — not one per hass update.
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`window.__calls.api = []; window.__card.setConfig(`+
+		chromedp.Evaluate(`window.__calls.ws = []; window.__card.setConfig(`+
 			`{ climate_entity: "climate.lr", window_sensors: ["binary_sensor.w1"] }); true`, &ok),
 		chromedp.Evaluate(`for (let i = 0; i < 50; i++) window.__apply("en", `+cardStates+`); true`, &ok),
 		chromedp.Evaluate(countConfigures, &afterChange),
@@ -333,7 +346,7 @@ func TestEnhancedClimateCardConfigureTwoCardsNoStorm(t *testing.T) {
 
 	var ok bool
 	var configures int
-	countConfigures := `window.__calls.api.filter(c => c.path === "events/ha_lua_command" && c.data && c.data.action === "configure").length`
+	countConfigures := `window.__calls.ws.filter(m => m.event_type === "ha_lua_command" && m.event_data && m.event_data.action === "configure").length`
 
 	// Build a second card for climate.lr with a different config (a window
 	// sensor), then push 50 hass updates to BOTH cards, interleaved.
@@ -343,7 +356,7 @@ func TestEnhancedClimateCardConfigureTwoCardsNoStorm(t *testing.T) {
 			window.__card2 = document.createElement("ha-lua-enhanced-climate-card");
 			window.__card2.setConfig({ climate_entity: "climate.lr", window_sensors: ["binary_sensor.w1"] });
 			document.body.appendChild(window.__card2);
-			window.__calls.api = [];
+			window.__calls.ws = [];
 			for (let i = 0; i < 50; i++) {
 				window.__card.hass = window.__mkHass("en", `+cardStates+`);
 				window.__card2.hass = window.__mkHass("en", `+cardStates+`);
@@ -371,7 +384,7 @@ func TestEnhancedClimateCardPreviewNoConfigure(t *testing.T) {
 	var configures int
 	// Count configures for the preview's distinct entity so the harness card's
 	// own provisioning can never be mistaken for the preview's.
-	countConfigures := `window.__calls.api.filter(c => c.path === "events/ha_lua_command" && c.data && c.data.action === "configure" && c.data.data && c.data.data.climate_entity === "climate.preview").length`
+	countConfigures := `window.__calls.ws.filter(m => m.event_type === "ha_lua_command" && m.event_data && m.event_data.action === "configure" && m.event_data.data && m.event_data.data.climate_entity === "climate.preview").length`
 
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),

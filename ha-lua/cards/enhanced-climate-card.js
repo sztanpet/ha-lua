@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.23";
+const VERSION = "0.3.24";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -568,15 +568,26 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   fireCommand(action, data) {
     if (!this._hass) return;
     const conn = this._hass.connection;
-    dbg("fireCommand POST", action, data, "ws.connected=", conn && conn.connected);
-    // Fire-and-forget: the card is optimism-free and reconciles from the next
-    // hass push, so swallow rejections (e.g. a transient "Connection lost")
-    // rather than leaving an uncaught promise that spams the console.
-    Promise.resolve(this._hass.callApi("POST", "events/ha_lua_command", {
+    dbg("fireCommand", action, data, "ws.connected=", conn && conn.connected);
+    const payload = {
       script: "enhanced_climate",
       action,
       data: { climate_entity: this._config.climate_entity, ...data },
-    })).then(
+    };
+    // Fire the event over the EXISTING websocket, not a REST fetch. A fetch to HA
+    // opens a fresh connection to the (typically private-IP) host, which on
+    // Firefox 152 trips its new Local Network Access check and tears down the live
+    // wss:// connection — so every command briefly knocked the whole frontend
+    // offline ("connection interrupted" + orphaned subscriptions). callWS reuses
+    // the open socket: identical event-bus delivery, no new connection, no LNA.
+    // Falls back to REST only on a frontend too old to expose callWS.
+    const fire = this._hass.callWS
+      ? this._hass.callWS({ type: "fire_event", event_type: "ha_lua_command", event_data: payload })
+      : this._hass.callApi("POST", "events/ha_lua_command", payload);
+    // Fire-and-forget: the card is optimism-free and reconciles from the next
+    // hass push, so swallow rejections (e.g. a transient "Connection lost")
+    // rather than leaving an uncaught promise that spams the console.
+    Promise.resolve(fire).then(
       (res) => dbg("fireCommand ok", action, res),
       (err) => dbg("fireCommand failed", action, err),
     );
