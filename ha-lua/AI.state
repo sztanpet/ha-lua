@@ -11,19 +11,19 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-RELEASED **v2.8.2** (2026-06-26, tag on e16a687). CRITICAL HA-freeze fix + noise
-cut. (1) Card 0.3.18 configure STORM: _maybeConfigure re-sent `configure` on every
-card re-instantiation (HA recreates cards freely + on reconnect) → daemon
-re-published companion → new hass state → card recreated → loop, flooding POST
-/api/events/ha_lua_command until the frontend WS dropped (code 3 "Connection
-lost") and the UI froze. Fix: reconcile against the already-published companion
-(_companionConfigured: window.sensors+presets), only configure on real change;
-also catch fire-and-forget callApi/callService so blips don't spam uncaught
-rejections. Commit e44bc5a. (2) enhanced_climate.lua publish_companion now skips
-unchanged companion writes (was a no-op state_changed + recorder row per companion
-PER MINUTE — the "refreshed companion" debug spam); PUBLISH_HEARTBEAT 5m keeps
-self-heal since published states aren't integration-backed and Seed doesn't prune
-the mirror. Commit fe57c8f. Full detail: **`state/enhanced-climate.md`**.
+RELEASED **v2.8.3** (2026-06-26, tag on 7022520). REAL fix for the configure
+storm that froze HA — 2.8.2's instance-level guard did NOT work (user confirmed
+still storming on card 0.3.18). Root cause: HA recreates the card element faster
+than the daemon's companion publish round-trips back, so each FRESH instance
+re-fired configure before being destroyed; a per-instance guard cannot help.
+Card 0.3.19: configure is now RECONCILIATION — module-level pendingConfigure Map
+(survives element recreation) + _reconcileConfig sends only when the companion
+doesn't already match window_sensors/presets, single-flight w/ 15s backoff; steady
+configured climate => ZERO POSTs. Removed _maybeConfigure/_sentConfigHash. Test
+TestEnhancedClimateCardConfigureNoStorm (50 hass updates => <=1 / ==0). Commit
+45f6c55. (Earlier in 2.8.2: companion publish dedup in enhanced_climate.lua +
+PUBLISH_HEARTBEAT 5m, commit fe57c8f — still valid.) Full detail:
+**`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -40,9 +40,11 @@ the mirror. Commit fe57c8f. Full detail: **`state/enhanced-climate.md`**.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
-- 2.8.2 (2026-06-26): card 0.3.18 — CRITICAL fix for the configure event storm
-  that froze the HA UI ("Connection lost"); + skip rewriting unchanged companion
-  sensors every minute. See `state/enhanced-climate.md`.
+- 2.8.3 (2026-06-26): card 0.3.19 — REAL fix for the configure storm (2.8.2's
+  per-instance guard lost the card-recreation race); configure reworked as
+  module-level reconciliation. See `state/enhanced-climate.md`.
+- 2.8.2 (2026-06-26): card 0.3.18 — first (insufficient) configure-storm fix +
+  skip rewriting unchanged companion sensors every minute.
 - 2.8.1 (2026-06-26): card 0.3.17 — setpoint stepper fused into one pill + HVAC
   mode icons right-align beside the stepper. See `state/enhanced-climate.md`.
 - 2.7.0–2.7.4 (2026-06-25): enhanced-climate transport + example + card, then

@@ -16,6 +16,23 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## v2.8.3 (card 0.3.19) — configure storm REAL fix
+- 0.3.18's instance-level reconcile did NOT stop the storm (user confirmed still
+  storming on 0.3.18 / add-on 2.8.2). Root cause it missed: HA recreates the card
+  element faster than the daemon's companion publish round-trips back into
+  hass.states, so each FRESH instance (with `_sentConfigHash === undefined` and a
+  companion that hasn't caught up) re-fired configure before being destroyed. A
+  per-instance guard provably cannot help — the recreation race is the whole bug.
+- Rework: configure is now RECONCILIATION. Module-level `pendingConfigure` Map
+  (climate_entity -> {hash, at}) survives element recreation; `_reconcileConfig`
+  (called from set hass AND setConfig) sends configure only when the companion
+  doesn't already match window_sensors/presets, single-flight with CONFIGURE_RETRY_MS
+  (15s) backoff. Steady already-configured climate => ZERO POSTs. Removed
+  `_maybeConfigure` + `_sentConfigHash`. Daemon owns the registry (SQLite, echoed
+  via companion) — the card converges it, never eagerly pushes.
+- Test TestEnhancedClimateCardConfigureNoStorm: 50 hass updates => <=1 configure
+  (mismatch) and ==0 (config matches companion). Commit 45f6c55.
+
 ## v2.8.2 (card 0.3.18) — HA-freeze fix
 - **CRITICAL: card configure storm.** _maybeConfigure fired `configure` from set
   hass guarded only by an in-instance config hash. HA recreates the card element
