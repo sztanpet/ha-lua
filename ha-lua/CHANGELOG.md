@@ -4,6 +4,33 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.0 - 2026-06-26
+
+### Added
+- **`ha.immediate_events()`** — opt a script out of the new event coalescing so
+  every state change is delivered as it arrives.
+
+### Changed
+- **Events are coalesced over a 100 ms window.** To stop a burst of state changes
+  from overflowing a script's event queue and dropping events, the daemon now
+  batches incoming events over 100 ms and collapses repeated `state_changed` for
+  the same entity to the newest before running handlers. This adds up to 100 ms
+  of latency and skips intermediate states; a handler that must see every
+  transition opts out with `ha.immediate_events()`. Timers are unaffected.
+- **Enhanced climate card.** The override and schedule sections are now compact
+  fieldsets (the title is the legend); the override mirrors the thermostat web UI
+  (duration buttons read `10m`; an active override shows a countdown,
+  "overriding to X°", and cancel).
+- The bundled `enhanced_climate` example now logs every HA interaction
+  (`set_temperature`, card commands, manual detection, window changes) at info.
+
+### Fixed
+- **Logs are capped at 5 MiB.** Both the daemon log (`ha-lua.log`) and every
+  `ha.exceptions.log_file` path are now bounded (active file plus one rotated
+  backup), so logs can't fill the `/config` volume.
+- **Enhanced climate card window-sensor selection** now sticks — the picker was
+  wrapped in a `<label>` that swallowed clicks on its add/remove buttons.
+
 ## 2.7.7 - 2026-06-25
 
 ### Fixed
