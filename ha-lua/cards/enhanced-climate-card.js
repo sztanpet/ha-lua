@@ -340,10 +340,16 @@ const STYLES = `
   .content { display: flex; flex-direction: column; gap: 12px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .label { color: var(--secondary-text-color); }
-  .stepper { display: flex; align-items: center; gap: 6px; }
-  .stepper .value { width: 64px; height: 44px; box-sizing: border-box; text-align: center;
-    font-size: 1.15rem; padding: 6px 4px; border: 1px solid var(--divider-color, #ccc);
-    border-radius: 12px; background: var(--card-background-color); color: var(--primary-text-color); }
+  .stepper { display: flex; align-items: center; }
+  .stepper .value { width: 72px; height: 44px; box-sizing: border-box; text-align: center;
+    font-size: 1.15rem; padding: 6px 14px; border: 1px solid var(--divider-color, #ccc);
+    border-left: none; border-right: none; border-radius: 0;
+    background: var(--card-background-color); color: var(--primary-text-color); }
+  /* The ± buttons and the value read as one pill: shared background, no
+     internal dividers, only the two outer corners rounded. */
+  .stepper .btn.step { background: var(--card-background-color); }
+  .stepper .btn.step:first-child { border-right: none; border-radius: 12px 0 0 12px; }
+  .stepper .btn.step:last-child { border-left: none; border-radius: 0 12px 12px 0; }
   .climate-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
   .modes { display: flex; gap: 6px; flex-wrap: wrap; }
 
