@@ -4,6 +4,26 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.2 - 2026-06-26
+
+### Fixed
+- **Enhanced climate card no longer storms HA into a "Connection lost" freeze.**
+  The card re-sent its `configure` command every time HA recreated the card
+  element (which happens freely in masonry/sections views and on every
+  reconnect). Each send made the daemon re-publish the companion sensor, which
+  pushed a new state, which recreated the card, which sent `configure` again —
+  a feedback loop that flooded `POST /api/events/ha_lua_command` until the
+  frontend websocket dropped and the whole UI became unclickable. The card now
+  reconciles against the companion the daemon already published and only sends
+  `configure` on genuine first setup or a real config change. Its fire-and-forget
+  service calls are also wrapped so a transient failure no longer spams the
+  browser console with uncaught promise rejections.
+- **The control tick no longer rewrites unchanged companion sensors.** Every
+  minute the `enhanced_climate` example re-published each companion even when
+  nothing changed, generating a no-op `state_changed` (and recorder row) per
+  companion per minute. It now skips the write when the payload is unchanged,
+  with a 5-minute heartbeat so a sensor still self-heals after an HA restart.
+
 ## 2.8.1 - 2026-06-26
 
 ### Changed
