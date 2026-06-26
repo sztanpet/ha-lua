@@ -7,17 +7,24 @@ Status: **COMPLETE — milestones 1–12.** Released as add-on 1.0.0; the daemon
 been stable since. Later tracks (thermostat UI, fs plugin, bundled examples,
 enhanced climate) build on it — see their own state files.
 
-## Post-1.0 daemon changes (unreleased on main, 2026-06-25)
+## Post-1.0 daemon changes (released v2.8.0, 2026-06-26)
 - **Bounded daemon log** (internal/logwriter): ha-lua.log capped at 5 MiB total
   (active file + one `.1` backup, each ≤ budget/2 so the sum stays under budget,
   retaining the previous segment). main.openLogFile now returns logwriter.New.
   ha.exceptions.log_file paths are ALSO capped now (logwriter.RotateIfLarge,
   called before each open-append-close, 5 MiB budget per path).
-- **Per-script event buffer 64 -> 256** (internal/lua/runner.go): wildcard
-  subscriptions (enhanced_climate's binary_sensor.*/climate.*) can overflow the
-  channel and drop events (Send warns "event channel full, dropping"). 256 matches
-  the upstream ha.Client.Events buffer. A buffer only defers drops under sustained
-  overload — a hot script ultimately needs a narrower subscription.
+- **Per-script event buffer 64 -> 256** (internal/lua/runner.go): interim bump;
+  the real fix is event coalescing (below). 256 left as headroom during a flush.
+- **Event coalescing / batching** (internal/lua/runner.go run loop): HA events
+  are accumulated over a 100ms window (`batchWindow`) and dispatched as a batch;
+  state_changed for the same entity collapses to the newest (haEventCoalesceKey
+  parses entity_id from Data). Bounds the work a burst makes -> drops largely
+  gone. All in the run loop: no goroutine/mutex/channel-type change; a fresh
+  time.After per window avoids the Timer.Reset footgun. Timers bypass batching.
+  A script opts out with **ha.immediate_events()** (api_ha.go sets
+  api.immediateEvents; run loop reads it -> per-event dispatch, no coalesce, no
+  delay). Tests: TestRunnerCoalescesStateChanges / TestRunnerImmediateEvents.
+  Documented in lua_api.md.
 
 ## Completed (commits on main)
 - `0740db9` scaffold — module, deps, Makefile, .golangci.yml, tools.go, benchmarks/

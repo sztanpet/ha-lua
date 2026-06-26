@@ -11,19 +11,21 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Multi-part batch (2026-06-25), unreleased on main: (1) cmd: daemon log bounded to
-5 MiB via new internal/logwriter (active + one .1 backup, total ≤ budget); (2)
-lua: per-script event buffer 64->256 (user asked "10" but that's BELOW the
-existing 64 — raised instead to cut drops; real cause is enhanced_climate's
-wildcard binary_sensor.*/climate.* subscriptions); (3) card 0.3.16: override +
-schedule are <fieldset>/<legend> (saves vertical space), override mirrors
-thermostat.html (durations "10m" not "+10m", countdown + "overriding to X°" +
-cancel), window-sensor picker fixed (was wrapped in a <label> that swallowed its
-clicks — now .label + direct append like the climate picker). valve_watch.lua is
-INDEPENDENT of thermostat.lua/enhanced_climate (only require"zones" + ha.every) —
-works as long as lib/zones.lua stays. NOT released yet. enhanced_climate.lua
-logging change still also needs re-copy into /config scripts. Card last RELEASED
-**v2.7.7** (0.3.15). Full card detail + release log: **`state/enhanced-climate.md`**.
+RELEASED **v2.8.0** (2026-06-26, tag on d05cfaa). Daemon: (1) BOTH logs
+capped at 5 MiB — ha-lua.log via internal/logwriter, ha.exceptions.log_file via
+logwriter.RotateIfLarge; (2) event COALESCING/batching in the runner run loop
+(100ms window, state_changed collapses to newest per entity), drops largely
+gone; opt out with ha.immediate_events(); per-script buffer left at 256 for
+flush headroom. Card 0.3.16: override + schedule are <fieldset>/<legend> (saves
+space), override mirrors thermostat.html (durations "10m" not "+10m", countdown +
+"overriding to X°" + cancel), window-sensor picker fixed (was wrapped in a
+<label> that swallowed clicks — now .label + direct append). Answered: valve_watch
+is INDEPENDENT (only require"zones" + ha.every) — works without thermostat/
+enhanced_climate as long as lib/zones.lua stays; the card's window_sensors drive
+enhanced_climate's OWN frost-pause window cooperation (FROST_TEMP 15), unrelated
+to valve_watch. enhanced_climate.lua logging still needs re-copy into /config
+scripts. Card last RELEASED **v2.7.7** (0.3.15). Full detail:
+**`state/enhanced-climate.md`** + **`state/core-daemon.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

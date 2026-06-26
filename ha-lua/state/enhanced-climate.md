@@ -16,7 +16,7 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
-## Unreleased (card 0.3.16)
+## v2.8.0 (card 0.3.16)
 - override + schedule sections are now <fieldset> with <legend> as the title
   (legend rides the border → no separate heading row, saves vertical space).
 - override mirrors thermostat.html: duration buttons render "10m" (was "+10m"),
