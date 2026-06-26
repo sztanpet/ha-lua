@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.20";
+const VERSION = "0.3.21";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -405,19 +405,19 @@ const STYLES = `
 `;
 
 // The DAEMON owns the per-climate registry: it persists window_sensors/presets
-// in SQLite and echoes the config it is actually running back through the
-// companion sensor's attributes. The card is therefore a RECONCILER, not a
-// pusher — it sends `configure` only to make the daemon match this card's
-// config, never as a lifecycle side effect.
+// in SQLite and republishes the companion sensor itself (on its control tick and
+// on every configure). The card's only job is to TELL the daemon its config
+// ONCE — on first setup or a real change — never to chase the companion on a
+// timer. A recurring/conditional send is what repeatedly flooded the event API
+// and knocked over the HA websocket.
 //
-// This map tracks the configure we last sent per climate entity so the send is
-// single-flight with a retry backoff. It is MODULE-level on purpose: HA rebuilds
-// the card element constantly (masonry/sections, every reconnect), and a fresh
-// element loses all instance state — an instance-level guard cannot stop a
-// recreated element from re-sending, which is exactly what flooded the event API
-// and dropped the HA websocket. key: climate_entity -> { hash, at }.
-const pendingConfigure = new Map();
-const CONFIGURE_RETRY_MS = 15000; // only re-send an unacknowledged configure this often
+// This map records the config hash already sent per climate entity. It is
+// MODULE-level on purpose: HA rebuilds the card element constantly
+// (masonry/sections, every reconnect) and a fresh element loses instance state,
+// so an instance guard cannot stop a recreated element from re-sending. There is
+// deliberately no retry — one send per distinct config, full stop, so it cannot
+// storm. key: climate_entity -> config hash.
+const sentConfigures = new Map();
 
 class HaLuaEnhancedClimateCard extends HTMLElement {
   setConfig(config) {
@@ -426,13 +426,13 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     }
     this._config = config;
     this._configHash = configHash(config);
-    this._reconcileConfig();
+    this._maybeConfigure();
     this._scheduleRender();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._reconcileConfig();
+    this._maybeConfigure();
     this._scheduleRender();
   }
 
@@ -471,44 +471,22 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return document.createElement("ha-lua-enhanced-climate-card-editor");
   }
 
-  // _reconcileConfig converges the daemon to this card's config. It sends
-  // `configure` only when the companion the daemon publishes does not already
-  // reflect this card's window_sensors/presets — and at most one send is in
-  // flight per climate (CONFIGURE_RETRY_MS), tracked module-side so a recreated
-  // card element cannot re-send. This is what makes the card safe to call on
-  // every hass update: a steady, already-configured climate issues no POST.
-  _reconcileConfig() {
+  // _maybeConfigure tells the daemon this card's config exactly once per
+  // (climate, config) per page session. No companion check, no retry: the daemon
+  // persists the config and republishes the companion on its own, so the card
+  // never needs to chase it. Guarded by the module-level map so a card element HA
+  // rebuilt does not re-send — which makes a configure storm structurally
+  // impossible regardless of how often HA recreates or re-pushes the card.
+  _maybeConfigure() {
     if (!this._hass || !this._config) return;
     const entity = this._config.climate_entity;
     if (!entity) return;
-
-    const companion = this._hass.states[companionId(entity)];
-    if (companion && this._companionConfigured(companion.attributes)) {
-      pendingConfigure.delete(entity); // daemon matches us: nothing in flight
-      return;
-    }
-
-    // Daemon missing or stale. Send configure once, then wait for the companion
-    // to catch up (handled above) or the retry window to elapse — so neither a
-    // slow round-trip nor HA recreating the element can turn this into a storm.
-    const sent = pendingConfigure.get(entity);
-    const now = Date.now();
-    if (sent && sent.hash === this._configHash && (now - sent.at) < CONFIGURE_RETRY_MS) return;
-    pendingConfigure.set(entity, { hash: this._configHash, at: now });
+    if (sentConfigures.get(entity) === this._configHash) return;
+    sentConfigures.set(entity, this._configHash);
     this.fireCommand("configure", {
       window_sensors: this._config.window_sensors || [],
       presets: this._config.presets || [],
     });
-  }
-
-  // _companionConfigured reports whether the published companion already carries
-  // the window sensors and presets this card is configured with, so configure
-  // can be skipped when nothing would change.
-  _companionConfigured(attrs) {
-    if (!attrs) return false;
-    const sameList = (have, want) => JSON.stringify(have || []) === JSON.stringify(want || []);
-    return sameList(attrs.window && attrs.window.sensors, this._config.window_sensors) &&
-      sameList(attrs.presets, this._config.presets);
   }
 
   fireCommand(action, data) {

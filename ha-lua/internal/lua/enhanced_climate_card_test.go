@@ -281,44 +281,41 @@ func TestEnhancedClimateCard(t *testing.T) {
 	}
 }
 
-// TestEnhancedClimateCardConfigureNoStorm proves the configure reconciler cannot
-// flood the event API. HA rebuilds and re-pushes the card constantly; here we
-// simulate that with 50 hass updates and assert configure is sent at most once
-// (single-flight, tracked module-side so it survives element recreation), and
-// that a card whose config already matches the published companion sends none.
+// TestEnhancedClimateCardConfigureNoStorm proves configure is fire-once and
+// cannot flood the event API. HA rebuilds and re-pushes the card constantly; here
+// we simulate that with 50 hass updates and assert configure is sent exactly once
+// per distinct config (tracked module-side so it survives element recreation),
+// regardless of whether the companion's state matches.
 func TestEnhancedClimateCardConfigureNoStorm(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveEnhancedCard(t)
 
 	var ok bool
-	var mismatchConfigures, matchedConfigures int
+	var first, afterChange int
 	countConfigures := `window.__calls.api.filter(c => c.path === "events/ha_lua_command" && c.data && c.data.action === "configure").length`
 
-	// The harness card has no window_sensors/presets, so it does NOT match the
-	// companion: the daemon genuinely needs telling. Even so, 50 hass updates
-	// must produce at most one configure POST.
+	// 50 hass updates with one config must send configure exactly once.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.Evaluate(`for (let i = 0; i < 50; i++) window.__apply("en", `+cardStates+`); true`, &ok),
-		chromedp.Evaluate(countConfigures, &mismatchConfigures),
+		chromedp.Evaluate(countConfigures, &first),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if mismatchConfigures > 1 {
-		t.Errorf("configure sent %d times across 50 hass updates; want <=1 (no storm)", mismatchConfigures)
+	if first != 1 {
+		t.Errorf("50 hass updates sent %d configure POSTs; want exactly 1", first)
 	}
 
-	// Reconfigure to match the companion exactly: an already-configured climate
-	// must issue no configure at all, no matter how often hass is pushed.
+	// A real config change sends exactly one more — not one per hass update.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__calls.api = []; window.__card.setConfig(`+
-			`{ climate_entity: "climate.lr", window_sensors: ["binary_sensor.w1"], presets: [10, 30, 60] }); true`, &ok),
+			`{ climate_entity: "climate.lr", window_sensors: ["binary_sensor.w1"] }); true`, &ok),
 		chromedp.Evaluate(`for (let i = 0; i < 50; i++) window.__apply("en", `+cardStates+`); true`, &ok),
-		chromedp.Evaluate(countConfigures, &matchedConfigures),
+		chromedp.Evaluate(countConfigures, &afterChange),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if matchedConfigures != 0 {
-		t.Errorf("already-configured card sent %d configure POSTs; want 0", matchedConfigures)
+	if afterChange != 1 {
+		t.Errorf("config change + 50 hass updates sent %d configure POSTs; want exactly 1", afterChange)
 	}
 }
