@@ -16,6 +16,17 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## v2.8.1 (card 0.3.17)
+- setpoint stepper fused into one pill: dropped `.stepper` gap, ± buttons share
+  the input's `--card-background-color`, internal borders removed (minus loses
+  right border, input loses both side borders, plus loses left border), only the
+  two outer corners rounded (12px). `.value` padding 4px→14px, width 64→72px.
+  Styles BOTH steppers (manual target + override-temp) via shared _stepperControl.
+- `.climate-controls` now `justify-content: space-between` so the HVAC mode icons
+  right-align when sharing the stepper's row; flex-wrap applies justify per line,
+  so once they wrap to their own line they fall back left.
+- commits 79b0ee9 (pill) + 9fc78e3 (mode align, carries the 0.3.16→0.3.17 bump).
+
 ## v2.8.0 (card 0.3.16)
 - override + schedule sections are now <fieldset> with <legend> as the title
   (legend rides the border → no separate heading row, saves vertical space).

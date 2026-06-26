@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-06-25
+Last updated: 2026-06-26
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,21 +11,13 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-RELEASED **v2.8.0** (2026-06-26, tag on d05cfaa). Daemon: (1) BOTH logs
-capped at 5 MiB — ha-lua.log via internal/logwriter, ha.exceptions.log_file via
-logwriter.RotateIfLarge; (2) event COALESCING/batching in the runner run loop
-(100ms window, state_changed collapses to newest per entity), drops largely
-gone; opt out with ha.immediate_events(); per-script buffer left at 256 for
-flush headroom. Card 0.3.16: override + schedule are <fieldset>/<legend> (saves
-space), override mirrors thermostat.html (durations "10m" not "+10m", countdown +
-"overriding to X°" + cancel), window-sensor picker fixed (was wrapped in a
-<label> that swallowed clicks — now .label + direct append). Answered: valve_watch
-is INDEPENDENT (only require"zones" + ha.every) — works without thermostat/
-enhanced_climate as long as lib/zones.lua stays; the card's window_sensors drive
-enhanced_climate's OWN frost-pause window cooperation (FROST_TEMP 15), unrelated
-to valve_watch. enhanced_climate.lua logging still needs re-copy into /config
-scripts. Card last RELEASED **v2.7.7** (0.3.15). Full detail:
-**`state/enhanced-climate.md`** + **`state/core-daemon.md`**.
+RELEASED **v2.8.1** (2026-06-26, tag on 71d79ca). Card 0.3.17 visual polish:
+(1) setpoint stepper fused into one pill — ± buttons share the input background,
+internal borders removed, only outer corners rounded, value field roomier (pad
+4→14px); styles BOTH the manual-target and override-temp steppers via the shared
+_stepperControl. (2) `.climate-controls` uses `justify-content: space-between` so
+the HVAC mode icons right-align when on the stepper's row, falling back left once
+wrapped. Commits 79b0ee9 + 9fc78e3. Full detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -42,6 +34,8 @@ scripts. Card last RELEASED **v2.7.7** (0.3.15). Full detail:
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.1 (2026-06-26): card 0.3.17 — setpoint stepper fused into one pill + HVAC
+  mode icons right-align beside the stepper. See `state/enhanced-climate.md`.
 - 2.7.0–2.7.4 (2026-06-25): enhanced-climate transport + example + card, then
   card fixes/polish. See `state/enhanced-climate.md`.
 - 2.6.0 (2026-06-23): boost->override / override->manual vocab rename (examples).
