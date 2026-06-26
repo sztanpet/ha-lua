@@ -435,11 +435,19 @@ card.on("configure", function(data)
   end
   local cfg = normalize(data)
   local reg = load_registry()
-  if config_equal(reg[cfg.climate_entity], cfg) then return end
-  reg[cfg.climate_entity] = cfg
-  save_registry(reg)
-  ha.log("info", "configure " .. cfg.climate_entity ..
-    " (windows: " .. #cfg.window_sensors .. ", presets: " .. #cfg.presets .. ")")
+  if not config_equal(reg[cfg.climate_entity], cfg) then
+    reg[cfg.climate_entity] = cfg
+    save_registry(reg)
+    ha.log("info", "configure " .. cfg.climate_entity ..
+      " (windows: " .. #cfg.window_sensors .. ", presets: " .. #cfg.presets .. ")")
+  end
+  -- Always (re)publish the companion, even when the config was unchanged. The
+  -- card sends configure precisely when it does NOT see a matching companion —
+  -- e.g. HA dropped the non-integration entity on restart while our registry
+  -- (and the publish dedup cache) still think it exists. Clearing the cache
+  -- forces a write so the companion reappears and the card's reconcile loop
+  -- terminates instead of re-sending configure forever.
+  published[cfg.climate_entity] = nil
   local now, dow, minute = now_parts()
   apply_climate(cfg.climate_entity, now, dow, minute) -- start controlling at once
 end)

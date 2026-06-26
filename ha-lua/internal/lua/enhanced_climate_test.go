@@ -608,3 +608,23 @@ func TestEnhancedClimateCompanionDedupsUnchanged(t *testing.T) {
 	f.setWindow("binary_sensor.w1", "on")
 	f.waitWrites(companion, baseline+1, "publish after window opens")
 }
+
+// TestEnhancedClimateConfigureRepublishesCompanion verifies a configure with an
+// unchanged config still re-publishes the companion. The card sends configure
+// only when it cannot see a matching companion (e.g. HA dropped the
+// non-integration entity on restart); if the daemon no-oped on an unchanged
+// config the companion would never reappear and the card would retry forever.
+func TestEnhancedClimateConfigureRepublishesCompanion(t *testing.T) {
+	f := newEnhancedFixture(t)
+	const companion = "sensor.ha_lua_enhanced_climate_lr"
+
+	f.seedClimate("climate.lr", `{"temperature":20,"min_temp":5,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":[],"presets":[]}`)
+	f.waitWrites(companion, 1, "initial configure publish")
+
+	before := f.companionWrites(companion)
+	// Identical config: nothing in the registry changes, but the companion must
+	// still be re-published (the card is asking because it vanished).
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":[],"presets":[]}`)
+	f.waitWrites(companion, before+1, "republish on unchanged configure")
+}
