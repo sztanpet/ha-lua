@@ -434,13 +434,13 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     }
     this._config = config;
     this._configHash = configHash(config);
-    this._maybeConfigure();
+    this._scheduleConfigure();
     this._scheduleRender();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._maybeConfigure();
+    this._scheduleConfigure();
     this._scheduleRender();
   }
 
@@ -479,13 +479,32 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return document.createElement("ha-lua-enhanced-climate-card-editor");
   }
 
+  // _scheduleConfigure defers _maybeConfigure to a microtask. setConfig and the
+  // hass setter both call it, but the side effect must not run synchronously:
+  // HA builds the card by assigning `hass` and only THEN `preview`/`editMode`
+  // (see hui-card._loadElement), so reading this.preview at hass time would
+  // wrongly see false on an editor preview. Deferring past the synchronous setup
+  // lets the preview check below be reliable, and collapses a burst of hass/config
+  // writes into a single configure attempt.
+  _scheduleConfigure() {
+    if (this._configureQueued) return;
+    this._configureQueued = true;
+    queueMicrotask(() => {
+      this._configureQueued = false;
+      this._maybeConfigure();
+    });
+  }
+
   // _maybeConfigure tells the daemon this card's config exactly once per
   // (climate, config) per page session. No companion check, no retry: the daemon
   // persists the config and republishes the companion on its own, so the card
-  // never needs to chase it. Guarded by the module-level map so a card element HA
+  // never needs to chase it. Guarded by the module-level set so a card element HA
   // rebuilt does not re-send — which makes a configure storm structurally
   // impossible regardless of how often HA recreates or re-pushes the card.
   _maybeConfigure() {
+    // The editor preview is a throwaway HA recreates on every keystroke; it must
+    // never write to the daemon. Only the real, saved dashboard card provisions.
+    if (this.preview) return;
     if (!this._hass || !this._config) return;
     const entity = this._config.climate_entity;
     if (!entity) return;

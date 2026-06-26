@@ -357,3 +357,40 @@ func TestEnhancedClimateCardConfigureTwoCardsNoStorm(t *testing.T) {
 		t.Errorf("two cards (same entity, two configs) + 50 hass updates each sent %d configure POSTs; want exactly 2", configures)
 	}
 }
+
+// TestEnhancedClimateCardPreviewNoConfigure proves the editor preview never
+// writes to the daemon. HA assigns hass BEFORE preview when it builds the
+// element, so this mirrors that order (setConfig, hass, then preview=true) and
+// asserts that once the deferred configure runs it sees preview and sends
+// nothing — provisioning is reserved for the real, saved dashboard card.
+func TestEnhancedClimateCardPreviewNoConfigure(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	var ok bool
+	var configures int
+	// Count configures for the preview's distinct entity so the harness card's
+	// own provisioning can never be mistaken for the preview's.
+	countConfigures := `window.__calls.api.filter(c => c.path === "events/ha_lua_command" && c.data && c.data.action === "configure" && c.data.data && c.data.data.climate_entity === "climate.preview").length`
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		// Build a preview element exactly as HA does: setConfig, then hass, then
+		// the preview flag, all synchronously. The card defers its configure to a
+		// microtask, which drains at the end of this Evaluate — after preview is
+		// set — so by the next Evaluate it has had its chance to (not) fire.
+		chromedp.Evaluate(`
+			const preview = document.createElement("ha-lua-enhanced-climate-card");
+			preview.setConfig({ climate_entity: "climate.preview", window_sensors: ["binary_sensor.w1"] });
+			document.body.appendChild(preview);
+			preview.hass = window.__mkHass("en", `+cardStates+`);
+			preview.preview = true;
+			true`, &ok),
+		chromedp.Evaluate(countConfigures, &configures),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if configures != 0 {
+		t.Errorf("editor preview sent %d configure POSTs; want 0 (preview must not provision the daemon)", configures)
+	}
+}
