@@ -66,6 +66,30 @@ func TestRotatingAppendsToExisting(t *testing.T) {
 	}
 }
 
+func TestRotateIfLarge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "errors.log")
+	// Below half the budget: no rotation.
+	if err := os.WriteFile(path, make([]byte, 40), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	RotateIfLarge(path, 200) // segMax 100, size 40 -> no-op
+	if statSize(t, path+".1") != 0 {
+		t.Error("rotated below threshold")
+	}
+	// At/over half the budget: rotate to .1, leaving path absent for a fresh append.
+	if err := os.WriteFile(path, make([]byte, 150), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	RotateIfLarge(path, 200) // segMax 100, size 150 -> rotate
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("active file not rotated away")
+	}
+	if statSize(t, path+".1") != 150 {
+		t.Error("backup missing after rotate")
+	}
+}
+
 func statSize(t *testing.T, path string) int64 {
 	t.Helper()
 	fi, err := os.Stat(path)

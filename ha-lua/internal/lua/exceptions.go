@@ -9,10 +9,16 @@ import (
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
+
+	"github.com/sztanpet/ha-lua/internal/logwriter"
 )
 
 // smtpSendMail is swapped out in tests.
 var smtpSendMail = smtp.SendMail
+
+// maxExceptionLogBytes caps each ha.exceptions.log_file path (active + one
+// rotated backup) so a script that keeps throwing can't fill /config.
+const maxExceptionLogBytes = 5 << 20 // 5 MiB
 
 // registerExceptionHandlers installs ha.exceptions.email and ha.exceptions.log_file.
 func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
@@ -132,6 +138,8 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 					return 0
 				}
 			}
+			// Cap the file before appending, so it can't grow without bound.
+			logwriter.RotateIfLarge(path, maxExceptionLogBytes)
 			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				L.RaiseError("ha.exceptions.log_file: %v", err)

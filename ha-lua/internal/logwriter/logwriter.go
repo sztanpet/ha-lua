@@ -22,6 +22,24 @@ type Rotating struct {
 	openErr error
 }
 
+// RotateIfLarge bounds an append-per-write log (one that is opened, written,
+// and closed on each record, like ha.exceptions.log_file) without holding a
+// handle. When path is at or over maxTotalBytes/2 it is renamed over a single
+// backup ("<path>.1"); the caller's next O_APPEND|O_CREATE open then starts a
+// fresh file, so the active file plus the backup stay under maxTotalBytes.
+// Best-effort: any error leaves the file as-is.
+func RotateIfLarge(path string, maxTotalBytes int64) {
+	segMax := maxTotalBytes / 2
+	if segMax < 1 {
+		segMax = 1
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.Size() < segMax {
+		return
+	}
+	_ = os.Rename(path, path+".1")
+}
+
 // New opens (or creates, appending to) path and returns a writer bounded to
 // maxTotalBytes across the active file plus one rotated backup.
 func New(path string, maxTotalBytes int64) (*Rotating, error) {
