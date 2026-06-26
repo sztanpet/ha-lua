@@ -4,6 +4,18 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.3 - 2026-06-26
+
+### Fixed
+- **Enhanced climate card configure storm (real fix).** 2.8.2 reduced but did not
+  stop the `configure` flood that froze the HA UI: HA recreates the card element
+  faster than the daemon's companion publish round-trips back, so each fresh
+  element re-sent `configure` before the per-instance guard could help. The card
+  now treats `configure` as **reconciliation** — it sends only when the companion
+  the daemon publishes doesn't already match the card's `window_sensors`/`presets`,
+  with a single in-flight send per climate tracked module-side so a recreated
+  element cannot re-send. A steady, already-configured climate sends nothing.
+
 ## 2.8.2 - 2026-06-26
 
 ### Fixed
