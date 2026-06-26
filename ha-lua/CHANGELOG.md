@@ -4,6 +4,25 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.6 - 2026-06-26
+
+### Fixed
+- **Enhanced climate card configure storm while editing.** 2.8.5's fire-once guard
+  was keyed by climate entity alone, so it stored only the last config seen per
+  entity. While the card editor is open, two cards for the same entity are mounted
+  at once — the saved dashboard card behind the dialog and the editor preview
+  inside it — and HA pushes `hass` to both on every state change. Each saw the
+  other's config hash, re-sent `configure`, and the resulting companion republish
+  drove another round: an unbounded storm that flooded the event API and froze the
+  Save button right after selecting a window sensor. The guard now dedupes by
+  `(entity, config)` so every distinct config sends exactly once regardless of how
+  many cards are mounted.
+- **Editor preview no longer provisions the daemon.** HA flags the editor preview
+  element with `preview` and recreates it on every keystroke; the card was writing
+  real config to the daemon mid-edit. Provisioning is now reserved for the saved
+  dashboard card. Because HA assigns `hass` before `preview`, the `configure` side
+  effect is deferred to a microtask so the preview check is reliable.
+
 ## 2.8.5 - 2026-06-26
 
 ### Fixed
