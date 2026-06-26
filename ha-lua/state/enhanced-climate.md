@@ -349,3 +349,33 @@ disrupts the local wss connection whenever a local-network fetch happens — i.e
 browser/env, not our code. Next diagnostics: (a) does a NATIVE HA card action
 repro the same lines? (b) enable ha-lua-debug and check whether `pagehide` fires
 (real document reload) vs. just a HA WS reconnect.
+
+## Card 0.3.24 (v2.8.8) — commands over the websocket (Firefox 152 LNA fix)
+
+SOLVED the open WS-drop issue from 0.3.23. The opt-in dbg() tracing pinned it:
+- pagehide NEVER fired -> the page does not reload; "interrupted while the page
+  was loading" is just how HA's socket.js phrases a dropped wss. The
+  disconnect/connect afterwards is HA rebuilding the card after its socket
+  reconnects (normal).
+- the wss:// connection died ~8ms after each `fireCommand` fetch, simultaneously
+  with Firefox 152's "Local Network Access detected" log on that fetch
+  (target 192.168.1.139:443). HA's own cards (hui-history-graph-card) also errored
+  with failed results / "Subscription not found" — the WHOLE frontend socket
+  dropped, not just ours.
+
+Root cause: hass.callApi fires the event via a REST fetch, which opens a NEW
+connection to HA's private-IP host. Firefox 152's new Local Network Access check
+on that fetch tears down the live wss:// connection as a side effect. callService
+(mode/temp) never triggered it because it already rides the websocket.
+
+Fix (66e5c13): fire over the existing socket with
+hass.callWS({ type: "fire_event", event_type: "ha_lua_command", event_data })
+(HA core's websocket_api exposes fire_event). Same event-bus delivery -> daemon
+on_command unchanged. The card now makes ZERO REST calls. Falls back to callApi
+only if the frontend predates callWS. Harness gained a callWS spy (window.__calls.ws);
+tests assert the command rides the ws spy and NOT the REST spy. Card VERSION 0.3.24.
+
+LESSON: a custom card that does a REST fetch to a private-IP HA host can drop the
+whole frontend websocket on Firefox 152 (Local Network Access). Prefer callWS /
+callService (they reuse the open socket) over callApi for anything that fires per
+user action.
