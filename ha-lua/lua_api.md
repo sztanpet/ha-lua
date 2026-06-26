@@ -163,6 +163,23 @@ ha.on_event("zha_event", function(ev)
 end)
 ```
 
+#### `ha.immediate_events()`
+
+By default the daemon **coalesces** incoming events over a 100 ms window before
+running your handlers: repeated `state_changed` events for the same entity
+collapse to the newest one, and the batch is delivered together. This keeps a
+burst of events (e.g. a script subscribed to `binary_sensor.*` in a large home)
+from overflowing the script's event channel and dropping events; the cost is up
+to 100 ms of latency and not seeing intermediate states.
+
+Call `ha.immediate_events()` at load time to opt out — every event is then
+delivered as it arrives, with no per-entity collapse. Use it only when a handler
+must observe **every** transition (e.g. counting button presses):
+
+```lua
+ha.immediate_events()
+```
+
 ### Timers
 
 All three are persisted in SQLite and survive restarts. On startup the scheduler

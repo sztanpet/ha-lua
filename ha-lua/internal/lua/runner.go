@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
@@ -29,6 +30,30 @@ type Event struct {
 // TimerFiredEvent is sent to a script goroutine when a timer fires.
 type TimerFiredEvent struct {
 	TimerID string
+}
+
+// batchWindow is how long HA events are coalesced before a script's handlers
+// run. state_changed events for the same entity within a window collapse to the
+// newest (a chatty sensor that flaps 50×/s becomes one dispatch per window);
+// other events are kept in order. Timers and a script that calls
+// ha.immediate_events() bypass batching. The small added latency keeps a burst
+// of events from overflowing the per-script channel and dropping.
+const batchWindow = 100 * time.Millisecond
+
+// haEventCoalesceKey returns the per-entity key for a state_changed event (so
+// only the latest is kept within a window) and whether the event coalesces at
+// all. Every non-state_changed event keeps its own slot.
+func haEventCoalesceKey(ev Event) (string, bool) {
+	if ev.HAEvent == nil || ev.HAEvent.Type != "state_changed" {
+		return "", false
+	}
+	var d struct {
+		EntityID string `json:"entity_id"`
+	}
+	if err := json.Unmarshal(ev.HAEvent.Data, &d); err != nil || d.EntityID == "" {
+		return "", false
+	}
+	return d.EntityID, true
 }
 
 // Runner owns a single *lua.LState and its event channel.
@@ -180,6 +205,23 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	// Deliver initial states for on_state_change with initial=true
 	r.deliverInitialStates(ctx, L, api)
 
+	// Events are coalesced over batchWindow before dispatch, unless the script
+	// opted into immediate delivery. pending holds the current window; coalesceIdx
+	// maps an entity to its slot so a repeated state_changed overwrites in place.
+	immediate := api.immediateEvents
+	var pending []Event
+	coalesceIdx := make(map[string]int)
+	var flushC <-chan time.Time
+
+	flush := func() {
+		for i := range pending {
+			r.handleEvent(L, api, pending[i])
+		}
+		pending = pending[:0]
+		clear(coalesceIdx)
+		flushC = nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -188,9 +230,31 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			r.handleRequest(L, api, req)
 		case ev, ok := <-r.ch:
 			if !ok {
+				flush() // channel closed: dispatch the final window, then stop
 				return
 			}
-			r.handleEvent(L, api, ev)
+			// Timers fire on a precise schedule, and immediate mode wants no
+			// delay; both bypass batching. Drain any pending window first so a
+			// batched event never overtakes one delivered immediately.
+			if immediate || ev.TimerFired != nil {
+				flush()
+				r.handleEvent(L, api, ev)
+				continue
+			}
+			if key, coalesce := haEventCoalesceKey(ev); coalesce {
+				if idx, seen := coalesceIdx[key]; seen {
+					pending[idx] = ev // keep only the newest state for this entity
+					continue
+				}
+				coalesceIdx[key] = len(pending)
+			}
+			pending = append(pending, ev)
+			if flushC == nil {
+				// A fresh timer per window avoids the Timer.Reset drain footgun.
+				flushC = time.After(batchWindow)
+			}
+		case <-flushC:
+			flush()
 		}
 	}
 }

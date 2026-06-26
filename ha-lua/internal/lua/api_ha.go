@@ -29,6 +29,10 @@ type haAPI struct {
 	setState func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
 	// removeState removes a published entity; set by runner wiring.
 	removeState func(ctx context.Context, entityID string) error
+	// immediateEvents, set by ha.immediate_events() at load, opts the script out
+	// of the default 100ms event coalescing so every state change is delivered
+	// as it arrives.
+	immediateEvents bool
 	// onExceptionFn stores the registered exception handler for this script.
 	onExceptionFn *lua.LFunction
 	// stateChangeHandlers registered during load time.
@@ -381,6 +385,15 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			eventType: eventType,
 			fn:        fn,
 		})
+		return 0
+	}))
+
+	// ha.immediate_events() opts this script out of the default 100ms event
+	// coalescing: every state change is delivered as it arrives (no per-entity
+	// collapse, no batching delay). Call at load time. Use it only when a handler
+	// must see every transition; the default is cheaper and avoids dropped events.
+	L.SetField(haTable, "immediate_events", L.NewFunction(func(L *lua.LState) int {
+		api.immediateEvents = true
 		return 0
 	}))
 
