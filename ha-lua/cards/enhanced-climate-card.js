@@ -53,6 +53,7 @@ const MESSAGES = {
     "overriding_to": "overriding to {temp}°",
     "override_temp": "Override target",
     "stop_override": "Stop",
+    "applying": "Applying…",
     "custom_minutes": "Custom minutes",
     "custom_minutes_prompt": "Override for how many minutes?",
     "window": "Window",
@@ -105,6 +106,7 @@ const MESSAGES = {
     "overriding_to": "felülbírálás {temp}°-ra",
     "override_temp": "Felülbírálás cél",
     "stop_override": "Leállítás",
+    "applying": "Alkalmazás…",
     "custom_minutes": "Egyéni időtartam",
     "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
     "window": "Ablak",
@@ -172,6 +174,12 @@ const DAY_GROUPS = [
 // presets, so the buttons are always there to tap. The daemon accepts any
 // 1..1440, so these are just suggestions.
 const DEFAULT_PRESETS = [10, 30, 60];
+
+// How long to keep the "applying…" spinner up if no companion push confirms a
+// command. The daemon republishes the companion as soon as it handles a command,
+// so the spinner normally clears within a fraction of this; the cap only guards
+// against a dropped command leaving the spinner stuck forever.
+const PENDING_TIMEOUT_MS = 6000;
 
 // HVAC mode -> mdi icon, mirroring Home Assistant's own climate card so the
 // mode buttons read the same. Modes without an entry fall back to a text label.
@@ -389,7 +397,14 @@ const STYLES = `
     color: var(--secondary-text-color); }
   .today.muted { font-style: italic; }
   .today .period.now { color: var(--primary-color); font-weight: 700; }
-  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  /* Buttons disabled while a command is in flight read as inert, with a small
+     spinner alongside so a tap gets immediate feedback during the round-trip. */
+  .btn[disabled] { opacity: .45; cursor: default; pointer-events: none; }
+  .spinner { width: 18px; height: 18px; flex: none; border-radius: 50%;
+    border: 2px solid color-mix(in oklch, var(--primary-text-color) 22%, transparent);
+    border-top-color: var(--primary-color); animation: ha-lua-spin .7s linear infinite; }
+  @keyframes ha-lua-spin { to { transform: rotate(360deg); } }
   .countdown { font-variant-numeric: tabular-nums; font-weight: 600; }
   .window.open { color: var(--warning-color, #ffa600); }
   .window.closed { color: var(--secondary-text-color); }
@@ -440,6 +455,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    this._clearPendingIfChanged();
     this._scheduleConfigure();
     this._scheduleRender();
   }
@@ -452,6 +468,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
   disconnectedCallback() {
     clearInterval(this._countdownTimer);
+    clearTimeout(this._pendingTimer);
   }
 
   getCardSize() {
@@ -534,6 +551,46 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     Promise.resolve(
       this._hass.callService("climate", service, { entity_id: this._config.climate_entity, ...data }),
     ).catch(() => {});
+  }
+
+  // _command fires a daemon command AND shows an "applying" spinner until the
+  // companion push that confirms it arrives. The card is optimism-free — it
+  // never guesses the result — but a daemon round-trip (HA event -> daemon ->
+  // companion republish -> push back) is slow enough that a tap with no feedback
+  // feels broken. The spinner is honest: it says "working", not "done".
+  _command(action, data) {
+    this.fireCommand(action, data);
+    this._pending = true;
+    // Snapshot the companion so the next push that actually changes it clears the
+    // spinner; the daemon republishes the companion on every command, so this is
+    // the genuine confirmation rather than an optimistic guess.
+    this._pendingSnapshot = this._companionStamp();
+    clearTimeout(this._pendingTimer);
+    this._pendingTimer = setTimeout(() => {
+      this._pending = false;
+      this._renderNow();
+    }, PENDING_TIMEOUT_MS);
+    // Force a render now: a click does not push hass, so the spinner would not
+    // otherwise appear until the server answered — exactly the feedback gap.
+    this._renderNow();
+  }
+
+  _clearPendingIfChanged() {
+    if (!this._pending) return;
+    if (this._companionStamp() === this._pendingSnapshot) return;
+    this._pending = false;
+    clearTimeout(this._pendingTimer);
+  }
+
+  // _companionStamp identifies the current companion publish: last_updated bumps
+  // on every republish (the reliable signal in a live HA), with the attribute
+  // JSON as a fallback for environments that omit it.
+  _companionStamp() {
+    const hass = this._hass;
+    if (!hass || !hass.states || !this._config) return "";
+    const companion = hass.states[companionId(this._config.climate_entity)];
+    if (!companion) return "";
+    return companion.last_updated || JSON.stringify(companion.attributes || {});
   }
 
   _scheduleRender() {
@@ -716,7 +773,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       lo: Number(companionAttrs.min_temp),
       hi: Number(companionAttrs.max_temp),
       step: tempStep,
-      onCommit: (value) => this.fireCommand("settings", { override_temp: value }),
+      onCommit: (value) => this._command("settings", { override_temp: value }),
     });
     section.append(h("fieldset", { class: "group" },
       h("legend", null, translate("override")),
@@ -739,31 +796,38 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   // — a live countdown, "overriding to X°", and a cancel button (like
   // thermostat.html). Sits inside the override fieldset next to the temp stepper.
   _renderOverride(translate, companionAttrs) {
+    const pending = !!this._pending;
     const override = companionAttrs.override;
     if (override && override.active && override.expires) {
       return h("div", { class: "overriding" },
         h("span", { class: "countdown", "data-expires": override.expires },
           formatCountdown(remainingSeconds(override.expires))),
         h("span", null, translate("overriding_to", { temp: companionAttrs.override_temp })),
-        h("button", { class: "btn", type: "button",
-          onclick: () => this.fireCommand("override", { cancel: true }) }, translate("stop_override")));
+        h("button", { class: "btn", type: "button", disabled: pending,
+          onclick: () => this._command("override", { cancel: true }) }, translate("stop_override")),
+        pending && h("span", { class: "spinner", role: "progressbar",
+          "aria-label": translate("applying") }));
     }
     const configured = Array.isArray(companionAttrs.presets) ? companionAttrs.presets : [];
     const presets = configured.length ? configured : DEFAULT_PRESETS;
-    const buttons = presets.map((minutes) => h("button", { class: "btn", type: "button",
-      onclick: () => this.fireCommand("override", { minutes: Number(minutes) }) }, minutes + "m"));
+    const buttons = presets.map((minutes) => h("button", { class: "btn", type: "button", disabled: pending,
+      onclick: () => this._command("override", { minutes: Number(minutes) }) }, minutes + "m"));
     // A custom-duration button: prompt for an arbitrary minute count.
     const custom = h("button", {
-      class: "btn custom", type: "button",
+      class: "btn custom", type: "button", disabled: pending,
       title: translate("custom_minutes"), "aria-label": translate("custom_minutes"),
       onclick: () => {
         const raw = window.prompt(translate("custom_minutes_prompt"), "45");
         if (raw == null) return;
         const minutes = parseInt(raw, 10);
-        if (Number.isFinite(minutes) && minutes > 0) this.fireCommand("override", { minutes });
+        if (Number.isFinite(minutes) && minutes > 0) this._command("override", { minutes });
       },
     }, "…");
-    return h("div", { class: "presets" }, ...buttons, custom);
+    // While a command is in flight, a spinner rides alongside the (disabled)
+    // buttons so the tap clearly registered.
+    const spinner = pending && h("span", { class: "spinner", role: "progressbar",
+      "aria-label": translate("applying") });
+    return h("div", { class: "presets" }, ...buttons, custom, spinner);
   }
 
   // _renderScheduleGroup shows today's running schedule inline (like

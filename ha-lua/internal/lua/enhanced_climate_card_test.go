@@ -394,3 +394,47 @@ func TestEnhancedClimateCardPreviewNoConfigure(t *testing.T) {
 		t.Errorf("editor preview sent %d configure POSTs; want 0 (preview must not provision the daemon)", configures)
 	}
 }
+
+// TestEnhancedClimateCardPendingSpinner proves a daemon round-trip gets
+// immediate feedback: pressing an override preset shows a spinner and disables
+// the buttons right away (a click pushes no hass, so without this the UI would
+// sit dead until the server answered), and the next companion push that confirms
+// the command clears it.
+func TestEnhancedClimateCardPendingSpinner(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	var ok, hasSpinner, btnDisabled, cleared bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".presets button")`, &ok),
+		// A click pushes no hass; the spinner must appear synchronously anyway.
+		chromedp.Evaluate(`window.__clickAll(".presets button", 0)`, &ok),
+		chromedp.Evaluate(`!!window.__shadow(".presets .spinner")`, &hasSpinner),
+		chromedp.Evaluate(`window.__shadow(".presets button").disabled`, &btnDisabled),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !hasSpinner {
+		t.Error("no spinner shown after pressing an override preset")
+	}
+	if !btnDisabled {
+		t.Error("override buttons not disabled while the command is pending")
+	}
+
+	// The companion push that confirms the override (now active) clears the
+	// spinner — the feedback is honest, tied to the server, not a fixed timer.
+	active := strings.Replace(cardStates,
+		`"override": { "active": false }`,
+		`"override": { "active": true, "expires": "2099-01-01T00:00:00+00:00" }`, 1)
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+active+`)`, &ok),
+		chromedp.Poll(`!window.__card.shadowRoot.querySelector(".spinner")`, &cleared),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !cleared {
+		t.Error("spinner did not clear after the companion confirmed the command")
+	}
+}
