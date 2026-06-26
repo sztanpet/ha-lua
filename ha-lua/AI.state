@@ -11,13 +11,19 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-RELEASED **v2.8.1** (2026-06-26, tag on 71d79ca). Card 0.3.17 visual polish:
-(1) setpoint stepper fused into one pill — ± buttons share the input background,
-internal borders removed, only outer corners rounded, value field roomier (pad
-4→14px); styles BOTH the manual-target and override-temp steppers via the shared
-_stepperControl. (2) `.climate-controls` uses `justify-content: space-between` so
-the HVAC mode icons right-align when on the stepper's row, falling back left once
-wrapped. Commits 79b0ee9 + 9fc78e3. Full detail: **`state/enhanced-climate.md`**.
+RELEASED **v2.8.2** (2026-06-26, tag on e16a687). CRITICAL HA-freeze fix + noise
+cut. (1) Card 0.3.18 configure STORM: _maybeConfigure re-sent `configure` on every
+card re-instantiation (HA recreates cards freely + on reconnect) → daemon
+re-published companion → new hass state → card recreated → loop, flooding POST
+/api/events/ha_lua_command until the frontend WS dropped (code 3 "Connection
+lost") and the UI froze. Fix: reconcile against the already-published companion
+(_companionConfigured: window.sensors+presets), only configure on real change;
+also catch fire-and-forget callApi/callService so blips don't spam uncaught
+rejections. Commit e44bc5a. (2) enhanced_climate.lua publish_companion now skips
+unchanged companion writes (was a no-op state_changed + recorder row per companion
+PER MINUTE — the "refreshed companion" debug spam); PUBLISH_HEARTBEAT 5m keeps
+self-heal since published states aren't integration-backed and Seed doesn't prune
+the mirror. Commit fe57c8f. Full detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -34,6 +40,9 @@ wrapped. Commits 79b0ee9 + 9fc78e3. Full detail: **`state/enhanced-climate.md`**
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.2 (2026-06-26): card 0.3.18 — CRITICAL fix for the configure event storm
+  that froze the HA UI ("Connection lost"); + skip rewriting unchanged companion
+  sensors every minute. See `state/enhanced-climate.md`.
 - 2.8.1 (2026-06-26): card 0.3.17 — setpoint stepper fused into one pill + HVAC
   mode icons right-align beside the stepper. See `state/enhanced-climate.md`.
 - 2.7.0–2.7.4 (2026-06-25): enhanced-climate transport + example + card, then

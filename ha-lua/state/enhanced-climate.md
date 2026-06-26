@@ -16,6 +16,30 @@ once a new image ships AND the add-on restarts to re-materialize it. The user
 adds it once as a dashboard resource (type: module). The card fires
 `ha_lua_command` events — which requires an **admin** HA user.
 
+## v2.8.2 (card 0.3.18) — HA-freeze fix
+- **CRITICAL: card configure storm.** _maybeConfigure fired `configure` from set
+  hass guarded only by an in-instance config hash. HA recreates the card element
+  freely (masonry/sections, every reconnect), so each fresh instance re-sent
+  configure → daemon re-published the companion → new hass state → card recreated
+  → configure again. Self-sustaining loop flooded POST /api/events/ha_lua_command
+  until the frontend WS dropped (code 3 "Connection lost") and the UI froze
+  (unclickable, console spammed with uncaught {success:false} rejections).
+  Fix: reconcile against the companion the daemon already published
+  (_companionConfigured compares window.sensors + presets); only send configure on
+  real first-setup / config change. Also wrapped callApi/callService in
+  Promise.resolve(...).catch(() => {}) so transient failures don't spam the
+  console. Commit e44bc5a.
+- **companion publish dedup.** publish_companion (examples/enhanced_climate.lua)
+  rewrote every companion every minute even unchanged — a no-op state_changed +
+  recorder row per companion per minute (the "refreshed companion" debug spam the
+  user saw). Now caches JSON of the last sent payload per climate and skips the
+  write when unchanged; PUBLISH_HEARTBEAT (5m) still forces a refresh so a sensor
+  self-heals after an HA restart (published states are NOT integration-backed and
+  Seed does not prune the mirror on reconnect, so get_state can't tell us HA
+  dropped it). remove_climate clears the cache. Test
+  TestEnhancedClimateCompanionDedupsUnchanged (re-fires identical window event →
+  no write; window open → writes). Commit fe57c8f.
+
 ## v2.8.1 (card 0.3.17)
 - setpoint stepper fused into one pill: dropped `.stepper` gap, ± buttons share
   the input's `--card-background-color`, internal borders removed (minus loses
