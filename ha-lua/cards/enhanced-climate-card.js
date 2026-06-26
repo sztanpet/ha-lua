@@ -411,13 +411,21 @@ const STYLES = `
 // timer. A recurring/conditional send is what repeatedly flooded the event API
 // and knocked over the HA websocket.
 //
-// This map records the config hash already sent per climate entity. It is
-// MODULE-level on purpose: HA rebuilds the card element constantly
-// (masonry/sections, every reconnect) and a fresh element loses instance state,
-// so an instance guard cannot stop a recreated element from re-sending. There is
-// deliberately no retry — one send per distinct config, full stop, so it cannot
-// storm. key: climate_entity -> config hash.
-const sentConfigures = new Map();
+// This set records the (entity, config) pairs already sent. It is MODULE-level
+// on purpose: HA rebuilds the card element constantly (masonry/sections, every
+// reconnect) and a fresh element loses instance state, so an instance guard
+// cannot stop a recreated element from re-sending.
+//
+// The key is "entity|hash", NOT just entity. Keying by entity alone stored only
+// the LAST hash seen and caused a storm whenever two cards for the SAME entity
+// were mounted with DIFFERENT configs — exactly what happens while the card
+// editor is open: the saved dashboard card (config A) sits behind the dialog and
+// the editor preview (config B) sits in it, both receiving every hass push. Each
+// saw the other's hash, re-sent configure, which made the daemon republish the
+// companion -> another hass push -> another re-send: an infinite ping-pong that
+// flooded the event API and knocked over the HA websocket. Remembering every
+// distinct pair makes each send happen exactly once, full stop.
+const sentConfigures = new Set();
 
 class HaLuaEnhancedClimateCard extends HTMLElement {
   setConfig(config) {
@@ -481,8 +489,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     if (!this._hass || !this._config) return;
     const entity = this._config.climate_entity;
     if (!entity) return;
-    if (sentConfigures.get(entity) === this._configHash) return;
-    sentConfigures.set(entity, this._configHash);
+    const key = entity + "|" + this._configHash;
+    if (sentConfigures.has(key)) return;
+    sentConfigures.add(key);
     this.fireCommand("configure", {
       window_sensors: this._config.window_sensors || [],
       presets: this._config.presets || [],

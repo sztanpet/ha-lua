@@ -319,3 +319,41 @@ func TestEnhancedClimateCardConfigureNoStorm(t *testing.T) {
 		t.Errorf("config change + 50 hass updates sent %d configure POSTs; want exactly 1", afterChange)
 	}
 }
+
+// TestEnhancedClimateCardConfigureTwoCardsNoStorm reproduces the editor storm:
+// two cards for the SAME climate entity but DIFFERENT configs (the saved
+// dashboard card behind the edit dialog, plus the editor preview in it) both
+// receive every hass push. With the old per-entity guard each saw the other's
+// hash and re-sent configure on every push, ping-ponging forever and flooding
+// the event API. Keying the guard by (entity, config) bounds it to exactly one
+// send per distinct config: two cards, two configs -> two configures, no storm.
+func TestEnhancedClimateCardConfigureTwoCardsNoStorm(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	var ok bool
+	var configures int
+	countConfigures := `window.__calls.api.filter(c => c.path === "events/ha_lua_command" && c.data && c.data.action === "configure").length`
+
+	// Build a second card for climate.lr with a different config (a window
+	// sensor), then push 50 hass updates to BOTH cards, interleaved.
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`
+			window.__card2 = document.createElement("ha-lua-enhanced-climate-card");
+			window.__card2.setConfig({ climate_entity: "climate.lr", window_sensors: ["binary_sensor.w1"] });
+			document.body.appendChild(window.__card2);
+			window.__calls.api = [];
+			for (let i = 0; i < 50; i++) {
+				window.__card.hass = window.__mkHass("en", `+cardStates+`);
+				window.__card2.hass = window.__mkHass("en", `+cardStates+`);
+			}
+			true`, &ok),
+		chromedp.Evaluate(countConfigures, &configures),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if configures != 2 {
+		t.Errorf("two cards (same entity, two configs) + 50 hass updates each sent %d configure POSTs; want exactly 2", configures)
+	}
+}
