@@ -314,3 +314,38 @@ LESSON: the editor preview is a throwaway element HA recreates constantly and
 flags with .preview — it must never mutate server state; and a per-entity guard
 is unsafe whenever two cards can target one entity (always true while editing).
 Released as **v2.8.6** (2026-06-26, tag on 0e7cd05; changelog dc35a0a).
+
+## Card 0.3.23 (v2.8.7) — feedback spinner, diagnostics, version banner
+
+UX: pressing an override action (preset/custom/cancel/override-temp) had no
+feedback during the daemon round-trip (HA event -> daemon -> companion
+republish -> push back), so a tap felt dead. Added a pending state (c3ef521):
+_command() fires the command, sets this._pending, and forces a synchronous
+_renderNow() (a click pushes no hass, so otherwise nothing would show); the
+override buttons render disabled with a `.spinner` alongside. Cleared in
+set hass via _clearPendingIfChanged() when the companion stamp changes
+(companion.last_updated bumps on every republish — the genuine confirmation),
+with a PENDING_TIMEOUT_MS=6000 fallback so a dropped command can't stick it.
+Stays optimism-free: the spinner says "working", not "done". Test
+...PendingSpinner (click -> spinner + disabled; companion push -> cleared).
+
+Diagnostics + versioning (0bf0bdc): VERSION banner had drifted to 0.3.21 (2.8.6
+shipped card changes without bumping it), so a cached browser was
+indistinguishable from current code. Bumped to 0.3.23; MUST bump every card
+change. Added opt-in dbg() gated by localStorage["ha-lua-debug"]=="1" tracing
+connect/disconnect/_command/fireCommand(ws.connected)/configure + a module-level
+pagehide stack trace.
+
+OPEN ISSUE (not fixed in 2.8.7): user (Firefox 152) reports "The connection to
+wss://…/api/websocket was interrupted while the page was loading" + "Subscription
+not found" after each card interaction. RULED OUT: the card (only callApi REST +
+callService; no <form>/<a href>/location; all buttons type=button) and the daemon
+(override/settings handlers only call climate.set_temperature + publish_companion
+set_state — nothing that reloads a page or restarts HA). The console also logs
+Firefox 152 "Local Network Access detected" on the very same ha_lua_command fetch
+(target 192.168.1.139:443), and the site uses split-horizon DNS (public hostname
+-> private IP). Leading hypothesis: Firefox 152's new Local Network Access feature
+disrupts the local wss connection whenever a local-network fetch happens — i.e.
+browser/env, not our code. Next diagnostics: (a) does a NATIVE HA card action
+repro the same lines? (b) enable ha-lua-debug and check whether `pagehide` fires
+(real document reload) vs. just a HA WS reconnect.
