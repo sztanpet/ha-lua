@@ -4,6 +4,16 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.1 - 2026-06-26
+
+### Changed
+- **Enhanced climate card.** The setpoint ± buttons and the numeric value now
+  read as one pill — shared background, no internal dividers, only the outer
+  corners rounded, and a roomier value field (applies to both the manual target
+  and the override-temp steppers). When the HVAC mode icons share the stepper's
+  row they right-align against the card edge, falling back to the left once they
+  wrap onto their own line.
+
 ## 2.8.0 - 2026-06-26
 
 ### Added
