@@ -11,7 +11,8 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-EDITOR configure-storm fix (on main, 512b849 + 18e7a50; NOT yet released/tagged).
+RELEASED **v2.8.6** (2026-06-26, tag on 0e7cd05). EDITOR configure-storm fix
+(512b849 + 18e7a50).
 2.8.5's fire-once Map was still wrong: keyed per-entity, it stored only the last
 hash, so while the edit dialog is open the saved dashboard card (config A) and the
 editor PREVIEW (config B, e.g. after picking a window sensor) — both mounted for
@@ -42,6 +43,10 @@ entity (always true while editing). Full detail: **`state/enhanced-climate.md`**
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.6 (2026-06-26): card 0.3.22 — EDITOR configure-storm fix: dedupe by
+  (entity,config) not entity (two cards/one entity ping-ponged while editing) +
+  editor preview never provisions (this.preview, deferred to microtask). See
+  `state/enhanced-climate.md`.
 - 2.8.5 (2026-06-26): card 0.3.21 — DEFINITIVE configure-storm fix: deleted the
   reconciler, configure is now strictly fire-once per config. See `state/enhanced-climate.md`.
 - 2.8.4 (2026-06-26): card 0.3.20 — terminate the reconcile retry loop (daemon

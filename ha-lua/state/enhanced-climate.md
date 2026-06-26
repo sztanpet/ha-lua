@@ -313,4 +313,4 @@ Fixes (two commits):
 LESSON: the editor preview is a throwaway element HA recreates constantly and
 flags with .preview — it must never mutate server state; and a per-entity guard
 is unsafe whenever two cards can target one entity (always true while editing).
-Not yet released/tagged — code on main, no version bump.
+Released as **v2.8.6** (2026-06-26, tag on 0e7cd05; changelog dc35a0a).
