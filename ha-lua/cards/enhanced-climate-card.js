@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.16";
+const VERSION = "0.3.17";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -350,7 +350,10 @@ const STYLES = `
   .stepper .btn.step { background: var(--card-background-color); }
   .stepper .btn.step:first-child { border-right: none; border-radius: 12px 0 0 12px; }
   .stepper .btn.step:last-child { border-left: none; border-radius: 0 12px 12px 0; }
-  .climate-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+  /* space-between pushes the mode icons to the right edge when they share the
+     stepper's row; once they wrap to their own line it leaves them left-aligned. */
+  .climate-controls { display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: 10px 16px; }
   .modes { display: flex; gap: 6px; flex-wrap: wrap; }
 
   /* One button look for every control; modifiers only tweak it. */
