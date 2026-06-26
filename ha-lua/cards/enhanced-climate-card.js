@@ -16,13 +16,42 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.21";
+// Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
+// so this banner is the only reliable signal of which build is actually loaded.
+const VERSION = "0.3.23";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
   "color: white; background: #03a9f4; font-weight: 700;",
   "color: #03a9f4; background: white; font-weight: 700;",
 );
+
+// Opt-in diagnostics. Enable from the devtools console with
+//   localStorage.setItem("ha-lua-debug", "1")
+// then reload. dbg() lines trace the command/render/teardown lifecycle so a
+// "page reloads / websocket interrupted after I press a button" report can be
+// pinned to an actual cause (a real navigation vs. just a HA WS reconnect).
+const DEBUG = (() => {
+  try {
+    return window.localStorage.getItem("ha-lua-debug") === "1";
+  } catch (_e) {
+    return false;
+  }
+})();
+
+function dbg(...args) {
+  if (DEBUG) console.info("%c ha-lua %c", "background:#03a9f4;color:#fff", "", ...args);
+}
+
+// A page reload is the prime suspect for "the websocket was interrupted while
+// the page was loading". pagehide fires when the document is actually being torn
+// down; the trace shows whether anything in our code initiated it.
+if (DEBUG) {
+  window.addEventListener("pagehide", (ev) => {
+    console.warn("ha-lua: pagehide — document unloading", { persisted: ev.persisted });
+    console.trace("ha-lua: pagehide stack");
+  });
+}
 
 // ---------------------------------------------------------------------------
 // i18n. The card reads HA's user language from hass.language; missing keys fall
@@ -461,12 +490,14 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   connectedCallback() {
+    dbg("connectedCallback", this._config && this._config.climate_entity, "preview=", this.preview);
     // A local 1s timer drives only the override countdown display; all data comes
     // from hass push, so there is no polling.
     this._countdownTimer = setInterval(() => this._tickCountdown(), 1000);
   }
 
   disconnectedCallback() {
+    dbg("disconnectedCallback", this._config && this._config.climate_entity);
     clearInterval(this._countdownTimer);
     clearTimeout(this._pendingTimer);
   }
@@ -536,6 +567,8 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
   fireCommand(action, data) {
     if (!this._hass) return;
+    const conn = this._hass.connection;
+    dbg("fireCommand POST", action, data, "ws.connected=", conn && conn.connected);
     // Fire-and-forget: the card is optimism-free and reconciles from the next
     // hass push, so swallow rejections (e.g. a transient "Connection lost")
     // rather than leaving an uncaught promise that spams the console.
@@ -543,7 +576,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       script: "enhanced_climate",
       action,
       data: { climate_entity: this._config.climate_entity, ...data },
-    })).catch(() => {});
+    })).then(
+      (res) => dbg("fireCommand ok", action, res),
+      (err) => dbg("fireCommand failed", action, err),
+    );
   }
 
   callClimate(service, data) {
@@ -559,6 +595,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   // companion republish -> push back) is slow enough that a tap with no feedback
   // feels broken. The spinner is honest: it says "working", not "done".
   _command(action, data) {
+    dbg("_command (user tap)", action, data);
     this.fireCommand(action, data);
     this._pending = true;
     // Snapshot the companion so the next push that actually changes it clears the
