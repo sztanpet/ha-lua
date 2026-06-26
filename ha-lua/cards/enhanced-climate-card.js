@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.17";
+const VERSION = "0.3.18";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -459,24 +459,47 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     if (!this._hass || !this._config) return;
     if (this._configHash === this._sentConfigHash) return;
     this._sentConfigHash = this._configHash;
+    // Reconcile against the daemon's own state rather than blindly firing on
+    // every (re)mount: if the companion sensor already reflects this exact
+    // config, the daemon is configured. Re-sending configure here is not just
+    // wasteful — it makes the daemon re-publish the companion, which pushes a
+    // new hass state, which can recreate this card and fire configure again, a
+    // feedback loop that storms the event API and knocks over the HA websocket.
+    const companion = this._hass.states[companionId(this._config.climate_entity)];
+    if (companion && this._companionConfigured(companion.attributes)) return;
     this.fireCommand("configure", {
       window_sensors: this._config.window_sensors || [],
       presets: this._config.presets || [],
     });
   }
 
+  // _companionConfigured reports whether the published companion already carries
+  // the window sensors and presets this card is configured with, so configure
+  // can be skipped when nothing would change.
+  _companionConfigured(attrs) {
+    if (!attrs) return false;
+    const sameList = (have, want) => JSON.stringify(have || []) === JSON.stringify(want || []);
+    return sameList(attrs.window && attrs.window.sensors, this._config.window_sensors) &&
+      sameList(attrs.presets, this._config.presets);
+  }
+
   fireCommand(action, data) {
     if (!this._hass) return;
-    this._hass.callApi("POST", "events/ha_lua_command", {
+    // Fire-and-forget: the card is optimism-free and reconciles from the next
+    // hass push, so swallow rejections (e.g. a transient "Connection lost")
+    // rather than leaving an uncaught promise that spams the console.
+    Promise.resolve(this._hass.callApi("POST", "events/ha_lua_command", {
       script: "enhanced_climate",
       action,
       data: { climate_entity: this._config.climate_entity, ...data },
-    });
+    })).catch(() => {});
   }
 
   callClimate(service, data) {
     if (!this._hass) return;
-    this._hass.callService("climate", service, { entity_id: this._config.climate_entity, ...data });
+    Promise.resolve(
+      this._hass.callService("climate", service, { entity_id: this._config.climate_entity, ...data }),
+    ).catch(() => {});
   }
 
   _scheduleRender() {
