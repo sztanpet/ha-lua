@@ -4,6 +4,25 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.7 - 2026-06-26
+
+### Added
+- **"Applying…" feedback on the enhanced climate card.** Pressing an override
+  preset, custom duration, cancel, or the override-temp stepper now disables the
+  buttons and shows a spinner immediately, instead of sitting dead until the
+  daemon round-trip completes. The spinner clears when the companion push that
+  confirms the command arrives (with a short fallback), so the card stays
+  optimism-free — the spinner means "working", never "done".
+- **Opt-in card diagnostics.** Set `localStorage["ha-lua-debug"] = "1"` and reload
+  to trace the card's command/render/teardown lifecycle plus a `pagehide` stack,
+  to diagnose websocket-interruption reports.
+
+### Changed
+- **Card version banner now tracks every card change.** The console banner is the
+  only reliable signal of which build a cached browser loaded; it had drifted
+  (still printed v0.3.21 after 2.8.6). It is now v0.3.23 and bumps with each card
+  change.
+
 ## 2.8.6 - 2026-06-26
 
 ### Fixed
