@@ -11,8 +11,8 @@ enhanced climate) build on it — see their own state files.
 - **Bounded daemon log** (internal/logwriter): ha-lua.log capped at 5 MiB total
   (active file + one `.1` backup, each ≤ budget/2 so the sum stays under budget,
   retaining the previous segment). main.openLogFile now returns logwriter.New.
-  The per-script ha.exceptions.log_file paths are still unbounded (separate, only
-  written on errors) — cap those too if it ever matters.
+  ha.exceptions.log_file paths are ALSO capped now (logwriter.RotateIfLarge,
+  called before each open-append-close, 5 MiB budget per path).
 - **Per-script event buffer 64 -> 256** (internal/lua/runner.go): wildcard
   subscriptions (enhanced_climate's binary_sensor.*/climate.*) can overflow the
   channel and drop events (Send warns "event channel full, dropping"). 256 matches
