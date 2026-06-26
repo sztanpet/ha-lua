@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.18";
+const VERSION = "0.3.19";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -404,6 +404,21 @@ const STYLES = `
   .editor-actions { display: flex; gap: 8px; }
 `;
 
+// The DAEMON owns the per-climate registry: it persists window_sensors/presets
+// in SQLite and echoes the config it is actually running back through the
+// companion sensor's attributes. The card is therefore a RECONCILER, not a
+// pusher — it sends `configure` only to make the daemon match this card's
+// config, never as a lifecycle side effect.
+//
+// This map tracks the configure we last sent per climate entity so the send is
+// single-flight with a retry backoff. It is MODULE-level on purpose: HA rebuilds
+// the card element constantly (masonry/sections, every reconnect), and a fresh
+// element loses all instance state — an instance-level guard cannot stop a
+// recreated element from re-sending, which is exactly what flooded the event API
+// and dropped the HA websocket. key: climate_entity -> { hash, at }.
+const pendingConfigure = new Map();
+const CONFIGURE_RETRY_MS = 15000; // only re-send an unacknowledged configure this often
+
 class HaLuaEnhancedClimateCard extends HTMLElement {
   setConfig(config) {
     if (!config || !config.climate_entity) {
@@ -411,12 +426,13 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     }
     this._config = config;
     this._configHash = configHash(config);
+    this._reconcileConfig();
     this._scheduleRender();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._maybeConfigure();
+    this._reconcileConfig();
     this._scheduleRender();
   }
 
@@ -455,18 +471,30 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     return document.createElement("ha-lua-enhanced-climate-card-editor");
   }
 
-  _maybeConfigure() {
+  // _reconcileConfig converges the daemon to this card's config. It sends
+  // `configure` only when the companion the daemon publishes does not already
+  // reflect this card's window_sensors/presets — and at most one send is in
+  // flight per climate (CONFIGURE_RETRY_MS), tracked module-side so a recreated
+  // card element cannot re-send. This is what makes the card safe to call on
+  // every hass update: a steady, already-configured climate issues no POST.
+  _reconcileConfig() {
     if (!this._hass || !this._config) return;
-    if (this._configHash === this._sentConfigHash) return;
-    this._sentConfigHash = this._configHash;
-    // Reconcile against the daemon's own state rather than blindly firing on
-    // every (re)mount: if the companion sensor already reflects this exact
-    // config, the daemon is configured. Re-sending configure here is not just
-    // wasteful — it makes the daemon re-publish the companion, which pushes a
-    // new hass state, which can recreate this card and fire configure again, a
-    // feedback loop that storms the event API and knocks over the HA websocket.
-    const companion = this._hass.states[companionId(this._config.climate_entity)];
-    if (companion && this._companionConfigured(companion.attributes)) return;
+    const entity = this._config.climate_entity;
+    if (!entity) return;
+
+    const companion = this._hass.states[companionId(entity)];
+    if (companion && this._companionConfigured(companion.attributes)) {
+      pendingConfigure.delete(entity); // daemon matches us: nothing in flight
+      return;
+    }
+
+    // Daemon missing or stale. Send configure once, then wait for the companion
+    // to catch up (handled above) or the retry window to elapse — so neither a
+    // slow round-trip nor HA recreating the element can turn this into a storm.
+    const sent = pendingConfigure.get(entity);
+    const now = Date.now();
+    if (sent && sent.hash === this._configHash && (now - sent.at) < CONFIGURE_RETRY_MS) return;
+    pendingConfigure.set(entity, { hash: this._configHash, at: now });
     this.fireCommand("configure", {
       window_sensors: this._config.window_sensors || [],
       presets: this._config.presets || [],
