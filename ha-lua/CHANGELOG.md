@@ -4,6 +4,22 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.4 - 2026-06-26
+
+### Fixed
+- **Enhanced climate `configure` retry loop.** With the card reconciling against
+  the companion sensor, a companion that HA had dropped (these non-integration
+  entities vanish on an HA restart) deadlocked: the daemon's `configure` handler
+  no-oped because its stored config was unchanged, so the companion never
+  reappeared and the card re-sent `configure` every ~15s indefinitely. The daemon
+  now re-publishes the companion on every `configure`, so the loop terminates as
+  soon as it comes back.
+- **Window sensor could not be configured in the card editor.** The editor used
+  HA's `ha-entities-picker`, a frontend internal that newer HA no longer ships, so
+  the field rendered as nothing — not even its label. It now uses the single
+  `ha-entity-picker` (one window sensor); `window_sensors` remains a list, so
+  control and companion behaviour are unchanged.
+
 ## 2.8.3 - 2026-06-26
 
 ### Fixed
