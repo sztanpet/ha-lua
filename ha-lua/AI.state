@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-06-26
+Last updated: 2026-06-26 (editor configure-storm fix)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,20 +11,21 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-RELEASED **v2.8.5** (2026-06-26, tag on 3946c5b). DEFINITIVE configure-storm fix:
-the whole reconcile-against-companion model (0.3.19) was wrong. User confirmed
-konyha_furdo's window.sensors is ALWAYS empty (so the match check SHOULD have
-passed) yet the card retried every 15s, and 2.8.4's republish-on-configure turned
-that into a state_changed storm that dropped the HA WS and constantly reloaded the
-page. Card 0.3.21 (1a94bb6): DELETED _reconcileConfig/_companionConfigured/
-pendingConfigure/CONFIGURE_RETRY_MS. Configure is now strictly FIRE-ONCE — module-
-level `sentConfigures` Map (entity->configHash), _maybeConfigure sends once per
-distinct config, NO companion check, NO retry => storm structurally impossible.
-Daemon keeps companion ownership (tick + republish-on-configure from 2.8.4, kept).
-Test: 50 hass updates => exactly 1 configure; config change => 1 more. LESSON:
-don't reconcile a card against server state on a timer — tell the server once, let
-it own its published entities. Editor window picker = single ha-entity-picker
-(0.3.20). Full detail: **`state/enhanced-climate.md`**.
+EDITOR configure-storm fix (on main, 512b849 + 18e7a50; NOT yet released/tagged).
+2.8.5's fire-once Map was still wrong: keyed per-entity, it stored only the last
+hash, so while the edit dialog is open the saved dashboard card (config A) and the
+editor PREVIEW (config B, e.g. after picking a window sensor) — both mounted for
+the same entity, both fed hass — saw each other's hash and re-sent configure on
+every push, ping-ponging into a storm that hammered ha-lua and froze the Save
+button. Verified against HA hui-card._loadElement. Two fixes: (1) dedupe Map ->
+Set keyed "entity|hash" so every distinct (entity,config) sends exactly once
+regardless of how many cards are mounted; (2) skip provisioning when this.preview
+— HA recreates the preview on every keystroke and sets .preview AFTER hass, so the
+configure is deferred to a microtask (_scheduleConfigure) to read it reliably.
+Regression tests: ...TwoCardsNoStorm (2 cards/2 configs => exactly 2) and
+...PreviewNoConfigure (preview => 0). LESSON: never let the editor preview mutate
+server state, and a per-entity guard is unsafe whenever two cards target one
+entity (always true while editing). Full detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

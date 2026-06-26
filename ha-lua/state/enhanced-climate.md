@@ -279,3 +279,38 @@ correctly (script copied into /config/ha-lua/scripts/, admin user, set_state ok)
   dashboard-resource install, the entity model, the restart caveat, the
   admin-user requirement, and a recommended recorder exclude for
   sensor.ha_lua_enhanced_climate_*.
+
+## Card 0.3.22 (post-2.8.5) — editor configure-storm, real root cause
+
+2.8.5's fire-once Map (entity->configHash) was STILL wrong. The user hit a
+storm when EDITING a card: right after picking a window sensor the page
+hammered the ha-lua endpoint and HA broke (Save button unclickable).
+
+Real root cause (verified against HA frontend hui-card._loadElement):
+- While the edit dialog is open, TWO card elements for the SAME climate entity
+  are mounted: the saved dashboard card (config A) behind the dialog, and the
+  editor PREVIEW (config B, e.g. with the new window sensor) inside it. HA
+  pushes hass to both on every state change.
+- The guard Map stored only the LAST hash per entity, so A and B each saw the
+  other's hash, decided their config had changed, and re-sent configure. Each
+  configure -> daemon republishes companion -> another hass push -> another
+  double-send: infinite ping-pong. Keying per-entity was the bug.
+- HA also sets element.preview=true on the preview and RECREATES it on every
+  keystroke; a throwaway preview was writing real config to the daemon.
+
+Fixes (two commits):
+- 512b849 `cards: dedupe configure per (entity, config), not entity`: Map ->
+  Set keyed "entity|hash". Every distinct (entity,config) sends exactly once
+  regardless of how many cards are mounted. Regression test
+  TestEnhancedClimateCardConfigureTwoCardsNoStorm (two cards/two configs + 50
+  interleaved hass pushes => exactly 2 configures, not a storm).
+- 18e7a50 `cards: never provision the daemon from the editor preview`: skip
+  when this.preview. HA assigns hass BEFORE preview in _loadElement, so the
+  check can't run synchronously in the hass setter — deferred to a microtask
+  via _scheduleConfigure (drains within the same task, so fire-once guarantees
+  hold). Regression test TestEnhancedClimateCardPreviewNoConfigure.
+
+LESSON: the editor preview is a throwaway element HA recreates constantly and
+flags with .preview — it must never mutate server state; and a per-entity guard
+is unsafe whenever two cards can target one entity (always true while editing).
+Not yet released/tagged — code on main, no version bump.
