@@ -11,22 +11,8 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-RELEASED **v2.8.8** (2026-06-26, tag on 21eec2b). Card 0.3.24: fire commands over
-the websocket, not REST — SOLVED 2.8.7's open WS-drop issue. Debug tracing proved
-it: no pagehide fired (page never reloaded) and the wss:// connection died ~8ms
-after each fireCommand fetch, in lockstep with Firefox 152's "Local Network Access
-detected" log on that exact fetch. Root cause: hass.callApi is a REST fetch to
-HA's private-IP host; Firefox 152's new LNA check on that fetch tears down the live
-websocket as a side effect (HA's own cards erroring too, then a card rebuild). FIX
-(66e5c13): fire ha_lua_command via hass.callWS({type:"fire_event",event_type,
-event_data}) over the EXISTING socket — same bus delivery, no new connection, no
-LNA, no drop; daemon unchanged. callService already used the socket, so the card
-now makes ZERO REST calls. Falls back to callApi only if the frontend predates
-callWS. Test asserts the command rides the ws spy, never the REST spy. LESSON: a
-custom card making a REST fetch to a private-IP HA host can drop the frontend
-websocket on Firefox 152 (LNA) — prefer callWS/callService. (2.8.7 was the
-spinner + diagnostics that captured the proof.) Full detail:
-**`state/enhanced-climate.md`**.
+Working on the enhanced climate card (`cards/enhanced-climate-card.js`). Latest
+release v2.8.8 (card 0.3.24). Detail/history: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
