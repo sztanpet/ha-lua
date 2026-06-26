@@ -16,7 +16,7 @@
 // i18n. Every button shares the one `.btn` style (see STYLES). The config editor
 // follows.
 
-const VERSION = "0.3.19";
+const VERSION = "0.3.20";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -78,7 +78,7 @@ const MESSAGES = {
     "day.5": "Saturday",
     "day.6": "Sunday",
     "editor.climate": "Climate entity (required)",
-    "editor.window_sensors": "Window sensors",
+    "editor.window_sensors": "Window sensor",
     "editor.presets": "Override presets (minutes)",
     "editor.name": "Name",
   },
@@ -130,7 +130,7 @@ const MESSAGES = {
     "day.5": "Szombat",
     "day.6": "Vasárnap",
     "editor.climate": "Klíma entitás (kötelező)",
-    "editor.window_sensors": "Ablakérzékelők",
+    "editor.window_sensors": "Ablakérzékelő",
     "editor.presets": "Felülbírálás gombok (perc)",
     "editor.name": "Név",
   },
@@ -929,15 +929,19 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
     climatePicker.addEventListener("value-changed", (ev) => this._update({ climate_entity: ev.detail.value }));
     form.append(climatePicker);
 
-    // Like the climate picker: set .label and append directly. Wrapping a
-    // multi-input picker in a <label> (invalid: a label binds one control)
-    // swallowed clicks on its add/remove buttons, so selections never stuck.
-    const windowPicker = document.createElement("ha-entities-picker");
+    // A single ha-entity-picker, not the multi-select ha-entities-picker: the
+    // latter is a frontend internal HA dropped, so it rendered as an unknown
+    // element (no picker, not even a label). window_sensors stays a list so the
+    // control/companion code is unchanged — the editor just sets 0 or 1 of them.
+    const windowPicker = document.createElement("ha-entity-picker");
     windowPicker.hass = this._hass;
-    windowPicker.value = this._config.window_sensors || [];
+    windowPicker.value = (this._config.window_sensors || [])[0] || "";
     windowPicker.includeDomains = ["binary_sensor"];
     windowPicker.label = translate("editor.window_sensors");
-    windowPicker.addEventListener("value-changed", (ev) => this._update({ window_sensors: ev.detail.value }));
+    windowPicker.addEventListener("value-changed", (ev) => {
+      const sensor = ev.detail.value;
+      this._update({ window_sensors: sensor ? [sensor] : [] });
+    });
     form.append(windowPicker);
 
     const presetsInput = h("input", {
