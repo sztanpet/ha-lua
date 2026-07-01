@@ -329,16 +329,24 @@ func (r *Runner) handleTimerFired(L *lua.LState, api *haAPI, timerID string) {
 		return
 	}
 
-	// IDs are "script_id|type|spec|N" or "script_id|after|uuid"
-	callback := "timer"
-	parts := strings.Split(timerID, "|")
-	if len(parts) >= 2 {
-		callback = "timer_" + parts[1]
-		if parts[1] == "after" {
-			delete(r.timerFns, timerID)
-		}
+	callback, isAfter := timerCallbackName(r.scriptID, timerID)
+	if isAfter {
+		delete(r.timerFns, timerID)
 	}
 	callProtected(L, api, callback, nil, fn)
+}
+
+// timerCallbackName maps a timer ID ("<script_id>|<type>|…") to the
+// exception-callback label and reports whether it is a one-shot "after"
+// timer. The script ID is a filename that may itself contain '|', so the
+// known prefix is stripped rather than splitting the ID blind.
+func timerCallbackName(scriptID, timerID string) (name string, isAfter bool) {
+	rest := strings.TrimPrefix(timerID, scriptID+"|")
+	typ, _, ok := strings.Cut(rest, "|")
+	if !ok || typ == "" {
+		return "timer", false
+	}
+	return "timer_" + typ, typ == "after"
 }
 
 // handleRequest runs a UI request handler on the script goroutine and replies.

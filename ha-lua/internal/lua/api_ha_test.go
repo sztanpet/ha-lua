@@ -482,6 +482,29 @@ func TestTimerAPI(t *testing.T) {
 	}
 }
 
+// TestTimerCallbackName: the timer type must come from the segment after the
+// script-ID prefix — a script filename containing '|' would mis-route a blind
+// Split (the old code took parts[1], i.e. a piece of the script ID).
+func TestTimerCallbackName(t *testing.T) {
+	cases := []struct {
+		scriptID, timerID, want string
+		isAfter                 bool
+	}{
+		{"lights", "lights|every|1h|1", "timer_every", false},
+		{"lights", "lights|at|07:00|2", "timer_at", false},
+		{"lights", "lights|after|deadbeef", "timer_after", true},
+		{"we|ird", "we|ird|after|deadbeef", "timer_after", true},
+		{"we|ird", "we|ird|every|1h|1", "timer_every", false},
+	}
+	for _, c := range cases {
+		name, isAfter := timerCallbackName(c.scriptID, c.timerID)
+		if name != c.want || isAfter != c.isAfter {
+			t.Errorf("timerCallbackName(%q, %q) = (%q, %v), want (%q, %v)",
+				c.scriptID, c.timerID, name, isAfter, c.want, c.isAfter)
+		}
+	}
+}
+
 // TestSendMailDeadline: a server that accepts and then says nothing must not
 // hang the caller — the email handler runs on the script goroutine, and a
 // blocked Go call is beyond the reach of the supervisor's VM abort, so a
