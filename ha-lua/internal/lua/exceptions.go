@@ -1,7 +1,10 @@
 package lua
 
 import (
+	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/smtp"
 	"os"
 	"path/filepath"
@@ -14,7 +17,77 @@ import (
 )
 
 // smtpSendMail is swapped out in tests.
-var smtpSendMail = smtp.SendMail
+var smtpSendMail = sendMailTimeout
+
+// smtpTimeout bounds the entire SMTP exchange, dial included. The handler runs
+// on the script goroutine and smtp.SendMail has no deadline anywhere — a
+// wedged SMTP server would block the goroutine in Go code, which the
+// supervisor's VM abort cannot interrupt, so StopScript would hang forever.
+const smtpTimeout = 30 * time.Second
+
+// sendMailTimeout is smtp.SendMail (STARTTLS when offered, then auth) on a
+// connection with an absolute deadline covering the whole exchange.
+func sendMailTimeout(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	return sendMailDeadline(addr, auth, from, to, msg, smtpTimeout)
+}
+
+// sendMailDeadline is sendMailTimeout with the deadline injectable by tests.
+func sendMailDeadline(addr string, auth smtp.Auth, from string, to []string, msg []byte, timeout time.Duration) error {
+	dialer := &net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(context.Background(), "tcp", addr)
+	if err != nil {
+		return err
+	}
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		conn.Close()
+		return err
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	// Client.Close closes conn too; after a successful Quit it errors, which
+	// is uninteresting either way.
+	defer client.Close()
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return err
+		}
+	}
+	if auth != nil {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(auth); err != nil {
+				return err
+			}
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, rcpt := range to {
+		if err := client.Rcpt(rcpt); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
+}
 
 // maxExceptionLogBytes caps each ha.exceptions.log_file path (active + one
 // rotated backup) so a script that keeps throwing can't fill /config.

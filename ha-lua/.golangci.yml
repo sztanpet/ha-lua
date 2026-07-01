@@ -20,6 +20,11 @@ linters:
         - (*github.com/fsnotify/fsnotify.Watcher).Close
         - (*os.Root).Close
         - (io.Closer).Close
+        # SMTP cleanup: Client.Close after Quit errors by design, and a
+        # close error on an already-failed connection changes nothing.
+        - (*net/smtp.Client).Close
+        - (net.Conn).Close
+        - (net.Listener).Close
     staticcheck:
       checks: ["all"]
 

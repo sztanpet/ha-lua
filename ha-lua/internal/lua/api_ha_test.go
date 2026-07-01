@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/smtp"
 	"os"
 	"path/filepath"
@@ -478,6 +479,42 @@ func TestTimerAPI(t *testing.T) {
 		ha.at("07:00", function() end)
 	`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestSendMailDeadline: a server that accepts and then says nothing must not
+// hang the caller — the email handler runs on the script goroutine, and a
+// blocked Go call is beyond the reach of the supervisor's VM abort, so a
+// hang here wedges StopScript (and every hot reload) forever.
+func TestSendMailDeadline(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Hold the connection open silently: no SMTP greeting, ever.
+		var buf [1]byte
+		_, _ = conn.Read(buf[:])
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- sendMailDeadline(ln.Addr().String(), nil, "a@example.com",
+			[]string{"b@example.com"}, []byte("msg"), 200*time.Millisecond)
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("send to a silent server succeeded; want deadline error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("sendMailDeadline hung past its deadline")
 	}
 }
 
