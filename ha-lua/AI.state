@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-06-26 (editor configure-storm fix)
+Last updated: 2026-07-01 (whole-codebase review)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,8 +11,10 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Working on the enhanced climate card (`cards/enhanced-climate-card.js`). Latest
-release v2.8.8 (card 0.3.24). Detail/history: **`state/enhanced-climate.md`**.
+Whole-codebase review (2026-07-01): 4 correctness bugs (seed ghost entities,
+PruneScript vs load-time ha.after, http stdlib has no timeout, smtp.SendMail
+can hang StopScript) + 4 small cleanups. Plan/status: **`state/code-review.md`**.
+Latest release v2.8.8 (card 0.3.24, `state/enhanced-climate.md`).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -24,6 +26,8 @@ release v2.8.8 (card 0.3.24). Detail/history: **`state/enhanced-climate.md`**.
   (load-examples-spec.md). COMPLETE.
 - `state/enhanced-climate.md` — REST/command transport + enhanced_climate example
   + Lovelace card (enhanced-climate-spec.md). Released v2.7.0, card at 0.3.8.
+- `state/code-review.md` — 2026-07-01 whole-codebase review findings + fix
+  status (no spec; review track).
 - (sse-spec.md has no implementation yet — no state file.)
 
 ## Release log
