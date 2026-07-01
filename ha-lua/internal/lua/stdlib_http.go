@@ -4,9 +4,20 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
+
+// httpTimeout bounds a single http.get/http.post round-trip. The request also
+// carries L.Context(), but that is the script's *lifetime* context — without
+// this cap a wedged remote pins the script goroutine until the script is
+// stopped, stalling every event behind it.
+const httpTimeout = 30 * time.Second
+
+// httpClient is shared by all scripts: it only carries the timeout and the
+// default transport's connection pool, both of which are goroutine-safe.
+var httpClient = &http.Client{Timeout: httpTimeout}
 
 func registerHTTP(L *lua.LState) {
 	mod := L.RegisterModule("http", httpFuncs)
@@ -62,8 +73,7 @@ func luaHTTPPost(L *lua.LState) int {
 }
 
 func doRequest(L *lua.LState, req *http.Request) int {
-	client := &http.Client{}
-	res, err := client.Do(req)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		L.Push(lua.LNil)
 		L.Push(lua.LString(err.Error()))

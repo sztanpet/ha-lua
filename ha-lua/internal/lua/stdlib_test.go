@@ -331,6 +331,16 @@ func TestHTTPModule(t *testing.T) {
 	}
 }
 
+// TestHTTPClientHasTimeout is a canary against regressing to a bare
+// &http.Client{}: the only other bound on a request is the script's lifetime
+// context, so without a client timeout a wedged remote pins the script
+// goroutine until the script is stopped.
+func TestHTTPClientHasTimeout(t *testing.T) {
+	if httpClient.Timeout <= 0 {
+		t.Fatal("shared http client has no timeout")
+	}
+}
+
 func BenchmarkReMatchCached(b *testing.B) {
 	L, _ := newStdlibState(b)
 	_ = L.DoString(`pattern = [[^sensor\.(temperature|humidity)_]]`)

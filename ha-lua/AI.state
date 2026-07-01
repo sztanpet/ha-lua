@@ -99,7 +99,7 @@ add-on change, minor = feature, patch = fix.
 - **Purge cutoff**: computed in Go as RFC3339 and bound as a parameter — never datetime('now',...) in SQL (format mismatch vs RFC3339 changed_at breaks string comparison)
 - **Seed dedup**: state_history row on seed only when state/attributes differ from mirror (reconnects must not pollute history)
 - **require semantics**: per-LState loaded-module cache + circular-require error (not bare DoFile)
-- **http timeout**: callback context (5s) is the only timeout; no separate HTTP timeout config
+- **http timeout**: shared client with a fixed 30s Timeout (stdlib_http.go) + the script's lifetime context; no per-callback context and no timeout config option (the old "callback context (5s)" note was never implemented)
 - **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited
 - **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC. main also sets time.Local from the timezone so script time.now() agrees with the scheduler
 - **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
