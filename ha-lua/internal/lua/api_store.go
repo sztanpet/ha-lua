@@ -1,8 +1,6 @@
 package lua
 
 import (
-	"context"
-
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/store"
@@ -138,8 +136,9 @@ type stateProxyData struct {
 // newStateProxy creates a persistent-proxy table: reads from in-memory cache
 // (preloaded from SQLite at construction), writes to both cache and SQLite.
 func newStateProxy(L *lua.LState, kv *store.Store, defaults *lua.LTable) *lua.LTable {
-	// Load all existing values
-	existing, err := kv.GetAll(context.Background())
+	// Load all existing values under the script's context, like every other
+	// binding — Background would outlive a script being stopped.
+	existing, err := kv.GetAll(L.Context())
 	if err != nil {
 		L.RaiseError("store.state load: %v", err)
 		return L.NewTable()
