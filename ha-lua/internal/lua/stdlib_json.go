@@ -5,8 +5,7 @@ import (
 )
 
 func registerJSON(L *lua.LState) {
-	mod := L.RegisterModule("json", jsonFuncs)
-	L.Push(mod)
+	L.RegisterModule("json", jsonFuncs)
 }
 
 var jsonFuncs = map[string]lua.LGFunction{

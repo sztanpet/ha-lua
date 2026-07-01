@@ -20,8 +20,7 @@ const httpTimeout = 30 * time.Second
 var httpClient = &http.Client{Timeout: httpTimeout}
 
 func registerHTTP(L *lua.LState) {
-	mod := L.RegisterModule("http", httpFuncs)
-	L.Push(mod)
+	L.RegisterModule("http", httpFuncs)
 }
 
 var httpFuncs = map[string]lua.LGFunction{

@@ -60,8 +60,7 @@ func getRECache(L *lua.LState) *reCache {
 }
 
 func registerRE(L *lua.LState) {
-	mod := L.RegisterModule("re", reFuncs)
-	L.Push(mod)
+	L.RegisterModule("re", reFuncs)
 }
 
 var reFuncs = map[string]lua.LGFunction{

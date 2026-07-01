@@ -18,13 +18,12 @@ const maxReadSize = 8 << 20 // 8 MiB
 // in which case the read/list/stat calls return an error and exists returns
 // false.
 func registerFS(L *lua.LState, root *os.Root) {
-	mod := L.RegisterModule("fs", map[string]lua.LGFunction{
+	L.RegisterModule("fs", map[string]lua.LGFunction{
 		"read":   fsRead(root),
 		"exists": fsExists(root),
 		"list":   fsList(root),
 		"stat":   fsStat(root),
 	})
-	L.Push(mod)
 }
 
 // fsErr pushes the (nil, message) failure pair shared by the fs functions,

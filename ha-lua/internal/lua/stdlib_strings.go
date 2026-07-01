@@ -7,8 +7,7 @@ import (
 )
 
 func registerStrings(L *lua.LState) {
-	mod := L.RegisterModule("strings", stringsFuncs)
-	L.Push(mod)
+	L.RegisterModule("strings", stringsFuncs)
 }
 
 var stringsFuncs = map[string]lua.LGFunction{

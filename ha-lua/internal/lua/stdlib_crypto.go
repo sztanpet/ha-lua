@@ -15,8 +15,7 @@ import (
 )
 
 func registerCrypto(L *lua.LState) {
-	mod := L.RegisterModule("crypto", cryptoFuncs)
-	L.Push(mod)
+	L.RegisterModule("crypto", cryptoFuncs)
 }
 
 var cryptoFuncs = map[string]lua.LGFunction{
