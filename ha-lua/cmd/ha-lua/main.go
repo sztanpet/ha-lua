@@ -39,8 +39,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A bad level falls back to the zero value (info), but say so: a typo'd
+	// "debg" that silently runs at info is a debugging session wasted.
 	var level slog.Level
-	_ = level.UnmarshalText([]byte(cfg.LogLevel))
+	levelErr := level.UnmarshalText([]byte(cfg.LogLevel))
 	// Log to stderr (the Supervisor add-on log) and, when configured, also to
 	// a file under the mounted config dir so the log survives restarts and is
 	// readable via the File Editor. File logging is best-effort: if the dir or
@@ -56,6 +58,9 @@ func main() {
 		}
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: level})))
+	if levelErr != nil {
+		slog.Warn("bad log_level, using info", "value", cfg.LogLevel, "err", levelErr)
+	}
 	if logFileErr != nil {
 		slog.Warn("file logging disabled", "dir", cfg.LogDir, "err", logFileErr)
 	}
