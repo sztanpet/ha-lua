@@ -191,7 +191,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	// Persist timer functions for dispatch and prune old rows.
 	r.timerFns = api.timerFns
 	if r.scheduler != nil {
-		if err := r.scheduler.PruneScript(ctx, r.scriptID, api.timerIDs); err != nil {
+		if err := r.scheduler.PruneScript(ctx, r.scriptID, api.keepIDs); err != nil {
 			slog.Warn("lua: timer pruning failed", "script", r.scriptID, "err", err)
 		}
 	}

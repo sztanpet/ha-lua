@@ -41,8 +41,15 @@ type haAPI struct {
 	eventHandlers []eventHandler
 	// timerFns registered during load time or from callbacks.
 	timerFns map[string]*lua.LFunction
-	// timerIDs tracks load-time timers for PruneScript.
-	timerIDs []string
+	// keepIDs tracks every registered timer's ID so PruneScript does not
+	// delete its row — including load-time ha.after rows, whose deletion
+	// would silently lose the restart-orphan warning.
+	keepIDs []string
+	// timerSeq numbers ha.every/ha.at registrations. It is a dedicated
+	// counter, NOT len(keepIDs): the seq is part of the stable timer ID
+	// that carries last_run/next_run across reloads, so an ha.after call
+	// between two ha.every calls must not renumber them.
+	timerSeq int
 	// routes registered via ha.serve during load time.
 	routes []routeEntry
 }
@@ -307,13 +314,13 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		}
 		spec := L.CheckString(1)
 		fn := L.CheckFunction(2)
-		seq := len(api.timerIDs) + 1
-		id, err := api.scheduler.RegisterEvery(L.Context(), api.scriptID, spec, seq)
+		api.timerSeq++
+		id, err := api.scheduler.RegisterEvery(L.Context(), api.scriptID, spec, api.timerSeq)
 		if err != nil {
 			L.RaiseError("every: %v", err)
 			return 0
 		}
-		api.timerIDs = append(api.timerIDs, id)
+		api.keepIDs = append(api.keepIDs, id)
 		api.timerFns[id] = fn
 		return 0
 	}))
@@ -325,13 +332,13 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		}
 		spec := L.CheckString(1)
 		fn := L.CheckFunction(2)
-		seq := len(api.timerIDs) + 1
-		id, err := api.scheduler.RegisterAt(L.Context(), api.scriptID, spec, seq)
+		api.timerSeq++
+		id, err := api.scheduler.RegisterAt(L.Context(), api.scriptID, spec, api.timerSeq)
 		if err != nil {
 			L.RaiseError("at: %v", err)
 			return 0
 		}
-		api.timerIDs = append(api.timerIDs, id)
+		api.keepIDs = append(api.keepIDs, id)
 		api.timerFns[id] = fn
 		return 0
 	}))
@@ -348,6 +355,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			L.RaiseError("after: %v", err)
 			return 0
 		}
+		api.keepIDs = append(api.keepIDs, id)
 		api.timerFns[id] = fn
 		return 0
 	}))

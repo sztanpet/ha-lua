@@ -481,6 +481,59 @@ func TestTimerAPI(t *testing.T) {
 	}
 }
 
+// TestPruneKeepsLoadTimeAfter: the runner prunes with api.keepIDs after load,
+// and that set must include load-time ha.after registrations — pruning their
+// rows silently lost the restart-orphan warning. The ha.after between the two
+// ha.every calls must also not shift the every IDs: the seq in the stable ID
+// is what carries last_run/next_run across reloads.
+func TestPruneKeepsLoadTimeAfter(t *testing.T) {
+	writeDB, readDB := testutil.NewTestDB(t, nil)
+	if err := state.Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	L := lua.NewState()
+	defer L.Close()
+	L.SetContext(ctx)
+
+	sched := scheduler.New(writeDB, time.UTC, func(string, string) {})
+	runner := &Runner{scriptID: "test", timerFns: make(map[string]*lua.LFunction), scheduler: sched}
+	api := &haAPI{scriptID: "test", scheduler: sched, timerFns: runner.timerFns}
+	runner.registerHaAPI(L, api)
+
+	if err := L.DoString(`
+		ha.every("1h", function() end)
+		ha.after("1h", function() end)
+		ha.every("2h", function() end)
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"test|every|1h|1", "test|every|2h|2"} {
+		found := false
+		for _, id := range api.keepIDs {
+			if id == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("stable ID %q missing from keepIDs %v", want, api.keepIDs)
+		}
+	}
+
+	if err := sched.PruneScript(ctx, "test", api.keepIDs); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := readDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM timers WHERE script_id = 'test'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Errorf("timer rows after load-time prune: want 3, got %d", n)
+	}
+}
+
 func TestTimerExceptionHandling(t *testing.T) {
 	L, api, _, runner := newHALState(t)
 	ctx, cancel := context.WithCancel(context.Background())
