@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.24";
+const VERSION = "0.3.25";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -483,10 +483,23 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const prev = this._hass;
     this._hass = hass;
     this._clearPendingIfChanged();
     this._scheduleConfigure();
-    this._scheduleRender();
+    // HA pushes hass on EVERY state change in the whole install; rebuilding the
+    // shadow DOM for a light toggling two rooms away is pure churn. HA replaces
+    // state objects immutably, so reference checks on the two entities this
+    // card actually reads (plus the language) decide whether to render.
+    if (this._relevantChanged(prev, hass)) this._scheduleRender();
+  }
+
+  _relevantChanged(prev, next) {
+    if (!prev || !prev.states || !this._config) return true;
+    if (prev.language !== next.language) return true;
+    const entity = this._config.climate_entity;
+    return prev.states[entity] !== next.states[entity]
+      || prev.states[companionId(entity)] !== next.states[companionId(entity)];
   }
 
   connectedCallback() {

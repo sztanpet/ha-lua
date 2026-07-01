@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
 	"github.com/sztanpet/ha-lua/cards"
@@ -291,6 +292,40 @@ func TestEnhancedClimateCard(t *testing.T) {
 	}
 	if !strings.Contains(cmdCalls, `"action":"schedule"`) {
 		t.Errorf("schedule save did not fire a schedule command; ws calls = %s", cmdCalls)
+	}
+
+	// Render skipping: HA pushes hass on EVERY state change in the install and
+	// keeps unchanged state objects reference-identical. A push where neither
+	// this climate, its companion, nor the language changed must NOT rebuild
+	// the DOM (marker survives); a push with a changed climate object must
+	// (marker gone). Fresh JSON literals give new references, so the same-refs
+	// push reuses the states object already on the card.
+	awaitPromise := func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }
+	// Two rAFs flush any scheduled render before/after the probe pushes.
+	const flushRAF = `new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`
+	var markerAlive, markerGone bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok),
+		chromedp.Evaluate(flushRAF, &ok, awaitPromise),
+		chromedp.Evaluate(`(window.__shadow("ha-card").__marker = true, true)`, &ok),
+		chromedp.Evaluate(`(window.__card.hass = window.__mkHass("en", window.__card._hass.states), true)`, &ok),
+		chromedp.Evaluate(flushRAF, &ok, awaitPromise),
+		chromedp.Evaluate(`!!window.__shadow("ha-card").__marker`, &markerAlive),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !markerAlive {
+		t.Error("irrelevant hass push rebuilt the DOM; want render skipped")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+strings.Replace(cardStates, `"temperature": 20`, `"temperature": 23`, 1)+`)`, &ok),
+		chromedp.Poll(`!window.__shadow("ha-card").__marker`, &ok),
+		chromedp.Evaluate(`!window.__shadow("ha-card").__marker`, &markerGone),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !markerGone {
+		t.Error("relevant hass push did not re-render")
 	}
 }
 
