@@ -1,83 +1,47 @@
 package lua
 
 import (
+	"context"
+
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/store"
 )
 
+// kvStore is the method set shared by the per-script and global stores. The
+// Lua bindings are identical; only the module name in error messages and the
+// extra store.state() differ.
+type kvStore interface {
+	Get(ctx context.Context, key string) (any, error)
+	Set(ctx context.Context, key string, value any) error
+	Delete(ctx context.Context, key string) error
+	GetAll(ctx context.Context) (map[string]any, error)
+}
+
 // registerStoreAPI installs the `store` and `global` modules on L.
 func registerStoreAPI(L *lua.LState, kv *store.Store, global *store.GlobalStore) {
-	storeTable := L.NewTable()
-
-	L.SetField(storeTable, "get", L.NewFunction(func(L *lua.LState) int {
-		key := L.CheckString(1)
-		v, err := kv.Get(L.Context(), key)
-		if err != nil {
-			L.RaiseError("store.get: %v", err)
-			return 0
-		}
-		if v == nil {
-			L.Push(lua.LNil)
-			return 1
-		}
-		L.Push(anyToLua(L, v))
-		return 1
-	}))
-
-	L.SetField(storeTable, "set", L.NewFunction(func(L *lua.LState) int {
-		key := L.CheckString(1)
-		val := L.CheckAny(2)
-		goVal, err := luaToAny(L, val)
-		if err != nil {
-			L.RaiseError("store.set: %v", err)
-			return 0
-		}
-		if err := kv.Set(L.Context(), key, goVal); err != nil {
-			L.RaiseError("store.set: %v", err)
-		}
-		return 0
-	}))
-
-	L.SetField(storeTable, "delete", L.NewFunction(func(L *lua.LState) int {
-		key := L.CheckString(1)
-		if err := kv.Delete(L.Context(), key); err != nil {
-			L.RaiseError("store.delete: %v", err)
-		}
-		return 0
-	}))
-
-	L.SetField(storeTable, "get_all", L.NewFunction(func(L *lua.LState) int {
-		all, err := kv.GetAll(L.Context())
-		if err != nil {
-			L.RaiseError("store.get_all: %v", err)
-			return 0
-		}
-		tbl := L.NewTable()
-		for k, v := range all {
-			tbl.RawSetString(k, anyToLua(L, v))
-		}
-		L.Push(tbl)
-		return 1
-	}))
-
+	storeTable := kvTable(L, "store", kv)
 	L.SetField(storeTable, "state", L.NewFunction(func(L *lua.LState) int {
 		defaults := L.OptTable(1, nil)
 		proxy := newStateProxy(L, kv, defaults)
 		L.Push(proxy)
 		return 1
 	}))
-
 	L.SetGlobal("store", storeTable)
 
-	// global module
-	globalTable := L.NewTable()
+	L.SetGlobal("global", kvTable(L, "global", global))
+}
 
-	L.SetField(globalTable, "get", L.NewFunction(func(L *lua.LState) int {
+// kvTable builds the get/set/delete/get_all module table over kv, with name
+// prefixing error messages ("store.get: …" / "global.get: …").
+func kvTable(L *lua.LState, name string, kv kvStore) *lua.LTable {
+	t := L.NewTable()
+
+	L.SetField(t, "get", L.NewFunction(func(L *lua.LState) int {
 		key := L.CheckString(1)
-		v, err := global.Get(L.Context(), key)
+		v, err := kv.Get(L.Context(), key)
 		if err != nil {
-			L.RaiseError("global.get: %v", err)
+			L.RaiseError("%s.get: %v", name, err)
 			return 0
 		}
 		if v == nil {
@@ -88,32 +52,32 @@ func registerStoreAPI(L *lua.LState, kv *store.Store, global *store.GlobalStore)
 		return 1
 	}))
 
-	L.SetField(globalTable, "set", L.NewFunction(func(L *lua.LState) int {
+	L.SetField(t, "set", L.NewFunction(func(L *lua.LState) int {
 		key := L.CheckString(1)
 		val := L.CheckAny(2)
 		goVal, err := luaToAny(L, val)
 		if err != nil {
-			L.RaiseError("global.set: %v", err)
+			L.RaiseError("%s.set: %v", name, err)
 			return 0
 		}
-		if err := global.Set(L.Context(), key, goVal); err != nil {
-			L.RaiseError("global.set: %v", err)
+		if err := kv.Set(L.Context(), key, goVal); err != nil {
+			L.RaiseError("%s.set: %v", name, err)
 		}
 		return 0
 	}))
 
-	L.SetField(globalTable, "delete", L.NewFunction(func(L *lua.LState) int {
+	L.SetField(t, "delete", L.NewFunction(func(L *lua.LState) int {
 		key := L.CheckString(1)
-		if err := global.Delete(L.Context(), key); err != nil {
-			L.RaiseError("global.delete: %v", err)
+		if err := kv.Delete(L.Context(), key); err != nil {
+			L.RaiseError("%s.delete: %v", name, err)
 		}
 		return 0
 	}))
 
-	L.SetField(globalTable, "get_all", L.NewFunction(func(L *lua.LState) int {
-		all, err := global.GetAll(L.Context())
+	L.SetField(t, "get_all", L.NewFunction(func(L *lua.LState) int {
+		all, err := kv.GetAll(L.Context())
 		if err != nil {
-			L.RaiseError("global.get_all: %v", err)
+			L.RaiseError("%s.get_all: %v", name, err)
 			return 0
 		}
 		tbl := L.NewTable()
@@ -124,7 +88,7 @@ func registerStoreAPI(L *lua.LState, kv *store.Store, global *store.GlobalStore)
 		return 1
 	}))
 
-	L.SetGlobal("global", globalTable)
+	return t
 }
 
 // stateProxyData holds the in-memory cache for a store.state() proxy.
