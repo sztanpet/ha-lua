@@ -120,3 +120,17 @@ func luaUnmarshal(L *lua.LState, data []byte) (lua.LValue, error) {
 	}
 	return anyToLua(L, v), nil
 }
+
+// luaUnmarshalOrEmpty decodes raw JSON into a Lua value, falling back to an
+// empty table for absent or malformed input — state/event consumers always
+// get a table to index into, never nil.
+func luaUnmarshalOrEmpty(L *lua.LState, raw []byte) lua.LValue {
+	if len(raw) == 0 {
+		return L.NewTable()
+	}
+	v, err := luaUnmarshal(L, raw)
+	if err != nil {
+		return L.NewTable()
+	}
+	return v
+}

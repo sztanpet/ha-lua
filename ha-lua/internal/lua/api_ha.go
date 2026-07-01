@@ -439,16 +439,7 @@ func stateToLua(L *lua.LState, s *ha.StateData) *lua.LTable {
 	tbl := L.NewTable()
 	tbl.RawSetString("entity_id", lua.LString(s.EntityID))
 	tbl.RawSetString("state", lua.LString(s.State))
-	if len(s.Attributes) > 0 {
-		attrs, err := luaUnmarshal(L, []byte(s.Attributes))
-		if err != nil {
-			tbl.RawSetString("attributes", L.NewTable())
-		} else {
-			tbl.RawSetString("attributes", attrs)
-		}
-	} else {
-		tbl.RawSetString("attributes", L.NewTable())
-	}
+	tbl.RawSetString("attributes", luaUnmarshalOrEmpty(L, []byte(s.Attributes)))
 	tbl.RawSetString("last_changed", lua.LString(s.LastChanged))
 	tbl.RawSetString("last_updated", lua.LString(s.LastUpdated))
 	return tbl
@@ -459,16 +450,7 @@ func eventToLua(L *lua.LState, ev ha.Event) *lua.LTable {
 	tbl := L.NewTable()
 	tbl.RawSetString("event_type", lua.LString(ev.Type))
 	tbl.RawSetString("time_fired", lua.LString(ev.TimeFired))
-	if len(ev.Data) > 0 {
-		data, err := luaUnmarshal(L, []byte(ev.Data))
-		if err != nil {
-			tbl.RawSetString("data", L.NewTable())
-		} else {
-			tbl.RawSetString("data", data)
-		}
-	} else {
-		tbl.RawSetString("data", L.NewTable())
-	}
+	tbl.RawSetString("data", luaUnmarshalOrEmpty(L, []byte(ev.Data)))
 	return tbl
 }
 
