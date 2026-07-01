@@ -11,10 +11,13 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Whole-codebase review (2026-07-01): 4 correctness bugs (seed ghost entities,
-PruneScript vs load-time ha.after, http stdlib has no timeout, smtp.SendMail
-can hang StopScript) + 4 small cleanups. Plan/status: **`state/code-review.md`**.
-Latest release v2.8.8 (card 0.3.24, `state/enhanced-climate.md`).
+Whole-codebase review (2026-07-01) COMPLETE: 4 correctness bugs fixed (seed
+ghost entities, PruneScript vs load-time ha.after, http stdlib timeout,
+smtp.SendMail deadline) + 4 cleanups, 8 commits, all green on make check.
+NOTE: Tracker.Seed now has full-snapshot semantics (absent entities deleted).
+Detail: **`state/code-review.md`**. Not yet released — next release should be
+v2.8.9 (all fixes are patch-level). Latest release v2.8.8 (card 0.3.24,
+`state/enhanced-climate.md`).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

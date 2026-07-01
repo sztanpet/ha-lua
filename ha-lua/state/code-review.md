@@ -6,7 +6,7 @@ commit; status is updated as they land.
 
 ## P1 — correctness bugs
 
-1. **[DONE? pending] Seed never deletes ghost entities.**
+1. **[DONE f79500f] Seed never deletes ghost entities.**
    `state/tracker.go Seed()` only upserts. An entity removed from HA while the
    daemon was disconnected stays in the `states` mirror forever, so
    `ha.get_state` keeps reporting it. Seed already loads the whole mirror into
@@ -14,7 +14,7 @@ commit; status is updated as they land.
    batch (same tx). Removal *while connected* is already handled by the
    nil-new_state path in HandleStateChanged — this is only the disconnect gap.
 
-2. **[pending] PruneScript deletes load-time ha.after rows.**
+2. **[DONE f71f78e] PruneScript deletes load-time ha.after rows.**
    `RegisterAfter` never adds its ID to `api.timerIDs`, and the runner calls
    `scheduler.PruneScript(ctx, scriptID, api.timerIDs)` after load — which
    DELETEs every row not in keep, including the after row just inserted. The
@@ -23,7 +23,7 @@ commit; status is updated as they land.
    separate keep-list that includes after IDs; the every/at seq counter must
    NOT change (IDs are stable keys carrying last_run/next_run).
 
-3. **[pending] http.get/post have no timeout.**
+3. **[DONE 528a33f] http.get/post have no timeout.**
    `stdlib_http.go doRequest` uses a bare `&http.Client{}`; the only bound is
    `L.Context()` = the script's *lifetime* context. The AI.state claim
    "callback context (5s) is the only timeout" is stale — no per-callback
@@ -32,7 +32,7 @@ commit; status is updated as they land.
    (still also cancellable via L.Context()). Update the stale AI.state
    decision line.
 
-4. **[pending] smtp.SendMail can hang forever.**
+4. **[DONE 46e8135] smtp.SendMail can hang forever.**
    `exceptions.go` calls `smtp.SendMail` directly: no dial timeout, no I/O
    deadline, no context. A wedged SMTP server blocks the script goroutine in
    Go code — which the supervisor's 5s VM abort cannot interrupt, so
@@ -43,17 +43,17 @@ commit; status is updated as they land.
 
 ## P2 — smaller fixes
 
-5. **[pending] Invalid log_level silently ignored** — `main.go` discards
+5. **[DONE 222a73f] Invalid log_level silently ignored** — `main.go` discards
    `level.UnmarshalText`'s error; a typo'd level runs at Info with no hint.
    Warn after the logger is up.
-6. **[pending] Timer-type parsing breaks on `|` in script IDs** —
+6. **[DONE abe9e7f] Timer-type parsing breaks on `|` in script IDs** —
    `runner.go handleTimerFired` takes `strings.Split(timerID, "|")[1]`, but the
    ID starts with the script ID which is a filename that may itself contain
    `|`. TrimPrefix the known scriptID+"|" first.
-7. **[pending] store.state() loads with context.Background()** —
+7. **[DONE ee403d8] store.state() loads with context.Background()** —
    `api_store.go newStateProxy` should use `L.Context()` like every other
    binding.
-8. **[pending] Stray `L.Push(mod)` after RegisterModule** — stdlib_{http,
+8. **[DONE c00e999] Stray `L.Push(mod)` after RegisterModule** — stdlib_{http,
    crypto,re,strings,json,fs}.go push the module table and never pop; the
    values sit on the LState stack for the process lifetime. Drop the pushes.
 
@@ -75,4 +75,23 @@ commit; status is updated as they land.
 
 ## Commits
 
-(filled in as work lands)
+All landed 2026-07-01, each green on make check:
+- f79500f state: drop mirror entities missing from a seed
+- f71f78e lua: keep load-time ha.after rows across PruneScript
+- 528a33f lua: give http.get/http.post a 30s timeout
+- 46e8135 lua: bound the SMTP exchange with a deadline
+- 222a73f cmd: warn when log_level is unparseable
+- abe9e7f lua: parse timer type after the script-ID prefix
+- ee403d8 lua: load store.state() under the script context
+- c00e999 lua: drop stray module pushes in RegisterStdlib
+
+Notes for future sessions:
+- Seed now has FULL-SNAPSHOT semantics: entities absent from the batch are
+  deleted from the mirror (empty batch exempt). Tests must upsert single
+  entities via HandleStateChanged, never via repeated one-entity Seeds.
+- haAPI.keepIDs (all load-time timer IDs, incl. after) is what PruneScript
+  keeps; haAPI.timerSeq numbers every/at only — do not merge them back.
+- The AI.state "http timeout" decision was stale (claimed a 5s callback
+  context that never existed); corrected in 528a33f.
+
+STATUS: review COMPLETE, all items fixed. Nothing pending.
