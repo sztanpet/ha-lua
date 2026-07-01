@@ -241,30 +241,29 @@ func (f *enhancedFixture) waitWrites(entityID string, want int, desc string) {
 	f.t.Fatalf("timeout waiting for %d writes to %s (%s); got %d", want, entityID, desc, f.companionWrites(entityID))
 }
 
-// seedClimate writes a climate entity into the state mirror as heat mode.
+// seedClimate upserts a climate entity into the state mirror as heat mode.
+// Upsert via HandleStateChanged, not Seed: Seed carries full-snapshot
+// semantics (entities absent from the batch are deleted), so seeding
+// one entity at a time would evict the previously seeded ones.
 func (f *enhancedFixture) seedClimate(entity, attrs string) {
 	f.t.Helper()
-	if err := f.tracker.Seed(f.ctx, []ha.StateData{
-		{EntityID: entity, State: "heat", Attributes: jsontext.Value(attrs)},
-	}); err != nil {
+	payload := `{"entity_id":"` + entity + `","new_state":{"entity_id":"` + entity +
+		`","state":"heat","attributes":` + attrs + `}}`
+	if err := f.tracker.HandleStateChanged(f.ctx, jsontext.Value(payload)); err != nil {
 		f.t.Fatal(err)
 	}
 }
 
-// setWindow seeds a binary sensor state into the mirror and dispatches its
+// setWindow upserts a binary sensor state into the mirror and dispatches its
 // state-change event, exactly as a real window opening/closing would arrive.
 func (f *enhancedFixture) setWindow(sensor, st string) {
 	f.t.Helper()
-	if err := f.tracker.Seed(f.ctx, []ha.StateData{
-		{EntityID: sensor, State: st, Attributes: jsontext.Value("{}")},
-	}); err != nil {
+	payload := jsontext.Value(`{"entity_id":"` + sensor + `","new_state":{"entity_id":"` + sensor +
+		`","state":"` + st + `","attributes":{}}}`)
+	if err := f.tracker.HandleStateChanged(f.ctx, payload); err != nil {
 		f.t.Fatal(err)
 	}
-	f.reg.Dispatch(ha.Event{
-		Type: "state_changed",
-		Data: jsontext.Value(`{"entity_id":"` + sensor + `","new_state":{"entity_id":"` + sensor +
-			`","state":"` + st + `","attributes":{}}}`),
-	})
+	f.reg.Dispatch(ha.Event{Type: "state_changed", Data: payload})
 }
 
 // allDaySchedule builds a schedule JSON where every weekday has a single

@@ -28,6 +28,12 @@ func New(writeDB, readDB *sql.DB) *Tracker {
 // row is appended only when the state or attributes differ from the mirror —
 // reconnects re-seed, and unconditional appends would fill the history with
 // phantom state changes.
+//
+// Mirror rows absent from the batch are deleted: an entity removed from HA
+// while the daemon was disconnected sends no nil-new_state event, so the seed
+// is the only place the removal can be observed. An empty batch deletes
+// nothing — get_states never legitimately returns zero states, so treating it
+// as "everything was removed" would wipe the mirror on a protocol hiccup.
 func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 	tx, err := t.writeDB.BeginTx(ctx, nil)
 	if err != nil {
@@ -55,7 +61,9 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 		return err
 	}
 
+	seen := make(map[string]struct{}, len(states))
 	for _, s := range states {
+		seen[s.EntityID] = struct{}{}
 		attrs := attrStr(s.Attributes)
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
@@ -74,6 +82,18 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 			VALUES(?,?,?,?)`,
 			s.EntityID, s.State, attrs, s.LastChanged); err != nil {
 			return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
+		}
+	}
+	if len(states) > 0 {
+		for id := range current {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM states WHERE entity_id = ?`, id); err != nil {
+				return fmt.Errorf("delete ghost entity %s: %w", id, err)
+			}
+			slog.Debug("state: entity gone from seed, dropping from mirror", "entity", id)
 		}
 	}
 	return tx.Commit()

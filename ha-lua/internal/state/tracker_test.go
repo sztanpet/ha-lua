@@ -100,6 +100,55 @@ func TestSeedSkipsUnchangedHistory(t *testing.T) {
 	}
 }
 
+// TestSeedDeletesGhostEntities covers an entity removed from HA while the
+// daemon was disconnected: it sends no nil-new_state event, so the re-seed is
+// the only place the removal is visible. The mirror must drop it; its history
+// stays. An empty batch must delete nothing (get_states never legitimately
+// returns zero states).
+func TestSeedDeletesGhostEntities(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "light.kept", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+		{EntityID: "automation.removed", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	}); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+
+	// Reconnect seed no longer carries the removed entity.
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "light.kept", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	}); err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+
+	if s, err := tr.GetState(ctx, "automation.removed"); err != nil || s != nil {
+		t.Errorf("ghost entity still in mirror: %+v, %v", s, err)
+	}
+	if s, err := tr.GetState(ctx, "light.kept"); err != nil || s == nil {
+		t.Errorf("kept entity missing from mirror: %+v, %v", s, err)
+	}
+	history, err := tr.GetHistory(ctx, "automation.removed", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) == 0 {
+		t.Error("ghost deletion wiped state_history; want past states preserved")
+	}
+
+	// An empty batch must not be treated as "all entities removed".
+	if err := tr.Seed(ctx, nil); err != nil {
+		t.Fatalf("empty seed: %v", err)
+	}
+	if s, err := tr.GetState(ctx, "light.kept"); err != nil || s == nil {
+		t.Errorf("empty seed wiped the mirror: %+v, %v", s, err)
+	}
+}
+
 func TestHandleStateChanged(t *testing.T) {
 	tr := newTracker(t)
 	ctx := context.Background()
