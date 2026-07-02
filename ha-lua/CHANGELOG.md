@@ -4,6 +4,17 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.9.0 - 2026-07-02
+
+### Added
+- **Card 0.3.30: optional radiator temperature on the status line.** A new
+  `radiator_entity` card option (also in the visual editor) shows the
+  zone's radiator sensor as `rad. X°` right after the heating status —
+  the at-a-glance ground truth for it: "heating" with a cold radiator
+  means a stuck valve or a boiler that isn't firing. Display-only: the
+  daemon is not involved, and the segment hides while the sensor is
+  unavailable.
+
 ## 2.8.12 - 2026-07-02
 
 ### Changed
