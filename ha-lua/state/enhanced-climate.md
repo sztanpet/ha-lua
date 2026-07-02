@@ -5,8 +5,24 @@ transport, the `enhanced_climate.lua` example, and the bundled Lovelace card
 (`cards/enhanced-climate-card.js`). Spec: `enhanced-climate-spec.md`. Global
 decisions live in `../AI.state`.
 
-Status: **track COMPLETE, released v2.7.0; card iterated through v2.8.11.**
-Current card VERSION **0.3.28**.
+Status: **track COMPLETE, released v2.7.0; card iterated through v2.9.0.**
+Current card VERSION **0.3.30**.
+
+## v2.9.0 (card 0.3.30) — radiator temp on the status line
+- 0.3.30 (51405f1, shipped v2.9.0): new `radiator_entity` card option renders
+  the zone's radiator sensor as a `rad. X°` subtitle segment between the
+  status and the window state — the ground truth for a "heating" claim
+  (cold radiator = stuck valve / boiler not firing; same signal
+  valve_watch.lua checks). Sensor picker in the visual editor.
+- **Display-only by design**: the daemon never sees `radiator_entity` — the
+  card reads the sensor straight from `hass.states`. It is therefore NOT in
+  `configHash` (a cosmetic change must not re-send configure) but IS in
+  `_relevantChanged` (a radiator-only push must re-render). Segment hides on
+  a non-numeric state; `.subtitle` gained `flex-wrap: wrap` since it can now
+  carry four segments.
+- Deliberately skipped for v1 (user chose text-only): tinting the segment
+  warm/cold to make a heating/cold-radiator mismatch pop without reading
+  numbers.
 
 ## v2.8.11 (card 0.3.28) — held badge on the title row
 - 0.3.28 (4bac9a6, shipped v2.8.11): held badge moved from a `.header` flex

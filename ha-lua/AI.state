@@ -11,11 +11,11 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v2.8.12 (card 0.3.29): override controls fit on one line — duration
-presets fused into a segmented pill whose segments flex to split the row with
-the (now leading) override-temp stepper; active state is just countdown +
-Stop ("overriding to X°" text removed as redundant). Verified via chromedp
-screenshots at 396px and 276px. Detail: **`state/enhanced-climate.md`**.
+Released v2.9.0 (card 0.3.30): optional `radiator_entity` card option shows
+the zone's radiator sensor as a `rad. X°` segment on the subtitle status
+line — ground truth beside the claimed "heating" status (cold radiator =
+stuck valve). Display-only: daemon uninvolved, not in configHash, but in
+_relevantChanged. Detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -34,6 +34,9 @@ screenshots at 396px and 276px. Detail: **`state/enhanced-climate.md`**.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.9.0 (2026-07-02): card 0.3.30 — display-only `radiator_entity` option:
+  radiator temp as a `rad. X°` status-line segment (valve-health at a
+  glance). See `state/enhanced-climate.md`.
 - 2.8.12 (2026-07-02): card 0.3.29 — override row on one line: segmented
   duration pill (flexing segments) + stepper-first ordering; active state
   is countdown + Stop only. See `state/enhanced-climate.md`.
