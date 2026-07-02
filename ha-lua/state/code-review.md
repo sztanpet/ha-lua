@@ -95,3 +95,49 @@ Notes for future sessions:
   context that never existed); corrected in 528a33f.
 
 STATUS: review COMPLETE, all items fixed. Nothing pending.
+
+# Follow-up: card review + simplification pass (2026-07-01/02)
+
+## Enhanced-climate card — verdict: NO rewrite
+
+The card (0.3.24 -> 0.3.25) is structurally sound: vanilla element by
+documented decision, configure-storm guards hard-won across v2.8.2–2.8.8,
+i18n/pure-helper split clean and browser-tested. A rewrite (e.g. Lit) would
+re-open every lifecycle bug for zero user-visible gain. One real flaw fixed:
+
+- **[DONE 9bcf713] Full DOM rebuild on every hass push.** HA pushes hass for
+  every state change of ANY entity; the card tore down and rebuilt its shadow
+  DOM each time. Now `set hass` reference-compares the climate entity, its
+  companion, and the language (HA replaces state objects immutably) and only
+  then schedules a render. Marker-based harness test proves skip + rebuild.
+  Card VERSION bumped to 0.3.25 — needs a release to reach users (patch;
+  next would be v2.8.9).
+
+## Simplification pass — done
+
+- **[DONE 4ef708c]** api_store.go: store/global Lua bindings were copy-paste;
+  folded into one kvTable(name, kv) over a kvStore interface (-36 lines,
+  error strings unchanged).
+- **[DONE 7ea46a6]** api_ha.go: stateToLua/eventToLua shared a 9-line
+  "unmarshal or empty table" dance; hoisted to luaUnmarshalOrEmpty in json.go.
+- **[DONE e796662]** enhanced_climate.lua: publish-heartbeat comment claimed
+  the mirror is never pruned on reconnect — stale since f79500f. Comment
+  fixed; heartbeat behavior deliberately kept.
+
+## Simplification candidates considered and REJECTED (don't redo the analysis)
+
+- `cards/embed.go` + `examples/embed.go` Materialize duplication (~20 lines):
+  a shared internal package for one trivial WalkDir loop costs more than the
+  copy; they already differ (README, error strings).
+- `store/kv.go` Store vs GlobalStore Go-side duplication: queries differ
+  (2-col vs 1-col PK); a generic would trade clear SQL for indirection.
+- `registerHaAPI` (330 lines): a flat, linear registration table; splitting
+  adds names, not clarity.
+- `web.Start` vs `debug.Start`: near-identical 35-line server starters;
+  different concerns, leave.
+- `luaTableToAny` two-pass array detection, re LRU cache: fine as-is.
+- examples/lib/{card,control,schedule,zones}.lua: read in full, clean, pure,
+  nothing to change.
+
+STATUS: follow-up COMPLETE. Pending only: a release (v2.8.9) to ship card
+0.3.25 + the eight review fixes — do not tag without the user asking.
