@@ -406,3 +406,30 @@ LESSON: a custom card that does a REST fetch to a private-IP HA host can drop th
 whole frontend websocket on Firefox 152 (Local Network Access). Prefer callWS /
 callService (they reuse the open socket) over callApi for anything that fires per
 user action.
+
+## Card 0.3.29 (v2.8.12) — override row on one line
+
+The override fieldset wrapped on typical masonry columns (~360px content):
+four standalone duration buttons + the 160px override-temp stepper ≈ 430px.
+Rework (73a12f2):
+- duration presets fuse into ONE segmented pill (same shared-border trick as
+  the 0.3.17 setpoint stepper): `.presets .btn` loses its radius except the
+  outer corners via :first/last-of-type (NOT :first/last-child — the pending
+  spinner span rides inside .presets, tests select `.presets .spinner`).
+- pill segments are `flex: 1 1 0; min-width: 0` and .presets is `flex: 1`,
+  so the pill splits whatever row width the stepper leaves — this is what
+  actually guarantees the one-line fit (fixed shaving alone left it ~2px
+  over at 396px). On narrow cards (<~310px) flex-wrap drops the pill to its
+  own full-width line, no clipping (verified at 276px).
+- stepper first in .override-controls: the temp control stays put when an
+  override starts (it used to jump from last to… not present).
+- active state is now just countdown + Stop; the "overriding to X°" text and
+  its en/hu translation keys are GONE — the stepper beside it shows the temp.
+- `.stepper .value` narrowed 72px → 60px (padding 6px 4px) — shared with the
+  main setpoint stepper, both fine ("21.5" fits centered).
+
+Verified with a chromedp screenshot harness (scratchpad, stub hass like the
+card test): idle + active on one line at 396px, pending = disabled pill +
+spinner, 276px wraps gracefully. Note the mode buttons render as empty pills
+in any stub harness — ha-icon is undefined outside the HA frontend; harness
+artifact, not a card bug.

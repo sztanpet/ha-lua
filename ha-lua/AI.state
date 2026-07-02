@@ -11,10 +11,11 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v2.8.11 (card 0.3.28): held badge moved onto the title row (right
-edge, centered on the title line — it used to float between the heading's two
-lines), plus the add-on icon (icon.png rendered by tools/icon, stdlib-only Go).
-Detail: **`state/enhanced-climate.md`**.
+Released v2.8.12 (card 0.3.29): override controls fit on one line — duration
+presets fused into a segmented pill whose segments flex to split the row with
+the (now leading) override-temp stepper; active state is just countdown +
+Stop ("overriding to X°" text removed as redundant). Verified via chromedp
+screenshots at 396px and 276px. Detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -33,6 +34,9 @@ Detail: **`state/enhanced-climate.md`**.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.12 (2026-07-02): card 0.3.29 — override row on one line: segmented
+  duration pill (flexing segments) + stepper-first ordering; active state
+  is countdown + Stop only. See `state/enhanced-climate.md`.
 - 2.8.11 (2026-07-02): card 0.3.28 — held badge onto the title row (was
   floating between title and subtitle); add-on icon.png + tools/icon
   generator. See `state/enhanced-climate.md`.
