@@ -4,6 +4,37 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.9 - 2026-07-02
+
+### Fixed
+- **Removed entities no longer linger in the state mirror.** An entity deleted
+  from Home Assistant while the daemon was disconnected sent no removal event,
+  so `ha.get_state` kept reporting it forever. The reconnect seed now drops
+  every mirror entity absent from the fresh `get_states` snapshot (history is
+  untouched; an empty snapshot deletes nothing).
+- **`http.get`/`http.post` now time out after 30s.** They had no timeout at
+  all: a wedged remote pinned the script goroutine — and every event queued
+  behind it — until the script was stopped.
+- **`ha.exceptions.email` can no longer hang script shutdown.** The SMTP send
+  had no dial timeout or I/O deadline; a wedged mail server blocked the script
+  goroutine in Go code, which the stop path cannot abort — hot reload of that
+  script hung forever. The whole exchange now runs under a 30s deadline.
+- **Load-time `ha.after` timers keep their persistence row.** The post-load
+  prune deleted the row that was just inserted, silently losing the
+  "callback is unrecoverable" warning after a restart.
+- **Unparseable `log_level` now logs a warning** instead of silently running
+  at info.
+- **Card 0.3.25: renders only when its own entities change.** The card rebuilt
+  its entire DOM on every state change of *any* entity in the install; it now
+  re-renders only when the climate entity, its companion sensor, or the
+  language actually changed.
+
+### Changed
+- Internal cleanups from a full-codebase review: store/global Lua bindings
+  deduplicated, timer-type parsing hardened against `|` in script filenames,
+  `store.state()` loads under the script context, stray Lua stack pushes
+  removed.
+
 ## 2.8.8 - 2026-06-26
 
 ### Fixed
