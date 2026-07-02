@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.30";
+const VERSION = "0.3.31";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -744,9 +744,18 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // never sees radiator_entity; the card reads the sensor straight from hass.
     const radiatorEntity = this._config.radiator_entity;
     const radiator = radiatorEntity ? hass.states[radiatorEntity] : null;
-    if (radiator && Number.isFinite(Number(radiator.state))) {
+    const radiatorTemp = radiator ? Number(radiator.state) : NaN;
+    if (Number.isFinite(radiatorTemp)) {
       subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
-      subtitle.append(h("span", { class: "radiator" }, translate("radiator", { temp: radiator.state })));
+      // Decimals follow the sensor's own "Display precision" entity setting
+      // (hass.entities carries it), same as HA's more-info dialog. Without one,
+      // one decimal: sensors report full float precision (47.5333333°) and a
+      // status-line glanceable needs none of it.
+      const registry = hass.entities ? hass.entities[radiatorEntity] : null;
+      const shown = registry && Number.isFinite(registry.display_precision)
+        ? radiatorTemp.toFixed(registry.display_precision)
+        : Math.round(radiatorTemp * 10) / 10;
+      subtitle.append(h("span", { class: "radiator" }, translate("radiator", { temp: shown })));
     }
     // The window state rides the status line: it is context, not a control,
     // and a separate row cost card height for a single word.
