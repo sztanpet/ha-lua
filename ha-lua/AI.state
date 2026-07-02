@@ -11,11 +11,11 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Card 0.3.26 committed (6162fa0), NOT yet released: window state moved onto the
-subtitle/status line, held-until clock honours hass.locale.time_format (24h).
-Next release = v2.8.10. Before that: released v2.8.9 (card 0.3.25) — the
-whole-codebase review track (4 bugs + 4 cleanups + render-skip; Tracker.Seed
-now full-snapshot). Detail: **`state/code-review.md`**, `state/enhanced-climate.md`.
+Released v2.8.10 (card 0.3.27): window state on the subtitle/status line,
+held-until clock honours hass.locale.time_format, held badge tooltip explains
+the manual hold. Before that v2.8.9 shipped the whole-codebase review track
+(4 bugs + 4 cleanups + render-skip; Tracker.Seed now full-snapshot). Detail:
+**`state/enhanced-climate.md`**, `state/code-review.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -34,6 +34,10 @@ now full-snapshot). Detail: **`state/code-review.md`**, `state/enhanced-climate.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.10 (2026-07-02): card 0.3.27 — window open/closed moved onto the
+  subtitle status line; held-until clock honours hass.locale.time_format
+  (24h profiles no longer get AM/PM); held badge gained a tooltip explaining
+  the manual hold. See `state/enhanced-climate.md`.
 - 2.8.9 (2026-07-02): card 0.3.25 — whole-codebase review fixes: seed prunes
   ghost entities (Seed = full snapshot now), load-time ha.after rows survive
   PruneScript, http stdlib 30s timeout, SMTP 30s deadline (no more StopScript

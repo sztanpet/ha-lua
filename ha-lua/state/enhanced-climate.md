@@ -5,8 +5,24 @@ transport, the `enhanced_climate.lua` example, and the bundled Lovelace card
 (`cards/enhanced-climate-card.js`). Spec: `enhanced-climate-spec.md`. Global
 decisions live in `../AI.state`.
 
-Status: **track COMPLETE, released v2.7.0; card iterated through v2.7.4.**
-Current card VERSION **0.3.8**.
+Status: **track COMPLETE, released v2.7.0; card iterated through v2.8.10.**
+Current card VERSION **0.3.27**.
+
+## v2.8.9–v2.8.10 (cards 0.3.25–0.3.27) — render skip + status-line polish
+- 0.3.25 (9bcf713, shipped v2.8.9): `set hass` re-renders ONLY when the climate
+  entity, its companion, or hass.language changed (reference compare — HA
+  replaces state objects immutably). Previously every state change anywhere in
+  the install rebuilt the whole shadow DOM. Marker-based harness test.
+- 0.3.26 (6162fa0): window open/closed moved from its own row onto the subtitle
+  (`19.5° | heating | window open`, warning colour when open; .row/.label CSS
+  removed). formatClock now takes hass and honours hass.locale.time_format
+  ("24"→h23, "12"→h12, else language default) — en profiles on 24h no longer
+  get AM/PM. i18n keys window.open/window.closed now carry the full phrase;
+  bare "window" key removed.
+- 0.3.27 (8ae7a59, shipped v2.8.10): held badge has a title tooltip explaining
+  the manual hold (dial change kept until next scheduled transition).
+- Card rewrite considered (2026-07-01) and REJECTED — see
+  `state/code-review.md` for the reasoning and rejected refactors.
 
 ## How the card reaches a user's HA
 The card is embedded in the binary (`cards/` package) and materialized to
