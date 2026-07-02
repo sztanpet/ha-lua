@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.25";
+const VERSION = "0.3.26";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -85,9 +85,8 @@ const MESSAGES = {
     "applying": "Applying…",
     "custom_minutes": "Custom minutes",
     "custom_minutes_prompt": "Override for how many minutes?",
-    "window": "Window",
-    "window.open": "open",
-    "window.closed": "closed",
+    "window.open": "window open",
+    "window.closed": "window closed",
     "schedule": "Schedule",
     "edit_schedule": "Edit",
     "no_schedule": "no schedule set",
@@ -138,9 +137,8 @@ const MESSAGES = {
     "applying": "Alkalmazás…",
     "custom_minutes": "Egyéni időtartam",
     "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
-    "window": "Ablak",
-    "window.open": "nyitva",
-    "window.closed": "zárva",
+    "window.open": "ablak nyitva",
+    "window.closed": "ablak zárva",
     "schedule": "Ütemezés",
     "edit_schedule": "Szerkesztés",
     "no_schedule": "nincs beállított ütemezés",
@@ -250,10 +248,18 @@ function configHash(config) {
   });
 }
 
-function formatClock(language, isoTime) {
+// formatClock renders an ISO instant as a wall-clock time, honouring the HA
+// profile's time-format setting (hass.locale.time_format: "24" / "12"); when
+// unset (or "language"/"system") the language's own default applies. Without
+// this, an `en` install always got 12-hour AM/PM even with the profile on 24h.
+function formatClock(hass, isoTime) {
   const date = new Date(isoTime);
   if (isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString(language || undefined, { hour: "2-digit", minute: "2-digit" });
+  const options = { hour: "2-digit", minute: "2-digit" };
+  const timeFormat = hass && hass.locale && hass.locale.time_format;
+  if (timeFormat === "24") options.hourCycle = "h23";
+  else if (timeFormat === "12") options.hourCycle = "h12";
+  return date.toLocaleTimeString((hass && hass.language) || undefined, options);
 }
 
 function remainingSeconds(isoExpires) {
@@ -375,8 +381,6 @@ const STYLES = `
   .badge.held { background: color-mix(in oklch, var(--warning-color, #ffa600) 22%, transparent);
     color: var(--warning-color, #ffa600); }
   .content { display: flex; flex-direction: column; gap: 12px; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .label { color: var(--secondary-text-color); }
   .stepper { display: flex; align-items: center; }
   .stepper .value { width: 72px; height: 44px; box-sizing: border-box; text-align: center;
     font-size: 1.15rem; padding: 6px 14px; border: 1px solid var(--divider-color, #ccc);
@@ -704,10 +708,18 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
     }
     subtitle.append(h("span", { class: "status" }, statusLabel(translate, mode, hvacAction)));
+    // The window state rides the status line: it is context, not a control,
+    // and a separate row cost card height for a single word.
+    const windowInfo = companionAttrs && companionAttrs.window;
+    if (windowInfo && Array.isArray(windowInfo.sensors) && windowInfo.sensors.length > 0) {
+      subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
+      subtitle.append(h("span", { class: "window " + (windowInfo.open ? "open" : "closed") },
+        translate(windowInfo.open ? "window.open" : "window.closed")));
+    }
     heading.append(subtitle);
     const header = h("div", { class: "header" }, heading);
     if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
-      const clock = formatClock(hass.language, companionAttrs.manual.until);
+      const clock = formatClock(hass, companionAttrs.manual.until);
       if (clock) header.append(h("span", { class: "badge held" }, translate("held_until", { time: clock })));
     }
     root.append(header);
@@ -840,14 +852,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       h("legend", null, translate("override")),
       h("div", { class: "override-controls" },
         this._renderOverride(translate, companionAttrs), overrideTemp)));
-
-    const windowInfo = companionAttrs.window;
-    if (windowInfo && Array.isArray(windowInfo.sensors) && windowInfo.sensors.length > 0) {
-      section.append(h("div", { class: "row" },
-        h("span", { class: "label" }, translate("window")),
-        h("span", { class: "window " + (windowInfo.open ? "open" : "closed") },
-          translate(windowInfo.open ? "window.open" : "window.closed"))));
-    }
 
     section.append(this._renderScheduleGroup(translate, companionAttrs, tempStep));
     return section;

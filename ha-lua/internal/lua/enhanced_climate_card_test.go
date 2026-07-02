@@ -97,6 +97,34 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if status != "on" {
 		t.Errorf("status = %q, want on", status)
 	}
+
+	// The window state rides the subtitle (status line), not a separate row;
+	// the seed has one bound, closed window.
+	var windowText string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__text(".subtitle .window")`, &windowText),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if windowText != "window closed" {
+		t.Errorf("subtitle window = %q, want \"window closed\"", windowText)
+	}
+
+	// formatClock honours the HA profile's time format: 24h yields no AM/PM
+	// and an HH:MM shape regardless of the en language default.
+	var clock24, clock12 string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__card.constructor.pure.formatClock({language:"en",locale:{time_format:"24"}}, "2026-07-02T04:30:00")`, &clock24),
+		chromedp.Evaluate(`window.__card.constructor.pure.formatClock({language:"en",locale:{time_format:"12"}}, "2026-07-02T04:30:00")`, &clock12),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if clock24 != "04:30" {
+		t.Errorf("formatClock 24h = %q, want 04:30", clock24)
+	}
+	if !strings.Contains(clock12, "AM") {
+		t.Errorf("formatClock 12h = %q, want an AM time", clock12)
+	}
 	if target != "20" {
 		t.Errorf("target value = %q, want 20", target)
 	}
