@@ -266,8 +266,9 @@ local function publish_companion(e, now, desired_temp)
   -- (and a recorder row). So skip the write when state+attrs match the last one
   -- we actually sent. We still re-publish unchanged data on a slow heartbeat so
   -- the sensor self-heals after an HA restart drops it (these states are not
-  -- integration-backed, and the state mirror is not pruned on reconnect, so we
-  -- cannot tell from get_state that HA lost it).
+  -- integration-backed). The heartbeat stays even though the daemon now prunes
+  -- ghost entities from its mirror on reconnect: a blind periodic write is
+  -- simpler and more robust than probing get_state for our own sensor.
   local snapshot = json.encode({ state = state_value, attrs = attrs })
   local prev = published[e]
   if prev and prev.snapshot == snapshot and (os.time() - prev.at) < PUBLISH_HEARTBEAT then
