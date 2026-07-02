@@ -11,13 +11,10 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Review track COMPLETE (2026-07-01/02): 4 correctness bugs + 4 cleanups, then
-card review (verdict: no rewrite; render-skip fix, card 0.3.25) and a
-simplification pass (kvTable dedup, JSON fallback helper, stale comment).
-NOTE: Tracker.Seed now has full-snapshot semantics (absent entities deleted).
-Detail + rejected-refactors list: **`state/code-review.md`**. Not yet
-released — next release should be v2.8.9 (all patch-level, ships card
-0.3.25). Latest release v2.8.8 (card 0.3.24, `state/enhanced-climate.md`).
+Released v2.8.9 (card 0.3.25): the whole-codebase review track — 4 correctness
+bugs + 4 cleanups, card render-skip fix (rewrite rejected), simplification
+pass. NOTE: Tracker.Seed now has full-snapshot semantics (absent entities
+deleted). Detail + rejected-refactors list: **`state/code-review.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -36,6 +33,11 @@ released — next release should be v2.8.9 (all patch-level, ships card
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.9 (2026-07-02): card 0.3.25 — whole-codebase review fixes: seed prunes
+  ghost entities (Seed = full snapshot now), load-time ha.after rows survive
+  PruneScript, http stdlib 30s timeout, SMTP 30s deadline (no more StopScript
+  hang), log_level warning, card renders only on relevant changes. See
+  `state/code-review.md`.
 - 2.8.8 (2026-06-26): card 0.3.24 — fire commands over the websocket (callWS
   fire_event) instead of a REST fetch; the fetch tripped Firefox 152 Local Network
   Access and dropped the live wss:// connection on every command. SOLVED 2.8.7's

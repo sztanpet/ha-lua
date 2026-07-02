@@ -139,5 +139,5 @@ re-open every lifecycle bug for zero user-visible gain. One real flaw fixed:
 - examples/lib/{card,control,schedule,zones}.lua: read in full, clean, pure,
   nothing to change.
 
-STATUS: follow-up COMPLETE. Pending only: a release (v2.8.9) to ship card
-0.3.25 + the eight review fixes — do not tag without the user asking.
+STATUS: follow-up COMPLETE. Released as v2.8.9 on 2026-07-02 (tag on release
+commit 27761c8; ships card 0.3.25 + the eight review fixes). Track CLOSED.
