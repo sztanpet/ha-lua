@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.27";
+const VERSION = "0.3.28";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -370,6 +370,8 @@ const STYLES = `
   ha-card { padding: 16px; }
   .header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .heading { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .title-row { display: flex; align-items: center; gap: 8px; }
+  .title-row .badge { margin-left: auto; }
   .title { color: var(--ha-card-header-color, var(--primary-text-color));
     font-family: var(--ha-card-header-font-family, inherit);
     font-size: var(--ha-card-header-font-size, var(--ha-font-size-2xl));
@@ -703,7 +705,19 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
 
     // Title = name, with a subtitle that pairs the current temperature and the
     // current mode/status side by side, split by a thin divider.
-    const heading = h("div", { class: "heading" }, h("div", { class: "title" }, name));
+    // The held badge shares the title row so it centers on the title line;
+    // as a header sibling it floated between the title and subtitle lines.
+    const titleRow = h("div", { class: "title-row" }, h("div", { class: "title" }, name));
+    if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
+      const clock = formatClock(hass, companionAttrs.manual.until);
+      if (clock) {
+        titleRow.append(h("span", {
+          class: "badge held",
+          title: translate("held_until.tooltip"),
+        }, translate("held_until", { time: clock })));
+      }
+    }
+    const heading = h("div", { class: "heading" }, titleRow);
     const subtitle = h("div", { class: "subtitle" });
     if (Number.isFinite(Number(attrs.current_temperature))) {
       subtitle.append(h("span", { class: "current-temp" }, attrs.current_temperature + "°"));
@@ -719,17 +733,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         translate(windowInfo.open ? "window.open" : "window.closed")));
     }
     heading.append(subtitle);
-    const header = h("div", { class: "header" }, heading);
-    if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
-      const clock = formatClock(hass, companionAttrs.manual.until);
-      if (clock) {
-        header.append(h("span", {
-          class: "badge held",
-          title: translate("held_until.tooltip"),
-        }, translate("held_until", { time: clock })));
-      }
-    }
-    root.append(header);
+    root.append(h("div", { class: "header" }, heading));
 
     const content = h("div", { class: "content" });
     // Target stepper and the mode buttons share one row, wrapping to two lines
