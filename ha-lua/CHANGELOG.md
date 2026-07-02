@@ -4,6 +4,23 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.10 - 2026-07-02
+
+### Changed
+- **Card 0.3.27: window state on the status line.** The window open/closed
+  indicator no longer occupies its own row; it rides the subtitle next to the
+  current temperature and mode (e.g. `19.5° | heating | window open`), keeping
+  its warning colour when open.
+- **Card: the "held until" badge explains itself.** Hovering the badge now
+  shows what a manual hold is: the temperature was changed outside the card
+  (thermostat dial or another control) and that hand-set target is kept until
+  the next scheduled change instead of being overwritten.
+
+### Fixed
+- **Card: the held-until time honours the HA time-format profile setting.**
+  It was rendered with the language default only, so English installs always
+  got 12-hour AM/PM even with the profile set to 24-hour.
+
 ## 2.8.9 - 2026-07-02
 
 ### Fixed
