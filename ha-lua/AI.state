@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-01 (whole-codebase review)
+Last updated: 2026-07-02 (v2.9.3 dependency updates)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,10 +11,13 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v2.9.2 (card 0.3.32): the held badge's tooltip (a hover-only
-`title` attribute since 0.3.27) now reaches touch devices — tapping the
-badge toggles the same text as an inline note under the subtitle; desktop
-keeps the hover tooltip. Detail: **`state/enhanced-climate.md`**.
+Released v2.9.3: routine dependency updates, one bump per commit —
+coder/websocket v1.8.15 (2 fewer allocs per frame read, no timeout
+callbacks for background contexts; WS hot path), modernc.org/sqlite
+v1.53.0 (+libc v1.73.4), go-json-experiment/json 2026-06-23 snapshot
+(no call-site changes). No known vulns in any dep (pkg.go.dev vuln DB
+checked). Remaining outdated modules are transitive golangci-lint
+tooling — not worth chasing.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -33,6 +36,9 @@ keeps the hover tooltip. Detail: **`state/enhanced-climate.md`**.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.9.3 (2026-07-02): dependency updates — coder/websocket v1.8.15,
+  modernc.org/sqlite v1.53.0, go-json-experiment/json latest. No vulns,
+  no API changes.
 - 2.9.2 (2026-07-02): card 0.3.32 — held badge tooltip works on touch:
   tap toggles the explanation as an inline note (title attr is hover-only).
   See `state/enhanced-climate.md`.
