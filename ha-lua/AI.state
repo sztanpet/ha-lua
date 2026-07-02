@@ -11,10 +11,11 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v2.8.9 (card 0.3.25): the whole-codebase review track — 4 correctness
-bugs + 4 cleanups, card render-skip fix (rewrite rejected), simplification
-pass. NOTE: Tracker.Seed now has full-snapshot semantics (absent entities
-deleted). Detail + rejected-refactors list: **`state/code-review.md`**.
+Card 0.3.26 committed (6162fa0), NOT yet released: window state moved onto the
+subtitle/status line, held-until clock honours hass.locale.time_format (24h).
+Next release = v2.8.10. Before that: released v2.8.9 (card 0.3.25) — the
+whole-codebase review track (4 bugs + 4 cleanups + render-skip; Tracker.Seed
+now full-snapshot). Detail: **`state/code-review.md`**, `state/enhanced-climate.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
