@@ -5,8 +5,18 @@ transport, the `enhanced_climate.lua` example, and the bundled Lovelace card
 (`cards/enhanced-climate-card.js`). Spec: `enhanced-climate-spec.md`. Global
 decisions live in `../AI.state`.
 
-Status: **track COMPLETE, released v2.7.0; card iterated through v2.9.0.**
-Current card VERSION **0.3.30**.
+Status: **track COMPLETE, released v2.7.0; card iterated through v2.9.1.**
+Current card VERSION **0.3.31**.
+
+## v2.9.1 (card 0.3.31) — radiator temp decimals
+- 0.3.31 (4478b78, shipped v2.9.1): the radiator segment printed the raw
+  sensor state (`rad. 47.5333333°`). Now formats with the sensor's
+  "Display precision" entity setting when configured —
+  `hass.entities[id].display_precision`, the same registry-display field
+  HA's own state formatting uses (user asked for it to be dynamic per
+  entity config) — else `Math.round(x*10)/10` (one decimal, integers stay
+  "51" not "51.0"). Test harness `__mkHass` grew an optional `entities`
+  arg for this.
 
 ## v2.9.0 (card 0.3.30) — radiator temp on the status line
 - 0.3.30 (51405f1, shipped v2.9.0): new `radiator_entity` card option renders
