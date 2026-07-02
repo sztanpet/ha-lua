@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.31";
+const VERSION = "0.3.32";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -385,7 +385,10 @@ const STYLES = `
   .badge { font-size: .72rem; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
     background: color-mix(in oklch, var(--primary-color) 16%, transparent); color: var(--primary-color); }
   .badge.held { background: color-mix(in oklch, var(--warning-color, #ffa600) 22%, transparent);
-    color: var(--warning-color, #ffa600); }
+    color: var(--warning-color, #ffa600); cursor: pointer; }
+  .held-note { font-size: .78rem; line-height: 1.35; color: var(--secondary-text-color);
+    margin-top: 2px; padding: 6px 10px; border-radius: 8px;
+    background: color-mix(in oklch, var(--warning-color, #ffa600) 10%, transparent); }
   .content { display: flex; flex-direction: column; gap: 12px; }
   .stepper { display: flex; align-items: center; }
   .stepper .value { width: 60px; height: 44px; box-sizing: border-box; text-align: center;
@@ -722,12 +725,17 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // The held badge shares the title row so it centers on the title line;
     // as a header sibling it floated between the title and subtitle lines.
     const titleRow = h("div", { class: "title-row" }, h("div", { class: "title" }, name));
+    let heldShown = false;
     if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
       const clock = formatClock(hass, companionAttrs.manual.until);
       if (clock) {
+        heldShown = true;
+        // title only works on hover; touch devices get the same text as a
+        // tap-toggled inline note (rendered after the subtitle below).
         titleRow.append(h("span", {
           class: "badge held",
           title: translate("held_until.tooltip"),
+          onclick: () => { this._heldNoteOpen = !this._heldNoteOpen; this._renderNow(); },
         }, translate("held_until", { time: clock })));
       }
     }
@@ -766,6 +774,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         translate(windowInfo.open ? "window.open" : "window.closed")));
     }
     heading.append(subtitle);
+    if (heldShown && this._heldNoteOpen) {
+      heading.append(h("div", { class: "held-note" }, translate("held_until.tooltip")));
+    }
     root.append(h("div", { class: "header" }, heading));
 
     const content = h("div", { class: "content" });
