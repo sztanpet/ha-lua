@@ -5,8 +5,19 @@ transport, the `enhanced_climate.lua` example, and the bundled Lovelace card
 (`cards/enhanced-climate-card.js`). Spec: `enhanced-climate-spec.md`. Global
 decisions live in `../AI.state`.
 
-Status: **track COMPLETE, released v2.7.0; card iterated through v2.8.10.**
-Current card VERSION **0.3.27**.
+Status: **track COMPLETE, released v2.7.0; card iterated through v2.8.11.**
+Current card VERSION **0.3.28**.
+
+## v2.8.11 (card 0.3.28) — held badge on the title row
+- 0.3.28 (4bac9a6, shipped v2.8.11): held badge moved from a `.header` flex
+  sibling (it floated between the title and subtitle lines) into a new
+  `.title-row` flex row: right edge via `margin-left: auto`, vertically
+  centered on the title line. With a wrapped two-line title the badge centers
+  across both lines — acceptable, verified visually.
+- Verified in headless Chromium with a fake-hass harness (scratchpad):
+  screenshot + DOM dump. Gotcha for future harnesses: the card renders via
+  requestAnimationFrame, which never fires under `chromium --dump-dom`
+  (screenshot mode is fine) — shim rAF to setTimeout for DOM assertions.
 
 ## v2.8.9–v2.8.10 (cards 0.3.25–0.3.27) — render skip + status-line polish
 - 0.3.25 (9bcf713, shipped v2.8.9): `set hass` re-renders ONLY when the climate

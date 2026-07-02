@@ -11,11 +11,10 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v2.8.10 (card 0.3.27): window state on the subtitle/status line,
-held-until clock honours hass.locale.time_format, held badge tooltip explains
-the manual hold. Before that v2.8.9 shipped the whole-codebase review track
-(4 bugs + 4 cleanups + render-skip; Tracker.Seed now full-snapshot). Detail:
-**`state/enhanced-climate.md`**, `state/code-review.md`.
+Released v2.8.11 (card 0.3.28): held badge moved onto the title row (right
+edge, centered on the title line — it used to float between the heading's two
+lines), plus the add-on icon (icon.png rendered by tools/icon, stdlib-only Go).
+Detail: **`state/enhanced-climate.md`**.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -34,6 +33,9 @@ the manual hold. Before that v2.8.9 shipped the whole-codebase review track
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 2.8.11 (2026-07-02): card 0.3.28 — held badge onto the title row (was
+  floating between title and subtitle); add-on icon.png + tools/icon
+  generator. See `state/enhanced-climate.md`.
 - 2.8.10 (2026-07-02): card 0.3.27 — window open/closed moved onto the
   subtitle status line; held-until clock honours hass.locale.time_format
   (24h profiles no longer get AM/PM); held badge gained a tooltip explaining
