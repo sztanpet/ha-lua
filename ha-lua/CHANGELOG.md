@@ -4,6 +4,16 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.9.3 - 2026-07-02
+
+### Changed
+- **Dependency updates**, no known vulnerabilities in any of them:
+  - `coder/websocket` v1.8.15: two fewer allocations per frame read and no
+    timeout callbacks for background contexts — both on the HA WebSocket
+    hot path; also fixes single-frame transmission with compression.
+  - `modernc.org/sqlite` v1.53.0: routine upstream SQLite bump.
+  - `go-json-experiment/json`: latest experimental json/v2 snapshot.
+
 ## 2.9.2 - 2026-07-02
 
 ### Fixed
