@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.26";
+const VERSION = "0.3.27";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -64,6 +64,7 @@ const MESSAGES = {
     "status.heating": "heating",
     "status.off": "off",
     "held_until": "held until {time}",
+    "held_until.tooltip": "The temperature was changed outside this card (thermostat dial or another control). That hand-set target is kept until the next scheduled change instead of being overwritten.",
     "setting_up": "Setting up…",
     "unavailable": "{name} is unavailable",
     "current": "Current",
@@ -116,6 +117,7 @@ const MESSAGES = {
     "status.heating": "fűtés",
     "status.off": "ki",
     "held_until": "{time}-ig tartva",
+    "held_until.tooltip": "A hőmérsékletet a kártyán kívül állították át (termosztát tekerő vagy más vezérlő). A kézzel beállított cél a következő ütemezett váltásig marad érvényben, nem íródik felül.",
     "setting_up": "Beállítás…",
     "unavailable": "{name} nem elérhető",
     "current": "Jelenlegi",
@@ -720,7 +722,12 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const header = h("div", { class: "header" }, heading);
     if (companionAttrs && companionAttrs.manual && companionAttrs.manual.active && companionAttrs.manual.until) {
       const clock = formatClock(hass, companionAttrs.manual.until);
-      if (clock) header.append(h("span", { class: "badge held" }, translate("held_until", { time: clock })));
+      if (clock) {
+        header.append(h("span", {
+          class: "badge held",
+          title: translate("held_until.tooltip"),
+        }, translate("held_until", { time: clock })));
+      }
     }
     root.append(header);
 

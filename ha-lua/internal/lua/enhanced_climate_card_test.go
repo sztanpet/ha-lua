@@ -110,6 +110,24 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("subtitle window = %q, want \"window closed\"", windowText)
 	}
 
+	// An active manual hold shows the held badge with an explanatory tooltip
+	// (title attribute) — the badge text alone doesn't say what a hold is.
+	heldStates := strings.Replace(cardStates, `"manual": { "active": false }`,
+		`"manual": { "active": true, "until": "2026-07-02T04:30:00" }`, 1)
+	var heldTitle string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+heldStates+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".badge.held")`, &ok),
+		chromedp.Evaluate(`window.__shadow(".badge.held").getAttribute("title")`, &heldTitle),
+		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok), // restore
+		chromedp.Poll(`!window.__shadow(".badge.held")`, &ok),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(heldTitle, "changed outside this card") {
+		t.Errorf("held badge tooltip = %q, want the manual-hold explanation", heldTitle)
+	}
+
 	// formatClock honours the HA profile's time format: 24h yields no AM/PM
 	// and an HH:MM shape regardless of the en language default.
 	var clock24, clock12 string
