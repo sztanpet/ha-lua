@@ -4,6 +4,14 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.9.1 - 2026-07-02
+
+### Fixed
+- **Card 0.3.31: the radiator temperature no longer shows full float
+  precision** (`rad. 47.5333333°`). It follows the sensor's "Display
+  precision" entity setting when one is configured — the same knob HA's
+  own state display uses — and rounds to one decimal otherwise.
+
 ## 2.9.0 - 2026-07-02
 
 ### Added
