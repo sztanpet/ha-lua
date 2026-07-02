@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.28";
+const VERSION = "0.3.29";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -80,7 +80,6 @@ const MESSAGES = {
     "mode.dry": "Dry",
     "mode.fan_only": "Fan",
     "override": "Override",
-    "overriding_to": "overriding to {temp}°",
     "override_temp": "Override target",
     "stop_override": "Stop",
     "applying": "Applying…",
@@ -133,7 +132,6 @@ const MESSAGES = {
     "mode.dry": "Párátlanítás",
     "mode.fan_only": "Ventilátor",
     "override": "Felülbírálás",
-    "overriding_to": "felülbírálás {temp}°-ra",
     "override_temp": "Felülbírálás cél",
     "stop_override": "Leállítás",
     "applying": "Alkalmazás…",
@@ -386,8 +384,8 @@ const STYLES = `
     color: var(--warning-color, #ffa600); }
   .content { display: flex; flex-direction: column; gap: 12px; }
   .stepper { display: flex; align-items: center; }
-  .stepper .value { width: 72px; height: 44px; box-sizing: border-box; text-align: center;
-    font-size: 1.15rem; padding: 6px 14px; border: 1px solid var(--divider-color, #ccc);
+  .stepper .value { width: 60px; height: 44px; box-sizing: border-box; text-align: center;
+    font-size: 1.15rem; padding: 6px 4px; border: 1px solid var(--divider-color, #ccc);
     border-left: none; border-right: none; border-radius: 0;
     background: var(--card-background-color); color: var(--primary-text-color); }
   /* The ± buttons and the value read as one pill: shared background, no
@@ -427,14 +425,24 @@ const STYLES = `
     padding: 4px 12px 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   fieldset.group legend { padding: 0 6px; font-size: .78rem; font-weight: 600; letter-spacing: .04em;
     text-transform: uppercase; color: var(--secondary-text-color); }
-  .override-controls { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
-  .overriding { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .override-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .overriding { display: flex; align-items: center; gap: 12px; }
   .sched-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .today { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .92rem;
     color: var(--secondary-text-color); }
   .today.muted { font-style: italic; }
   .today .period.now { color: var(--primary-color); font-weight: 700; }
-  .presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  /* Duration presets fuse into one segmented pill, like the stepper: shared
+     borders, only the two outer corners rounded. :first/last-of-type (not
+     -child) so the trailing spinner span doesn't steal the rounded corner.
+     Segments flex to split the rest of the row so the pill shares one line
+     with the override-temp stepper instead of wrapping under it. */
+  .presets { display: flex; align-items: center; flex: 1; }
+  .presets .btn { border-radius: 0; padding: 0 6px; flex: 1 1 0; min-width: 0; }
+  .presets .btn + .btn { border-left: none; }
+  .presets .btn:first-of-type { border-radius: 12px 0 0 12px; }
+  .presets .btn:last-of-type { border-radius: 0 12px 12px 0; }
+  .presets .spinner { margin-left: 8px; }
   /* Buttons disabled while a command is in flight read as inert, with a small
      spinner alongside so a tap gets immediate feedback during the round-trip. */
   .btn[disabled] { opacity: .45; cursor: default; pointer-events: none; }
@@ -845,9 +853,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   }
 
   // _renderEnhanced builds the daemon-driven controls from the companion as
-  // fieldsets (legend = title): the override fieldset (durations/countdown +
-  // override-temp stepper sharing one row, like thermostat.html), an optional
-  // window row, and the schedule fieldset.
+  // fieldsets (legend = title): the override fieldset (override-temp stepper +
+  // durations/countdown on one row — stepper first so the temp control stays
+  // put when an override starts), an optional window row, and the schedule
+  // fieldset.
   _renderEnhanced(translate, companionAttrs, tempStep) {
     const section = h("div", { class: "enhanced" });
 
@@ -862,15 +871,17 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     section.append(h("fieldset", { class: "group" },
       h("legend", null, translate("override")),
       h("div", { class: "override-controls" },
-        this._renderOverride(translate, companionAttrs), overrideTemp)));
+        overrideTemp, this._renderOverride(translate, companionAttrs))));
 
     section.append(this._renderScheduleGroup(translate, companionAttrs, tempStep));
     return section;
   }
 
-  // _renderOverride shows the duration buttons, or — while an override is active
-  // — a live countdown, "overriding to X°", and a cancel button (like
-  // thermostat.html). Sits inside the override fieldset next to the temp stepper.
+  // _renderOverride shows the duration buttons fused into one segmented pill
+  // (same look as the stepper), or — while an override is active — a live
+  // countdown and a cancel button. The override-temp stepper right beside it
+  // already shows the target, so the active state carries no "overriding to
+  // X°" text: everything fits on one line.
   _renderOverride(translate, companionAttrs) {
     const pending = !!this._pending;
     const override = companionAttrs.override;
@@ -878,7 +889,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       return h("div", { class: "overriding" },
         h("span", { class: "countdown", "data-expires": override.expires },
           formatCountdown(remainingSeconds(override.expires))),
-        h("span", null, translate("overriding_to", { temp: companionAttrs.override_temp })),
         h("button", { class: "btn", type: "button", disabled: pending,
           onclick: () => this._command("override", { cancel: true }) }, translate("stop_override")),
         pending && h("span", { class: "spinner", role: "progressbar",
