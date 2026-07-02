@@ -373,6 +373,48 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if !markerGone {
 		t.Error("relevant hass push did not re-render")
 	}
+
+	// Radiator temp is display-only card config: with radiator_entity set and a
+	// numeric sensor the subtitle gains a "rad. X°" segment. A push where ONLY
+	// the radiator sensor changed must re-render too (same-reference states for
+	// everything else), i.e. the radiator is a relevant entity.
+	var radiatorText string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => {
+			window.__card.setConfig({ climate_entity: "climate.lr", radiator_entity: "sensor.rad" });
+			const states = `+cardStates+`;
+			states["sensor.rad"] = { entity_id: "sensor.rad", state: "47.5", attributes: {} };
+			return window.__apply("en", states);
+		})()`, &ok),
+		chromedp.Poll(`window.__text(".subtitle .radiator") === "rad. 47.5°"`, &ok),
+		chromedp.Evaluate(`(() => {
+			const states = Object.assign({}, window.__card._hass.states);
+			states["sensor.rad"] = { entity_id: "sensor.rad", state: "51", attributes: {} };
+			window.__card.hass = window.__mkHass("en", states);
+			return true;
+		})()`, &ok),
+		chromedp.Poll(`window.__text(".subtitle .radiator") === "rad. 51°"`, &ok),
+		chromedp.Evaluate(`window.__text(".subtitle .radiator")`, &radiatorText),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if radiatorText != "rad. 51°" {
+		t.Errorf("radiator segment = %q, want rad. 51°", radiatorText)
+	}
+
+	// A non-numeric radiator state (unavailable sensor) hides the segment
+	// instead of rendering junk.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => {
+			const states = Object.assign({}, window.__card._hass.states);
+			states["sensor.rad"] = { entity_id: "sensor.rad", state: "unavailable", attributes: {} };
+			window.__card.hass = window.__mkHass("en", states);
+			return true;
+		})()`, &ok),
+		chromedp.Poll(`!window.__shadow(".subtitle .radiator")`, &ok),
+	); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestEnhancedClimateCardConfigureNoStorm proves configure is fire-once and

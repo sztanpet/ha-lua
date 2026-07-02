@@ -275,6 +275,7 @@ subtle more-info pointer (§6).
 type: custom:ha-lua-enhanced-climate-card
 climate_entity: climate.living_room           # required — the only must-have
 window_sensors: [binary_sensor.living_window] # optional, one or more
+radiator_entity: sensor.living_radiator_temp  # optional; display-only "rad. X°"
 presets: [10, 30, 60]                      # optional boost minutes
 name: Living room                          # optional; else friendly_name
 ```

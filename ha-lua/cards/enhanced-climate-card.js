@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.29";
+const VERSION = "0.3.30";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -87,6 +87,7 @@ const MESSAGES = {
     "custom_minutes_prompt": "Override for how many minutes?",
     "window.open": "window open",
     "window.closed": "window closed",
+    "radiator": "rad. {temp}°",
     "schedule": "Schedule",
     "edit_schedule": "Edit",
     "no_schedule": "no schedule set",
@@ -108,6 +109,7 @@ const MESSAGES = {
     "day.6": "Sunday",
     "editor.climate": "Climate entity (required)",
     "editor.window_sensors": "Window sensor",
+    "editor.radiator": "Radiator temperature sensor",
     "editor.presets": "Override presets (minutes)",
     "editor.name": "Name",
   },
@@ -139,6 +141,7 @@ const MESSAGES = {
     "custom_minutes_prompt": "Hány percig legyen felülbírálva?",
     "window.open": "ablak nyitva",
     "window.closed": "ablak zárva",
+    "radiator": "rad. {temp}°",
     "schedule": "Ütemezés",
     "edit_schedule": "Szerkesztés",
     "no_schedule": "nincs beállított ütemezés",
@@ -160,6 +163,7 @@ const MESSAGES = {
     "day.6": "Vasárnap",
     "editor.climate": "Klíma entitás (kötelező)",
     "editor.window_sensors": "Ablakérzékelő",
+    "editor.radiator": "Radiátor hőmérséklet-érzékelő",
     "editor.presets": "Felülbírálás gombok (perc)",
     "editor.name": "Név",
   },
@@ -375,8 +379,8 @@ const STYLES = `
     font-size: var(--ha-card-header-font-size, var(--ha-font-size-2xl));
     letter-spacing: -0.012em; line-height: var(--ha-line-height-expanded);
     font-weight: var(--ha-font-weight-normal); }
-  .subtitle { display: flex; align-items: center; gap: 8px; font-size: .9rem;
-    color: var(--secondary-text-color); }
+  .subtitle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    font-size: .9rem; color: var(--secondary-text-color); }
   .subtitle .divider { width: 1px; height: 12px; background: var(--divider-color, #ccc); }
   .badge { font-size: .72rem; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
     background: color-mix(in oklch, var(--primary-color) 16%, transparent); color: var(--primary-color); }
@@ -514,8 +518,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     if (!prev || !prev.states || !this._config) return true;
     if (prev.language !== next.language) return true;
     const entity = this._config.climate_entity;
+    const radiatorEntity = this._config.radiator_entity;
     return prev.states[entity] !== next.states[entity]
-      || prev.states[companionId(entity)] !== next.states[companionId(entity)];
+      || prev.states[companionId(entity)] !== next.states[companionId(entity)]
+      || (!!radiatorEntity && prev.states[radiatorEntity] !== next.states[radiatorEntity]);
   }
 
   connectedCallback() {
@@ -732,6 +738,16 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
     }
     subtitle.append(h("span", { class: "status" }, statusLabel(translate, mode, hvacAction)));
+    // The radiator temp sits right after the claimed status because it is the
+    // ground truth for it: "heating" with a cold radiator exposes a stuck valve
+    // or a boiler that isn't firing. Display-only card config — the daemon
+    // never sees radiator_entity; the card reads the sensor straight from hass.
+    const radiatorEntity = this._config.radiator_entity;
+    const radiator = radiatorEntity ? hass.states[radiatorEntity] : null;
+    if (radiator && Number.isFinite(Number(radiator.state))) {
+      subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
+      subtitle.append(h("span", { class: "radiator" }, translate("radiator", { temp: radiator.state })));
+    }
     // The window state rides the status line: it is context, not a control,
     // and a separate row cost card height for a single word.
     const windowInfo = companionAttrs && companionAttrs.window;
@@ -1099,6 +1115,24 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
       this._update({ window_sensors: sensor ? [sensor] : [] });
     });
     form.append(windowPicker);
+
+    // Display-only: the radiator temp sensor is never sent to the daemon; the
+    // card just shows it on the status line as a valve-health hint.
+    const radiatorPicker = document.createElement("ha-entity-picker");
+    radiatorPicker.hass = this._hass;
+    radiatorPicker.value = this._config.radiator_entity || "";
+    radiatorPicker.includeDomains = ["sensor"];
+    radiatorPicker.label = translate("editor.radiator");
+    radiatorPicker.addEventListener("value-changed", (ev) => {
+      const sensor = ev.detail.value;
+      if (sensor) {
+        this._update({ radiator_entity: sensor });
+      } else {
+        delete this._config.radiator_entity;
+        this._emit();
+      }
+    });
+    form.append(radiatorPicker);
 
     const presetsInput = h("input", {
       type: "text", inputmode: "numeric",
