@@ -4,6 +4,18 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.8.12 - 2026-07-02
+
+### Changed
+- **Card 0.3.29: the override controls fit on one line.** The duration
+  presets fuse into one segmented pill (matching the setpoint stepper's
+  shared-border look) whose segments split the remaining row width, and
+  the override-temp stepper moves to the front of the row so it stays put
+  when an override starts. While an override is active the row is just
+  the countdown and a Stop button — the redundant "overriding to X°"
+  text is gone, since the stepper beside it already shows the target.
+  On very narrow cards the pill wraps to its own full-width line.
+
 ## 2.8.11 - 2026-07-02
 
 ### Added
