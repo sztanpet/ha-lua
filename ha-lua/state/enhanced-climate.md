@@ -459,3 +459,15 @@ card test): idle + active on one line at 396px, pending = disabled pill +
 spinner, 276px wraps gracefully. Note the mode buttons render as empty pills
 in any stub harness — ha-icon is undefined outside the HA frontend; harness
 artifact, not a card bug.
+
+## Card 0.3.32 (v2.9.2) — held-badge tooltip on touch
+
+The held badge's explanation (0.3.27's `title` attribute) never shows on
+mobile — no hover on touch. Fix (3df2e78): tapping the badge toggles
+`this._heldNoteOpen`, which renders the same translated `held_until.tooltip`
+text as an inline `.held-note` div under the subtitle. Desktop keeps the
+hover title. Deliberately inline (not an absolutely-positioned bubble): no
+z-index/clipping/positioning concerns inside ha-card, and the note can't go
+stale because it only renders while the badge condition itself is true. No
+new translation keys. No auto-hide timer — tap toggles it off, and state is
+just a bool on the element, so re-renders keep it.
