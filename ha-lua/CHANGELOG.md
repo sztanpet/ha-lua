@@ -4,6 +4,15 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2.9.2 - 2026-07-02
+
+### Fixed
+- **Card 0.3.32: the held badge's explanation now reaches touch devices.**
+  The "held until" badge explained itself only through a hover tooltip,
+  which mobile browsers never show. Tapping the badge now toggles the same
+  text as an inline note under the status line; desktop keeps the hover
+  tooltip.
+
 ## 2.9.1 - 2026-07-02
 
 ### Fixed
