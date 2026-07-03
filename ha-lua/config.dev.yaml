@@ -25,7 +25,9 @@ database: "./ha-lua.db"
 log_level: "info"
 
 # Directory for the daemon's own log file (ha-lua.log), written alongside
-# stderr. Empty = stderr only. Add-on mode forces /config/ha-lua/logs.
+# stderr, and the root ha.exceptions.log_file paths resolve under. Empty =
+# stderr only; scripts using log_file then fail to load. Add-on mode forces
+# /config/ha-lua/logs.
 log_dir: ""
 
 # LAN port for the script-driven UI server (ha.serve). 0 disables it.

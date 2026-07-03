@@ -33,7 +33,7 @@ ha.on_state_change("binary_sensor.hallway_motion", function(data)
   end
 end)
 
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/hallway-errors.log"))
+ha.on_exception(ha.exceptions.log_file("hallway-errors.log"))  -- relative to /config/ha-lua/logs/
 ```
 
 ## Lua API
@@ -58,7 +58,7 @@ end)
 ha.every("5m", function() ... end)                 -- persisted timer
 ha.serve("GET", "/", function(req) return 200, html end)  -- a web UI
 
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/lights.log"))
+ha.on_exception(ha.exceptions.log_file("lights.log"))
 ```
 
 See `plan.md` for the full design rationale behind the API.

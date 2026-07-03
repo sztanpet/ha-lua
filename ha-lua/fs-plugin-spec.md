@@ -3,8 +3,9 @@
 > **Working state:** [`state/fs-plugin.md`](state/fs-plugin.md) — implementation progress and decisions.
 
 Status: **implemented** — milestones 1–3 shipped in v1.2.0, milestone 4
-(rooted-IO consistency sweep, §9.6) on 2026-07-03. Open decisions are
-consolidated in §9.
+(rooted-IO consistency sweep, §9.6) on 2026-07-03, and write support (§9.1,
+originally deferred) plus the log-dir-rooted `ha.exceptions.log_file` in
+v3.0.0. Open decisions are consolidated in §9.
 
 ## 1. Goal
 
@@ -37,7 +38,7 @@ rooted, traversal-safe — rather than re-opening `io`.
 |----------|--------|
 | Sandbox primitive | **`os.Root`** rooted at the scripts directory. One root, opened once at daemon start, shared across all LStates (it is goroutine-safe). |
 | Root location | **`scriptsDir`** (the same dir `RegisterStdlib` already receives, and the parent of `scripts/lib/`). Assets live next to the script that serves them: `scripts/thermostat.html`. |
-| Access mode | **Read-only v1.** `fs.read`, `fs.exists`, `fs.list`, `fs.stat`. No write / mkdir / remove (§9.1). |
+| Access mode | **Read-only v1**: `fs.read`, `fs.exists`, `fs.list`, `fs.stat`. Write support added in v3.0.0 (§9.1): `fs.write`, `fs.append`, `fs.mkdir`, `fs.remove`. |
 | Error convention | **`value` on success, `nil, errmsg` on failure** — identical to the `http`/`json` modules (`stdlib_http.go`). Scripts pattern-match `local html, err = fs.read(...)`. |
 | Path semantics | Paths are **relative to the root**, `/`-separated, always. A leading `/`, `..`, or any symlink that resolves outside the root → error (enforced by `os.Root`, not by us). |
 | Size cap | `fs.read` refuses files larger than **8 MiB** (a Lua string this big is already a smell; assets are KB-scale). Returns `nil, "file too large"`. |
@@ -73,6 +74,10 @@ local info = fs.stat("thermostat.html")
 | `fs.exists(path)` | `boolean`             | — (false, never errors) | `Root.Stat`, `errors.Is(err, fs.ErrNotExist)` |
 | `fs.list(path)`   | array-table of names  | `nil, errmsg` | `fs.ReadDir(Root.FS(), path)` |
 | `fs.stat(path)`   | table `{size, mtime, is_dir}` | `nil, errmsg` | `Root.Stat` |
+| `fs.write(path, content)` *(v3.0.0)* | `true` (create/truncate; no parent mkdir) | `nil, errmsg` | `Root.WriteFile` |
+| `fs.append(path, content)` *(v3.0.0)* | `true` (creates if missing) | `nil, errmsg` | `Root.OpenFile` `O_APPEND\|O_CREATE` |
+| `fs.mkdir(path)` *(v3.0.0)* | `true` (`mkdir -p`; existing dir OK) | `nil, errmsg` | `Root.MkdirAll` |
+| `fs.remove(path)` *(v3.0.0)* | `true` (file or empty dir; not recursive) | `nil, errmsg` | `Root.Remove` |
 
 Notes:
 - **No file handles / streaming.** v1 is whole-file `read` only — no `open`,
@@ -154,9 +159,12 @@ script→asset dependency map we do not have today. Out of scope for v1.
   the Lua bindings — pass the user path straight to `os.Root`, which rejects
   escapes. This is strictly stronger than the `require` loader's current
   hand-rolled check.
-- **Read-only.** v1 cannot create, truncate, or delete anything. A buggy or
-  hostile script cannot use `fs` to corrupt other scripts, the DB, or host
-  files.
+- **Read-only in v1; writes since v3.0.0 stay inside the root.** A script can
+  now create, truncate, or delete files *inside the scripts dir* — including
+  other scripts' sources, and writing a `.lua` triggers the watcher (load or
+  reload). That is the same single-trust-domain judgement as the read side
+  (§9.2): scripts are all authored by the one add-on user. The DB (`/data`)
+  and everything else outside the root remain unreachable.
 - **Root is the scripts dir**, so a script *can* read any other script's
   source and any `lib/*.lua`. For a single-user, single-trust-domain add-on
   (the same trust model as the unauthenticated LAN port in the thermostat UI)
@@ -179,12 +187,15 @@ both would share the one root. Tracked as §9.4.
 
 ## 9. Open decisions (consolidated)
 
-### 9.1 Write support — **deferred, default NO**
-The only concrete use case is reading assets; `io` was removed on purpose; the
-persona is "avoid needless complexity." Ship read-only. Revisit only with a
-real write use case (e.g. a script persisting a generated file) — and even then
-prefer `store`/`global` for data. `os.Root` already has `Create`/`OpenFile`/
-`Mkdir`/`Remove`/`WriteFile` available if/when we say yes.
+### 9.1 Write support — **DONE (2026-07-03, v3.0.0; was deferred)**
+Originally deferred ("ship read-only, revisit with a real use case"). The use
+case arrived: routing `ha.exceptions.log_file` through rooted IO. Shipped
+`fs.write`, `fs.append`, `fs.mkdir` (MkdirAll), `fs.remove` (non-recursive) on
+the scripts root, same `true | nil, errmsg` convention. Kept dumb on purpose:
+`write` does not create parents, `remove` refuses non-empty dirs. For *data*,
+`store`/`global` remain the answer — `fs.write` is for files something else
+consumes. The `log_file` handler shares the module's `appendToRoot` helper but
+writes through a **second root over `log_dir`** (§9.6), not the scripts root.
 
 ### 9.2 Root granularity — **default: single root at `scriptsDir`**
 Alternative: a dedicated `scripts/assets/` root so scripts can't read each
@@ -203,8 +214,9 @@ to preserve the "lib/ only" contract and the `outside scripts/lib` error
 message.
 
 ### 9.5 Locked defaults
-Read-only; root = `scriptsDir`; error style `nil, errmsg`; read cap 8 MiB;
-relative `/`-separated paths; one shared `*os.Root` for the process.
+Root = `scriptsDir`; error style `nil, errmsg`; read cap 8 MiB; relative
+`/`-separated paths; one shared scripts `*os.Root` for the process (plus,
+since v3.0.0, one over `log_dir` for `ha.exceptions.log_file`).
 
 ### 9.6 Convert the remaining trusted-path filesystem IO — **DONE (2026-07-03)**
 Consistency, not security: the daemon had filesystem-IO sites that used plain
@@ -213,8 +225,13 @@ containment for a path the user never supplies), but converting the one that
 sits under the scripts root keeps a single rooted-IO story. Shipped as
 Milestone 4 (§10): `supervisor.LoadAll` now enumerates scripts via
 `fs.ReadDir(Root.FS(), ".")`; a nil root fails LoadAll loudly. The `log_file`
-write stays blocked on §9.1 (write support); `config`/`watcher` are genuinely
-out of scope (their paths live outside the root).
+write, once blocked on §9.1, shipped with it in v3.0.0: the handler appends
+through a dedicated root over `log_dir` (NOT the scripts root — every shipped
+example logs to `/config/ha-lua/logs`, and logs do not belong in the watched
+scripts tree). BREAKING: `log_file` paths became relative to `log_dir`;
+absolute/escaping paths and an unset `log_dir` raise at registration.
+`config`/`watcher` are genuinely out of scope (their paths live outside both
+roots).
 
 ## 10. Implementation milestones
 
@@ -244,10 +261,11 @@ out of scope (their paths live outside the root).
      error, not a fallback — main always opens the root, so a nil root at
      LoadAll time is a wiring bug (`TestSupervisorLoadAllNoRoot`). The existing
      supervisor load tests are the regression guard.
-   - `exceptions.log_file` — **blocked on §9.1.** This is a *write* to a
-     Lua-supplied path; routing it through `os.Root` both needs write support
-     (currently a locked NO) and would *restrict* the path to the scripts dir,
-     a behavior change. Revisit only when §9.1 is revisited.
+   - `exceptions.log_file` — *(done, v3.0.0, with §9.1)* appends through a
+     dedicated `os.Root` over `log_dir` via the fs module's `appendToRoot`;
+     rotation (`logwriter.RotateIfLarge`) goes through the same root. The
+     path became relative to `log_dir` — the anticipated behavior change,
+     shipped as a major bump.
    - **Out of scope (not candidates):** `config.go` (`/data/options.json`) and
      `watcher.go` (fsnotify absolute paths) operate *outside* the scripts root;
      `os.Root` cannot express their paths and buys nothing. Recorded here so a

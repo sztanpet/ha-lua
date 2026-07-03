@@ -270,11 +270,14 @@ With no handler registered, errors fall back to `slog.Error` in the daemon log.
 #### `ha.exceptions.log_file(path)`
 
 Returns a ready-made handler (pass it to `ha.on_exception`) that appends a
-formatted record per error to `path`. The parent directory is created if
-needed. No rate limiting.
+formatted record per error to `path`. `path` is **relative to the log
+directory** (`/config/ha-lua/logs` in the add-on; `log_dir` in a dev config) —
+an absolute or escaping path raises at registration, as does an unset
+`log_dir`. The parent directory is created if needed. No rate limiting; the
+file is size-capped (active file plus one rotated `.1` backup).
 
 ```lua
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/lights-errors.log"))
+ha.on_exception(ha.exceptions.log_file("lights-errors.log"))
 ```
 
 #### `ha.exceptions.email(cfg)`
@@ -486,11 +489,10 @@ decoders and nothing else follow `nil, err`.
 
 ### `fs`
 
-**Read-only** access to files in the scripts directory, sandboxed by `os.Root`
-(a leading `/`, a `..`, or a symlink escaping the directory is rejected at the
-syscall layer). Paths are relative to the scripts dir and `/`-separated. Chiefly
-used to keep a web UI's HTML/CSS/JS in its own file instead of a giant Lua
-string.
+Access to files in the scripts directory, sandboxed by `os.Root` (a leading
+`/`, a `..`, or a symlink escaping the directory is rejected at the syscall
+layer). Paths are relative to the scripts dir and `/`-separated. Chiefly used
+to keep a web UI's HTML/CSS/JS in its own file instead of a giant Lua string.
 
 | Function | Returns |
 |----------|---------|
@@ -498,10 +500,18 @@ string.
 | `fs.exists(path)` | bool; never raises (any error → `false`) |
 | `fs.list(path)` | array of entry names (non-recursive, no `.`/`..`), or `nil, err`. `fs.list(".")` lists the root |
 | `fs.stat(path)` | `{ size, mtime (unix seconds), is_dir }`, or `nil, err` |
+| `fs.write(path, content)` | `true`, or `nil, err`. Creates or truncates; does **not** create parent dirs |
+| `fs.append(path, content)` | `true`, or `nil, err`. Creates the file if needed |
+| `fs.mkdir(path)` | `true`, or `nil, err`. `mkdir -p` semantics; an existing dir is not an error |
+| `fs.remove(path)` | `true`, or `nil, err`. One file or one **empty** dir; not recursive |
 
 ```lua
 local html = assert(fs.read("dashboard.html"))   -- read once at load
 ```
+
+Writing a `*.lua` file counts as editing it — the watcher will load or reload
+that script. For **data**, prefer `store.*`/`global.*`; `fs.write` is for files
+something else consumes (a served page, an export).
 
 > **Hot-reload caveat:** the file watcher only watches `.lua` files. Editing an
 > asset (e.g. the HTML) alone will **not** reload the script — re-save the

@@ -4,7 +4,29 @@ Working state for the read-only Lua `fs` module. Spec: `fs-plugin-spec.md`.
 Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Milestones 1–3 shipped in 1.2.0; milestone 4 done
-2026-07-03.
+2026-07-03; write support (§9.1) + log-dir-rooted log_file shipped in 3.0.0.
+
+## Write support + log_file confinement (2026-07-03, v3.0.0)
+- §9.1 un-deferred on user request. fs.write (create/truncate, NO parent
+  mkdir), fs.append, fs.mkdir (MkdirAll), fs.remove (non-recursive) on the
+  scripts root; `true | nil, errmsg`. appendToRoot helper shared with the
+  exception log.
+- ha.exceptions.log_file now writes through a SECOND process-wide os.Root over
+  cfg.LogDir — NOT the scripts root (every shipped example logs to
+  /config/ha-lua/logs; logs don't belong in the watched scripts tree).
+  Threading: main opens it (warn + nil on failure, not fatal) → Deps.LogsRoot
+  → NewRunner(…, root, logsRoot, …) → registerExceptionHandlers.
+- BREAKING (→ major bump 3.0.0): log_file paths are relative to log_dir.
+  Absolute or `..` paths and an unset log_dir (dev default!) raise at
+  REGISTRATION time, not at the first exception — a broken error sink must
+  fail while someone is looking. All 4 examples updated to relative paths.
+- logwriter.RotateIfLarge now takes (*os.Root, path, max) — stat + rename
+  through the root. Daemon-log Rotating writer unchanged (its path is
+  config-supplied, not Lua-supplied).
+- Tests: TestLogFilePathValidation (abs + ..), TestLogFileNoLogsRoot,
+  TestLogFileException rewritten relative (reads via runner.logsRoot.Name());
+  newHALState + thermostat/enhanced-climate/heating_windows harnesses wire a
+  logsRoot openTestRoot. TestFS{Write,Append,Mkdir,Remove} cover the module.
 
 ## Milestone 4: rooted-IO consistency sweep (2026-07-03)
 - `supervisor.LoadAll` enumerates scripts via `fs.ReadDir(deps.Root.FS(), ".")`

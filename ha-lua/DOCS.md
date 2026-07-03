@@ -55,7 +55,8 @@ ha.on_state_change("binary_sensor.hallway_motion", function(data)
 end)
 
 -- Route any error in this script to a log file you can open in Studio Code.
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/hallway-errors.log"))
+-- The path is relative to /config/ha-lua/logs/.
+ha.on_exception(ha.exceptions.log_file("hallway-errors.log"))
 ```
 
 Save it. The add-on log shows the script loading, and the automation is live.
@@ -80,8 +81,9 @@ Daemon log verbosity: `debug`, `info`, `warn`, or `error`. Default `info`.
 The daemon writes its log to the **Log** tab in the add-on UI *and* to
 `/config/ha-lua/logs/ha-lua.log`, so it survives restarts and you can open it
 in the File Editor or Studio Code. Script error handlers registered with
-`ha.exceptions.log_file(path)` are independent — point them wherever you like;
-`/config/ha-lua/logs/` keeps everything together.
+`ha.exceptions.log_file(path)` write to the same directory: the path is
+**relative to `/config/ha-lua/logs/`** (subdirectories are fine), so all
+logs stay together and a script can never write outside it.
 
 ### Option: `timezone`
 
@@ -136,7 +138,8 @@ temporarily — it exposes an unauthenticated debug server.
 | `store.*` | Per-script persistent key-value store; `store.state(defaults)` is an auto-persisting proxy table |
 | `global.*` | Key-value store shared across all scripts |
 | `require "mod"` | Load a module from `scripts/lib/` |
-| `fs.read(path)` / `fs.exists` / `fs.list` / `fs.stat` | Read-only access to files in the scripts directory — see *Reading files* below |
+| `fs.read(path)` / `fs.exists` / `fs.list` / `fs.stat` | Read files in the scripts directory — see *Reading and writing files* below |
+| `fs.write(path, content)` / `fs.append` / `fs.mkdir` / `fs.remove` | Write files in the scripts directory |
 | stdlib | `strings`, `time`, `json`, `re`, `http`, `crypto`, `fs`; augmented `math` |
 
 For the complete API reference — every function's arguments, return values, and
@@ -172,11 +175,11 @@ A served UI is reachable two ways, both hitting the same routes:
   see the `http_port` option above. Use **relative** fetch URLs (`./api/state`)
   in your page so it works under both entry points.
 
-## Reading files
+## Reading and writing files
 
-The `fs` module gives scripts **read-only** access to files in the scripts
-directory — chiefly so a web UI's HTML/CSS/JS can live in its own file instead
-of being embedded as a giant Lua string:
+The `fs` module gives scripts access to files in the scripts directory —
+chiefly so a web UI's HTML/CSS/JS can live in its own file instead of being
+embedded as a giant Lua string:
 
 ```lua
 local html, err = fs.read("dashboard.html")   -- bytes of a sibling file
@@ -185,17 +188,30 @@ if not html then ha.log("error", "asset missing: " .. err) end
 if fs.exists("overrides.css") then ... end
 for _, name in ipairs(fs.list("assets") or {}) do ... end   -- names in a dir
 local info = fs.stat("dashboard.html")        -- { size, mtime, is_dir }
+
+fs.mkdir("generated")                         -- mkdir -p semantics
+fs.write("generated/report.html", html)       -- create or truncate
+fs.append("generated/audit.txt", line)        -- create or append
+fs.remove("generated/report.html")            -- file or empty dir
 ```
 
 - Paths are **relative to the scripts directory** and `/`-separated. A leading
   `/`, `..`, or a symlink pointing outside the directory is rejected — a script
-  cannot read host files outside its sandbox.
+  cannot read or write host files outside its sandbox.
 - `fs.read` returns the file contents, or `nil, errmsg` on any error (missing,
-  too large, a directory). `fs.exists` returns a boolean and never errors.
+  too large, a directory). `fs.exists` returns a boolean and never errors. The
+  write functions return `true`, or `nil, errmsg`.
+- `fs.write` does not create parent directories (use `fs.mkdir`), and
+  `fs.remove` is not recursive.
+- Writing a `*.lua` file counts as editing it: the watcher will load or reload
+  that script. Everything else is inert to the watcher.
 - Files are read **once at load time** in the common case (`local PAGE =
   fs.read(...)`). The hot-reload watcher only watches `.lua` files, so editing
   an asset alone will not reload the script — re-save the `.lua` (or restart the
   add-on) to pick up the change.
+- For **data**, prefer `store.*`/`global.*` — they are transactional and
+  survive script renames. `fs.write` is for files something else consumes
+  (a served page, an export).
 
 ## Examples
 
