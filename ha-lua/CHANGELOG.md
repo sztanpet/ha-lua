@@ -4,6 +4,30 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.0.0 - 2026-07-03
+
+### Changed
+- **BREAKING: `ha.exceptions.log_file(path)` paths are now relative to the
+  log directory** (`/config/ha-lua/logs`), and the handler can no longer
+  write anywhere else on the filesystem. Change
+  `ha.exceptions.log_file("/config/ha-lua/logs/x.log")` to
+  `ha.exceptions.log_file("x.log")`. Absolute or `..`-escaping paths — and
+  an unset `log_dir` in dev configs — now fail when the handler is
+  registered (at script load), instead of surfacing at the first exception.
+  All bundled examples are updated.
+
+### Added
+- **The `fs` module can write**, still sandboxed to the scripts directory:
+  `fs.write(path, content)` (create/truncate), `fs.append(path, content)`,
+  `fs.mkdir(path)` (`mkdir -p` semantics), and `fs.remove(path)` (one file
+  or one empty directory). Same `true | nil, errmsg` convention as the read
+  side; symlink and `..` escapes are still rejected at the syscall layer.
+  Note that `fs.write` does not create parent directories, and writing a
+  `*.lua` file counts as editing it (the watcher loads or reloads that
+  script). For data, `store.*`/`global.*` remain the right tool.
+- Script enumeration at startup goes through the same sandboxed root as
+  `fs` and `require`, closing out the fs plugin's rooted-IO story.
+
 ## 2.9.3 - 2026-07-02
 
 ### Changed
