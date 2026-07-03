@@ -11,18 +11,21 @@ import (
 // assets this module exists to serve (HTML/CSS/JS for ha.serve) are KB-scale.
 const maxReadSize = 8 << 20 // 8 MiB
 
-// registerFS installs the read-only `fs` module. Every path is resolved through
+// registerFS installs the `fs` module. Every path is resolved through
 // *os.Root, which confines access to the scripts directory and rejects symlink
 // and ".." escapes at the syscall layer — unlike the hand-rolled containment in
 // installRestrictedRequire. root may be nil (no scripts directory configured),
-// in which case the read/list/stat calls return an error and exists returns
-// false.
+// in which case every call returns an error and exists returns false.
 func registerFS(L *lua.LState, root *os.Root) {
 	L.RegisterModule("fs", map[string]lua.LGFunction{
 		"read":   fsRead(root),
 		"exists": fsExists(root),
 		"list":   fsList(root),
 		"stat":   fsStat(root),
+		"write":  fsWrite(root),
+		"append": fsAppend(root),
+		"mkdir":  fsMkdir(root),
+		"remove": fsRemove(root),
 	})
 }
 
@@ -92,6 +95,90 @@ func fsList(root *os.Root) lua.LGFunction {
 			tbl.Append(lua.LString(e.Name()))
 		}
 		L.Push(tbl)
+		return 1
+	}
+}
+
+// fsWrite creates or truncates a file with the given content (binary-safe),
+// returning true, or (nil, err). Parent directories are not created — that is
+// fs.mkdir's job.
+func fsWrite(root *os.Root) lua.LGFunction {
+	return func(L *lua.LState) int {
+		name := L.CheckString(1)
+		data := L.CheckString(2)
+		if root == nil {
+			return fsErr(L, "fs.write: filesystem unavailable")
+		}
+		if err := root.WriteFile(name, []byte(data), 0o644); err != nil {
+			return fsErr(L, err.Error())
+		}
+		L.Push(lua.LTrue)
+		return 1
+	}
+}
+
+// fsAppend appends content to a file, creating it if needed, returning true,
+// or (nil, err).
+func fsAppend(root *os.Root) lua.LGFunction {
+	return func(L *lua.LState) int {
+		name := L.CheckString(1)
+		data := L.CheckString(2)
+		if root == nil {
+			return fsErr(L, "fs.append: filesystem unavailable")
+		}
+		if err := appendToRoot(root, name, []byte(data)); err != nil {
+			return fsErr(L, err.Error())
+		}
+		L.Push(lua.LTrue)
+		return 1
+	}
+}
+
+// appendToRoot appends data to name inside root, creating the file if needed.
+// Shared by fs.append and ha.exceptions.log_file (which appends through the
+// logs-dir root).
+func appendToRoot(root *os.Root, name string, data []byte) error {
+	f, err := root.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(data)
+	cerr := f.Close()
+	if werr != nil {
+		return werr
+	}
+	return cerr
+}
+
+// fsMkdir creates a directory, including missing parents (mkdir -p), returning
+// true, or (nil, err). An existing directory is not an error.
+func fsMkdir(root *os.Root) lua.LGFunction {
+	return func(L *lua.LState) int {
+		name := L.CheckString(1)
+		if root == nil {
+			return fsErr(L, "fs.mkdir: filesystem unavailable")
+		}
+		if err := root.MkdirAll(name, 0o755); err != nil {
+			return fsErr(L, err.Error())
+		}
+		L.Push(lua.LTrue)
+		return 1
+	}
+}
+
+// fsRemove removes a file or an empty directory, returning true, or (nil, err).
+// Deliberately not recursive: a script that wants rm -rf can walk fs.list
+// itself and mean it.
+func fsRemove(root *os.Root) lua.LGFunction {
+	return func(L *lua.LState) int {
+		name := L.CheckString(1)
+		if root == nil {
+			return fsErr(L, "fs.remove: filesystem unavailable")
+		}
+		if err := root.Remove(name); err != nil {
+			return fsErr(L, err.Error())
+		}
+		L.Push(lua.LTrue)
 		return 1
 	}
 }
