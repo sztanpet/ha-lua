@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-03 (fs-plugin milestone 4: rooted LoadAll)
+Last updated: 2026-07-03 (v3.0.0: fs write support + rooted log_file)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,19 +11,20 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Closed out fs-plugin-spec.md: full spec-vs-code audit found no functional
-gaps (spec header was stale, fixed), then shipped the one deferred piece,
-milestone 4 (§9.6) — supervisor.LoadAll now enumerates scripts through the
-shared os.Root (fs.ReadDir(Root.FS(), ".")), nil root fails LoadAll loudly
-instead of falling back. Internal refactor, no user-visible change, no
-release. Details in `state/fs-plugin.md`.
+Released v3.0.0, fully closing fs-plugin-spec.md: fs.write/append/mkdir/
+remove on the scripts root (§9.1, un-deferred on user request), and
+ha.exceptions.log_file confined to a SECOND os.Root over log_dir —
+BREAKING: log_file paths are now relative to /config/ha-lua/logs, bad
+paths / unset log_dir raise at registration. Also rooted LoadAll script
+enumeration (§9.6). Details in `state/fs-plugin.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
 - `state/thermostat-ui.md` — thermostat web UI + heating example scripts
   (thermostat/heating_windows/valve_watch, lib/zones) (thermostat-ui-spec.md).
   COMPLETE.
-- `state/fs-plugin.md` — read-only Lua `fs` module (fs-plugin-spec.md). COMPLETE.
+- `state/fs-plugin.md` — Lua `fs` module, read+write, rooted log_file
+  (fs-plugin-spec.md). COMPLETE.
 - `state/bundled-examples.md` — read-only examples tree + Materialize
   (load-examples-spec.md). COMPLETE.
 - `state/enhanced-climate.md` — REST/command transport + enhanced_climate example
@@ -35,6 +36,10 @@ release. Details in `state/fs-plugin.md`.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.0.0 (2026-07-03): fs write support (write/append/mkdir/remove on the
+  scripts root) + BREAKING ha.exceptions.log_file paths now relative to
+  log_dir (own os.Root; abs/../unset-log_dir raise at registration);
+  rooted LoadAll enumeration. See `state/fs-plugin.md`.
 - 2.9.3 (2026-07-02): dependency updates — coder/websocket v1.8.15,
   modernc.org/sqlite v1.53.0, go-json-experiment/json latest. No vulns,
   no API changes.
@@ -129,7 +134,8 @@ add-on change, minor = feature, patch = fix.
 - **Seed dedup**: state_history row on seed only when state/attributes differ from mirror (reconnects must not pollute history)
 - **require semantics**: per-LState loaded-module cache + circular-require error (not bare DoFile)
 - **http timeout**: shared client with a fixed 30s Timeout (stdlib_http.go) + the script's lifetime context; no per-callback context and no timeout config option (the old "callback context (5s)" note was never implemented)
-- **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited
+- **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited (but size-capped: active + one .1 backup)
+- **Rooted filesystem IO (v3.0.0)**: TWO process-wide os.Roots — scripts root (fs module incl. write/append/mkdir/remove, require, LoadAll enumeration) and logs root over log_dir (ha.exceptions.log_file, relative paths only, raises at registration on abs/../unset log_dir)
 - **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC. main also sets time.Local from the timezone so script time.now() agrees with the scheduler
 - **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
 - **golangci-lint**: v2.12.2 (config format version "2"); a `tool` dependency in go.mod alongside staticcheck and benchstat — run via `go tool golangci-lint run`, never go install or a release binary; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow, fsnotify Watcher.Close, os.Root.Close) — configure the tool, don't litter the code with `_ =`
