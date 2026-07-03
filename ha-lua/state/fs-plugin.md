@@ -5,6 +5,24 @@ Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 1.2.0.
 
+## Spec-vs-implementation review (2026-07-03)
+Full audit of fs-plugin-spec.md against the shipped code: no functional gaps.
+All four bindings, the 8 MiB cap, the nil-root degradation, the shared-root
+threading (main → Supervisor Deps → Runner → RegisterStdlib), the require
+migration (§9.4), docs (DOCS.md + lua_api.md incl. the §6.1 hot-reload
+caveat), and both named regression tests (TestThermostatAPI,
+TestRequireRejectsSymlinkEscape) check out; `make check` green. Verified
+empirically that os.Root error strings are root-relative (no host-path leak,
+spec §4). Two deliberate, correct deviations noted: fs.exists treats ANY
+Stat error as false (not just ErrNotExist — matches the "never raises"
+contract better than the spec table's errors.Is sketch), and the too-large
+error message includes the filename. Milestone 4 (§9.6 trusted-path IO
+sweep) remains deferred as specced. Only fixes needed were in the spec doc
+itself: stale "draft / ready to build" header → "implemented, shipped in
+v1.2.0", and §9.5/§9.6 were out of order. Note: thermostat.lua/.html now
+live in examples/ (bundled-examples track) — the spec's scripts/ paths are
+historical, left as written.
+
 ## Filesystem plugin (2026-06-20)
 - Read-only Lua `fs` module backed by ONE process-wide `os.Root` rooted at the
   scripts dir, opened in main and shared across all LStates (os.Root is

@@ -1,8 +1,9 @@
-# Filesystem plugin — Specification (draft)
+# Filesystem plugin — Specification
 
 > **Working state:** [`state/fs-plugin.md`](state/fs-plugin.md) — implementation progress and decisions.
 
-Status: **ready to build**. Open decisions are consolidated in §9.
+Status: **implemented** — shipped in v1.2.0 (milestones 1–3; milestone 4
+deferred per §9.6). Open decisions are consolidated in §9.
 
 ## 1. Goal
 
@@ -200,6 +201,10 @@ symlink-escape gap §8 described. The cheap leading-`..`/abs guard stays in fron
 to preserve the "lib/ only" contract and the `outside scripts/lib` error
 message.
 
+### 9.5 Locked defaults
+Read-only; root = `scriptsDir`; error style `nil, errmsg`; read cap 8 MiB;
+relative `/`-separated paths; one shared `*os.Root` for the process.
+
 ### 9.6 Convert the remaining trusted-path filesystem IO — **deferred, default LOW priority**
 Consistency, not security: the daemon still has filesystem-IO sites that use
 plain `os` calls on *trusted, non-Lua* paths. They are safe as-is (`os.Root`
@@ -208,10 +213,6 @@ that sit under the scripts root keeps a single rooted-IO story. Tracked as
 Milestone 4 (§10). The `log_file` write is blocked on §9.1 (write support);
 `config`/`watcher` are genuinely out of scope (their paths live outside the
 root).
-
-### 9.5 Locked defaults
-Read-only; root = `scriptsDir`; error style `nil, errmsg`; read cap 8 MiB;
-relative `/`-separated paths; one shared `*os.Root` for the process.
 
 ## 10. Implementation milestones
 
