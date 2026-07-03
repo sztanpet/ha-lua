@@ -63,4 +63,4 @@ for window in pairs(by_window) do
   end)
 end
 
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/heating_windows-errors.log"))
+ha.on_exception(ha.exceptions.log_file("heating_windows-errors.log"))

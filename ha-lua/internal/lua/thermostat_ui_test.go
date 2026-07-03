@@ -73,7 +73,7 @@ func serveThermostatUISeed(t *testing.T, seed []ha.StateData) *httptest.Server {
 		t.Fatal(err)
 	}
 
-	r := NewRunner("thermostat", dir, openTestRoot(t, dir), tracker, sched, kv, global)
+	r := NewRunner("thermostat", dir, openTestRoot(t, dir), openTestRoot(t, t.TempDir()), tracker, sched, kv, global)
 	r.SetCallService(func(context.Context, string, string, jsontext.Value) error { return nil })
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())

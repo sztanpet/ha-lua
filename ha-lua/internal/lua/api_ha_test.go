@@ -45,6 +45,7 @@ func newHALState(t testing.TB) (*lua.LState, *haAPI, *state.Tracker, *Runner) {
 	runner = &Runner{
 		scriptID:  "test",
 		scriptDir: t.TempDir(),
+		logsRoot:  openTestRoot(t, t.TempDir()),
 		ch:        make(chan Event, 8),
 		timerFns:  make(map[string]*lua.LFunction),
 		LoadedCh:  make(chan struct{}),
@@ -106,19 +107,15 @@ func TestExceptionInfoFields(t *testing.T) {
 }
 
 func TestLogFileException(t *testing.T) {
-	L, api, _, _ := newHALState(t)
-	dir := t.TempDir()
-	logPath := filepath.Join(dir, "errors.log")
+	L, _, _, runner := newHALState(t)
+	// The path is relative to the logs root; the host-side file lands inside it.
+	logPath := filepath.Join(runner.logsRoot.Name(), "sub", "errors.log")
 
 	if err := L.DoString(`
-		ha.on_exception(ha.exceptions.log_file("` + logPath + `"))
+		ha.on_exception(ha.exceptions.log_file("sub/errors.log"))
 	`); err != nil {
 		t.Fatal(err)
 	}
-	// Re-read the handler set by the Lua call
-	api.onExceptionFn, _ = L.GetGlobal("ha").(*lua.LTable).RawGetString("on_exception").(*lua.LFunction)
-	// Actually the handler was set into api via the Lua call - we need to reset api
-	// Let's do it differently: call the exception directly.
 
 	// Simulate calling the log_file handler
 	haTbl := L.GetGlobal("ha").(*lua.LTable)
@@ -127,7 +124,7 @@ func TestLogFileException(t *testing.T) {
 
 	// Call log_file("path") → returns a handler
 	if err := L.CallByParam(lua.P{Fn: logFileFn, NRet: 1, Protect: true},
-		lua.LString(logPath)); err != nil {
+		lua.LString("sub/errors.log")); err != nil {
 		t.Fatal(err)
 	}
 	handler := L.Get(-1).(*lua.LFunction)
@@ -155,6 +152,33 @@ func TestLogFileException(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "lights") {
 		t.Errorf("log file does not contain script_id: %s", data)
+	}
+}
+
+// TestLogFilePathValidation: log_file paths are relative to the log dir;
+// absolute and escaping paths must fail at registration, not at the first
+// exception.
+func TestLogFilePathValidation(t *testing.T) {
+	for _, path := range []string{"/etc/evil.log", "../evil.log"} {
+		L, _, _, _ := newHALState(t)
+		err := L.DoString(`ha.exceptions.log_file("` + path + `")`)
+		if err == nil || !strings.Contains(err.Error(), "relative to the log dir") {
+			t.Errorf("path %q: want registration error, got %v", path, err)
+		}
+	}
+}
+
+// TestLogFileNoLogsRoot: without a configured log_dir there is nowhere to
+// write; registration must raise instead of silently dropping exceptions.
+func TestLogFileNoLogsRoot(t *testing.T) {
+	L := lua.NewState()
+	t.Cleanup(L.Close)
+	tbl := L.NewTable()
+	registerExceptionHandlers(L, tbl, nil)
+	fn := tbl.RawGetString("log_file").(*lua.LFunction)
+	err := L.CallByParam(lua.P{Fn: fn, NRet: 1, Protect: true}, lua.LString("errors.log"))
+	if err == nil || !strings.Contains(err.Error(), "no log_dir") {
+		t.Fatalf("want no-log_dir error, got %v", err)
 	}
 }
 

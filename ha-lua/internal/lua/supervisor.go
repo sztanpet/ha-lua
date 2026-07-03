@@ -27,11 +27,14 @@ type Deps struct {
 	Tracker   *state.Tracker
 	Scheduler *scheduler.Scheduler
 	Global    *store.GlobalStore
-	// Root sandboxes all reads under the scripts directory: the fs module,
+	// Root sandboxes the scripts directory: the fs module (reads and writes),
 	// require, and LoadAll's script enumeration. One process-wide handle,
 	// shared across runners. May be nil in tests that never touch the
 	// filesystem (fs/require then error, LoadAll fails).
-	Root        *os.Root
+	Root *os.Root
+	// LogsRoot sandboxes ha.exceptions.log_file to the log directory. May be
+	// nil (no log_dir configured — log_file then raises at load).
+	LogsRoot    *os.Root
 	NewKV       func(scriptID string) *store.Store
 	CallService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	FireEvent   func(ctx context.Context, eventType string, data jsontext.Value) error
@@ -105,7 +108,7 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 		return
 	}
 
-	r := NewRunner(id, s.scriptDir, s.deps.Root, s.deps.Tracker, s.deps.Scheduler, s.deps.NewKV(id), s.deps.Global)
+	r := NewRunner(id, s.scriptDir, s.deps.Root, s.deps.LogsRoot, s.deps.Tracker, s.deps.Scheduler, s.deps.NewKV(id), s.deps.Global)
 	r.SetCallService(s.deps.CallService)
 	r.SetFireEvent(s.deps.FireEvent)
 	r.SetSetState(s.deps.SetState)

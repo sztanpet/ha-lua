@@ -86,6 +86,7 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 		Scheduler:   sched,
 		Global:      global,
 		Root:        openTestRoot(t, dir),
+		LogsRoot:    openTestRoot(t, t.TempDir()),
 		Router:      router,
 		NewKV:       func(id string) *store.Store { return store.New(writeDB, readDB, id) },
 		CallService: callService,

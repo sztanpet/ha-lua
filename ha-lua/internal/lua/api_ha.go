@@ -428,7 +428,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 
 	// ha.exceptions built-in handlers
 	exceptionsTable := L.NewTable()
-	registerExceptionHandlers(L, exceptionsTable)
+	registerExceptionHandlers(L, exceptionsTable, r.logsRoot)
 	L.SetField(haTable, "exceptions", exceptionsTable)
 
 	L.SetGlobal("ha", haTable)

@@ -581,4 +581,4 @@ do
 end
 apply_all(now_parts())
 
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/enhanced-climate-errors.log"))
+ha.on_exception(ha.exceptions.log_file("enhanced-climate-errors.log"))

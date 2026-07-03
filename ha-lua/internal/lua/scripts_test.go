@@ -263,6 +263,7 @@ func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
 		Scheduler:   sched,
 		Global:      global,
 		Root:        openTestRoot(t, dir),
+		LogsRoot:    openTestRoot(t, t.TempDir()),
 		NewKV:       func(id string) *store.Store { return store.New(writeDB, readDB, id) },
 		CallService: cs,
 	})
@@ -351,7 +352,7 @@ func TestThermostatAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewRunner("thermostat", dir, openTestRoot(t, dir), tracker, sched, kv, global)
+	r := NewRunner("thermostat", dir, openTestRoot(t, dir), openTestRoot(t, t.TempDir()), tracker, sched, kv, global)
 	r.SetCallService(cs)
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -569,7 +570,7 @@ func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore,
 	reg := NewRegistry()
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	r := NewRunner("thermostat", dir, openTestRoot(t, dir), tracker, sched, kv, global)
+	r := NewRunner("thermostat", dir, openTestRoot(t, dir), openTestRoot(t, t.TempDir()), tracker, sched, kv, global)
 	r.SetCallService(func(context.Context, string, string, jsontext.Value) error { return nil })
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())

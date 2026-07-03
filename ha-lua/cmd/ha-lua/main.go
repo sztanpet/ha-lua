@@ -164,9 +164,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// One process-wide os.Root backing the read-only Lua fs module. It is
-	// goroutine-safe and shared across all script LStates; held for the
-	// process lifetime.
+	// One process-wide os.Root backing the Lua fs module. It is goroutine-safe
+	// and shared across all script LStates; held for the process lifetime.
 	scriptsRoot, err := os.OpenRoot(cfg.ScriptsDir)
 	if err != nil {
 		slog.Error("scripts dir open failed", "dir", cfg.ScriptsDir, "err", err)
@@ -174,11 +173,26 @@ func main() {
 	}
 	defer scriptsRoot.Close()
 
+	// A second root over the log directory confines ha.exceptions.log_file.
+	// Not fatal: the daemon runs fine without file logging, and log_file
+	// raises a load error in any script that asks for it.
+	var logsRoot *os.Root
+	if cfg.LogDir != "" {
+		if err := os.MkdirAll(cfg.LogDir, 0o755); err != nil {
+			slog.Warn("log dir create failed, ha.exceptions.log_file disabled", "dir", cfg.LogDir, "err", err)
+		} else if logsRoot, err = os.OpenRoot(cfg.LogDir); err != nil {
+			slog.Warn("log dir open failed, ha.exceptions.log_file disabled", "dir", cfg.LogDir, "err", err)
+		} else {
+			defer logsRoot.Close()
+		}
+	}
+
 	sup := luapkg.NewSupervisor(reg, cfg.ScriptsDir, luapkg.Deps{
 		Tracker:   tracker,
 		Scheduler: sched,
 		Global:    globalStore,
 		Root:      scriptsRoot,
+		LogsRoot:  logsRoot,
 		Router:    router,
 		NewKV: func(scriptID string) *store.Store {
 			return store.New(writeDB, readDB, scriptID)

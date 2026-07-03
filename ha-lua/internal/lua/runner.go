@@ -60,10 +60,13 @@ func haEventCoalesceKey(ev Event) (string, bool) {
 type Runner struct {
 	scriptID  string
 	scriptDir string
-	// root sandboxes the read-only fs module to scriptDir; shared (os.Root is
+	// root sandboxes the fs module to scriptDir; shared (os.Root is
 	// goroutine-safe), may be nil in tests that don't exercise fs.
 	root *os.Root
-	ch   chan Event
+	// logsRoot sandboxes ha.exceptions.log_file to the log directory; shared,
+	// may be nil (no log_dir configured — log_file then raises at load).
+	logsRoot *os.Root
+	ch       chan Event
 	// reqCh delivers UI HTTP requests. Unlike ch (lossy fan-out, dropped when
 	// full), requests block the sender up to the request timeout and are never
 	// dropped. reqCh is never closed, so the Router's send can only block
@@ -91,11 +94,12 @@ type Runner struct {
 }
 
 // NewRunner creates a Runner. Call Start to load and run the script.
-func NewRunner(scriptID, scriptDir string, root *os.Root, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
+func NewRunner(scriptID, scriptDir string, root, logsRoot *os.Root, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
 	return &Runner{
 		scriptID:  scriptID,
 		scriptDir: scriptDir,
 		root:      root,
+		logsRoot:  logsRoot,
 		ch:        make(chan Event, 256),
 		reqCh:     make(chan *request),
 		LoadedCh:  make(chan struct{}),

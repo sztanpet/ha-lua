@@ -93,8 +93,11 @@ func sendMailDeadline(addr string, auth smtp.Auth, from string, to []string, msg
 // rotated backup) so a script that keeps throwing can't fill /config.
 const maxExceptionLogBytes = 5 << 20 // 5 MiB
 
-// registerExceptionHandlers installs ha.exceptions.email and ha.exceptions.log_file.
-func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
+// registerExceptionHandlers installs ha.exceptions.email and
+// ha.exceptions.log_file. logsRoot confines log_file writes to the log
+// directory; it may be nil (no log_dir configured), in which case log_file
+// raises at registration.
+func registerExceptionHandlers(L *lua.LState, t *lua.LTable, logsRoot *os.Root) {
 	L.SetField(t, "email", L.NewFunction(func(L *lua.LState) int {
 		cfg := L.CheckTable(1)
 		getString := func(key string) string {
@@ -187,6 +190,18 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 
 	L.SetField(t, "log_file", L.NewFunction(func(L *lua.LState) int {
 		path := L.CheckString(1)
+		// Fail at registration, not at the first exception: a misconfigured
+		// error sink that only reveals itself once something else is already
+		// broken is worse than useless. The lexical guard catches the obvious
+		// mistakes here; logsRoot still rejects symlink escapes at open time.
+		if filepath.IsAbs(path) || strings.HasPrefix(filepath.Clean(path), "..") {
+			L.RaiseError("ha.exceptions.log_file: path is relative to the log dir, got %q", path)
+			return 0
+		}
+		if logsRoot == nil {
+			L.RaiseError("ha.exceptions.log_file: no log_dir configured")
+			return 0
+		}
 		handler := L.NewFunction(func(L *lua.LState) int {
 			info := L.CheckTable(1)
 			scriptID := luaStrField(info, "script_id")
@@ -203,32 +218,19 @@ func registerExceptionHandlers(L *lua.LState, t *lua.LTable) {
 			}
 
 			body := buildEmailBody(scriptID, timestamp, callback, errMsg, traceback, eventJSON)
-			// Create the parent dir so paths under e.g. /config/ha-lua/logs
-			// work on a fresh install before anything else has written there.
+			// Create the parent dir so subdirectory paths work on a fresh
+			// install before anything else has written there.
 			if dir := filepath.Dir(path); dir != "" && dir != "." {
-				if err := os.MkdirAll(dir, 0o755); err != nil {
+				if err := logsRoot.MkdirAll(dir, 0o755); err != nil {
 					L.RaiseError("ha.exceptions.log_file: %v", err)
 					return 0
 				}
 			}
 			// Cap the file before appending, so it can't grow without bound.
-			logwriter.RotateIfLarge(path, maxExceptionLogBytes)
-			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				L.RaiseError("ha.exceptions.log_file: %v", err)
-				return 0
-			}
+			logwriter.RotateIfLarge(logsRoot, path, maxExceptionLogBytes)
 			entry := fmt.Sprintf("---\n%s\n", body)
-			_, werr := f.WriteString(entry)
-			// Close before raising: RaiseError unwinds via panic and a
-			// deferred Close would swallow its own error anyway.
-			cerr := f.Close()
-			if werr != nil {
-				L.RaiseError("ha.exceptions.log_file write: %v", werr)
-				return 0
-			}
-			if cerr != nil {
-				L.RaiseError("ha.exceptions.log_file close: %v", cerr)
+			if err := appendToRoot(logsRoot, path, []byte(entry)); err != nil {
+				L.RaiseError("ha.exceptions.log_file: %v", err)
 			}
 			return 0
 		})

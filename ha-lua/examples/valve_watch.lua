@@ -189,4 +189,4 @@ ha.every("1m", function()
   end
 end)
 
-ha.on_exception(ha.exceptions.log_file("/config/ha-lua/logs/valve_watch-errors.log"))
+ha.on_exception(ha.exceptions.log_file("valve_watch-errors.log"))
