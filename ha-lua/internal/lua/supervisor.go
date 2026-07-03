@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -26,8 +27,10 @@ type Deps struct {
 	Tracker   *state.Tracker
 	Scheduler *scheduler.Scheduler
 	Global    *store.GlobalStore
-	// Root sandboxes the read-only fs module to the scripts directory; one
-	// process-wide handle, shared across runners. May be nil (fs disabled).
+	// Root sandboxes all reads under the scripts directory: the fs module,
+	// require, and LoadAll's script enumeration. One process-wide handle,
+	// shared across runners. May be nil in tests that never touch the
+	// filesystem (fs/require then error, LoadAll fails).
 	Root        *os.Root
 	NewKV       func(scriptID string) *store.Store
 	CallService func(ctx context.Context, domain, service string, data jsontext.Value) error
@@ -72,9 +75,14 @@ func NewSupervisor(reg *Registry, scriptDir string, deps Deps) *Supervisor {
 	}
 }
 
-// LoadAll starts every *.lua script in the script directory.
+// LoadAll starts every *.lua script in the script directory. Enumeration goes
+// through the shared os.Root — the same handle backing fs.read and require —
+// so all reads under the scripts dir take one rooted-IO path.
 func (s *Supervisor) LoadAll(ctx context.Context) error {
-	entries, err := os.ReadDir(s.scriptDir)
+	if s.deps.Root == nil {
+		return fmt.Errorf("read scripts dir: no scripts root")
+	}
+	entries, err := fs.ReadDir(s.deps.Root.FS(), ".")
 	if err != nil {
 		return fmt.Errorf("read scripts dir: %w", err)
 	}

@@ -2,8 +2,9 @@
 
 > **Working state:** [`state/fs-plugin.md`](state/fs-plugin.md) — implementation progress and decisions.
 
-Status: **implemented** — shipped in v1.2.0 (milestones 1–3; milestone 4
-deferred per §9.6). Open decisions are consolidated in §9.
+Status: **implemented** — milestones 1–3 shipped in v1.2.0, milestone 4
+(rooted-IO consistency sweep, §9.6) on 2026-07-03. Open decisions are
+consolidated in §9.
 
 ## 1. Goal
 
@@ -205,14 +206,15 @@ message.
 Read-only; root = `scriptsDir`; error style `nil, errmsg`; read cap 8 MiB;
 relative `/`-separated paths; one shared `*os.Root` for the process.
 
-### 9.6 Convert the remaining trusted-path filesystem IO — **deferred, default LOW priority**
-Consistency, not security: the daemon still has filesystem-IO sites that use
-plain `os` calls on *trusted, non-Lua* paths. They are safe as-is (`os.Root`
-buys no containment for a path the user never supplies), but converting the ones
-that sit under the scripts root keeps a single rooted-IO story. Tracked as
-Milestone 4 (§10). The `log_file` write is blocked on §9.1 (write support);
-`config`/`watcher` are genuinely out of scope (their paths live outside the
-root).
+### 9.6 Convert the remaining trusted-path filesystem IO — **DONE (2026-07-03)**
+Consistency, not security: the daemon had filesystem-IO sites that used plain
+`os` calls on *trusted, non-Lua* paths. They were safe as-is (`os.Root` buys no
+containment for a path the user never supplies), but converting the one that
+sits under the scripts root keeps a single rooted-IO story. Shipped as
+Milestone 4 (§10): `supervisor.LoadAll` now enumerates scripts via
+`fs.ReadDir(Root.FS(), ".")`; a nil root fails LoadAll loudly. The `log_file`
+write stays blocked on §9.1 (write support); `config`/`watcher` are genuinely
+out of scope (their paths live outside the root).
 
 ## 10. Implementation milestones
 
@@ -233,14 +235,15 @@ root).
    errors instead of panicking. `TestRequireRejectsSymlinkEscape` is the
    regression guard — the existing require tests pass against the old lexical
    code too, so this is the only test that proves the change. (§8, §9.4.)
-4. **Consistency sweep: remaining rooted filesystem IO.** *(Deferred, low
-   priority — §9.6. Do for a single, uniform rooted-IO story, not for security:
-   these paths are trusted and never user-supplied.)*
-   - `supervisor.LoadAll` — replace `os.ReadDir(s.scriptDir)` with
-     `fs.ReadDir(s.deps.Root.FS(), ".")` (or equivalent), so script enumeration
-     goes through the same root as `fs`/`require`. Guard the `nil`-root case
-     (fall back to `os.ReadDir`, or treat as "no scripts"). Pure refactor; the
-     existing supervisor load tests are the regression guard.
+4. **Consistency sweep: remaining rooted filesystem IO.** *(DONE, 2026-07-03 —
+   §9.6. Done for a single, uniform rooted-IO story, not for security: these
+   paths are trusted and never user-supplied.)*
+   - `supervisor.LoadAll` — *(done)* replaced `os.ReadDir(s.scriptDir)` with
+     `fs.ReadDir(s.deps.Root.FS(), ".")`, so script enumeration goes through
+     the same root as `fs`/`require`. The `nil`-root case is a loud LoadAll
+     error, not a fallback — main always opens the root, so a nil root at
+     LoadAll time is a wiring bug (`TestSupervisorLoadAllNoRoot`). The existing
+     supervisor load tests are the regression guard.
    - `exceptions.log_file` — **blocked on §9.1.** This is a *write* to a
      Lua-supplied path; routing it through `os.Root` both needs write support
      (currently a locked NO) and would *restrict* the path to the scripts dir,

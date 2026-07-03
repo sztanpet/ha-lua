@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-02 (v2.9.3 dependency updates)
+Last updated: 2026-07-03 (fs-plugin milestone 4: rooted LoadAll)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,13 +11,12 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v2.9.3: routine dependency updates, one bump per commit —
-coder/websocket v1.8.15 (2 fewer allocs per frame read, no timeout
-callbacks for background contexts; WS hot path), modernc.org/sqlite
-v1.53.0 (+libc v1.73.4), go-json-experiment/json 2026-06-23 snapshot
-(no call-site changes). No known vulns in any dep (pkg.go.dev vuln DB
-checked). Remaining outdated modules are transitive golangci-lint
-tooling — not worth chasing.
+Closed out fs-plugin-spec.md: full spec-vs-code audit found no functional
+gaps (spec header was stale, fixed), then shipped the one deferred piece,
+milestone 4 (§9.6) — supervisor.LoadAll now enumerates scripts through the
+shared os.Root (fs.ReadDir(Root.FS(), ".")), nil root fails LoadAll loudly
+instead of falling back. Internal refactor, no user-visible change, no
+release. Details in `state/fs-plugin.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

@@ -26,6 +26,7 @@ func newSupervisor(t testing.TB, scriptDir string) (*Supervisor, *Registry, *sto
 		Tracker:   state.New(writeDB, readDB),
 		Scheduler: sched,
 		Global:    global,
+		Root:      openTestRoot(t, scriptDir),
 		NewKV: func(id string) *store.Store {
 			return store.New(writeDB, readDB, id)
 		},
@@ -82,6 +83,16 @@ func TestSupervisorLoadAll(t *testing.T) {
 	}
 	if reg.Get("ignored") != nil {
 		t.Error("non-lua file got a runner")
+	}
+}
+
+// TestSupervisorLoadAllNoRoot: script enumeration goes through the shared
+// os.Root; a Supervisor wired without one must fail LoadAll loudly instead of
+// silently loading nothing.
+func TestSupervisorLoadAllNoRoot(t *testing.T) {
+	sup := NewSupervisor(NewRegistry(), t.TempDir(), Deps{})
+	if err := sup.LoadAll(context.Background()); err == nil {
+		t.Fatal("LoadAll with nil root should error")
 	}
 }
 

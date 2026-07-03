@@ -173,10 +173,9 @@ func TestControlPureLib(t *testing.T) {
 	}
 }
 
-// openTestRoot opens an os.Root over dir for the read-only fs module, closed
-// on test cleanup. Used by the thermostat tests, whose script reads its UI
-// page through fs.read.
-func openTestRoot(t *testing.T, dir string) *os.Root {
+// openTestRoot opens an os.Root over dir, closed on test cleanup. It backs
+// the fs module, require, and Supervisor.LoadAll's script enumeration.
+func openTestRoot(t testing.TB, dir string) *os.Root {
 	t.Helper()
 	root, err := os.OpenRoot(dir)
 	if err != nil {

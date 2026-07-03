@@ -3,7 +3,26 @@
 Working state for the read-only Lua `fs` module. Spec: `fs-plugin-spec.md`.
 Global decisions live in `../AI.state`.
 
-Status: **COMPLETE.** Shipped in 1.2.0.
+Status: **COMPLETE.** Milestones 1–3 shipped in 1.2.0; milestone 4 done
+2026-07-03.
+
+## Milestone 4: rooted-IO consistency sweep (2026-07-03)
+- `supervisor.LoadAll` enumerates scripts via `fs.ReadDir(deps.Root.FS(), ".")`
+  instead of `os.ReadDir(scriptDir)` — the last read under the scripts dir now
+  goes through the same shared os.Root as fs.read and require. Consistency,
+  not security (the path was never user-supplied).
+- nil-root handling: LoadAll returns an error ("no scripts root"), NOT a
+  fallback to os.ReadDir and NOT "no scripts" — main always opens the root, so
+  nil at LoadAll time is a wiring bug and must fail loudly.
+  TestSupervisorLoadAllNoRoot guards this. The spec offered fallback as an
+  option; rejected to avoid a second enumeration path only tests would run.
+- Test plumbing: openTestRoot widened *testing.T → testing.TB; newSupervisor
+  (supervisor_test.go) now wires Root — it backs LoadAll in the supervisor and
+  runner-batch tests. Router tests use StartScript directly, so their nil root
+  stays fine.
+- Deps.Root doc comment updated: it backs fs, require, AND enumeration.
+- log_file stays blocked on §9.1 (write support, locked NO); config/watcher
+  remain out of scope (paths outside the root). §9.6 is closed.
 
 ## Spec-vs-implementation review (2026-07-03)
 Full audit of fs-plugin-spec.md against the shipped code: no functional gaps.
