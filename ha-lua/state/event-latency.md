@@ -87,6 +87,21 @@ Schema DROPs the table on upgraded installs. Accepted corollary
 history row per daemon restart. NOT changed: batching default (event
 loss history — see bundled-examples.md).
 
+## Post-refactor review (2026-07-07, user-requested)
+
+Full re-read of tracker/client/runner paths. Applied: Seed appends now
+ride the write-behind queue (28db80f) — writeBatch is the single SQL
+write site, insert order is total, so the cold-start MAX(id) baseline
+holds by construction. Examined and left alone: seed-swap vs concurrent
+event apply can briefly regress memory to the snapshot (tiny window,
+self-heals on the entity's next event, predates the refactor — the SQL
+upsert version had the same property; fixing needs a lock spanning
+seed + router, not worth it). Rejected alternatives: sync.Map (RWMutex
+is clearer, one writer dominates), per-event writer goroutines (loses
+ordering + batching), memory-only seed dedup (phantom history per
+restart). Benchmarks after phase 2 + review: event→command mean 150µs,
+p99 0.33ms, BusyKV identical to idle, off-ns/op 0.2ms — all holding.
+
 ## Decisions so far
 
 - call_service default STAYS synchronous (wait=true); async is opt-in via a
