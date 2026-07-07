@@ -37,13 +37,23 @@ synchronous=NORMAL (per-event fsync jitter was on the dispatch path).
   benchmarks/baseline.txt. NOTE: make bench-update re-RUNS the suite
   (bench-update: bench); to promote an existing run, cp current.txt
   baseline.txt.
-- M1 dispatch-delay instrumentation — pending
-- M2 call_service { wait = false } + async error → on_exception — pending
-  (QuickToggle keeps the sync path honest; M2 adds a wait=false variant
-  benchmark alongside)
+- M1 dispatch-delay instrumentation — **DONE** (96ed468). ha.Event.ReceivedAt
+  stamped in the WS read loop; runner logs queue-to-handler delay (debug,
+  warn ≥250ms — clear of the 100ms batch window, so a warn is always real).
+- M2 call_service { wait = false } — **DONE** (3c9ede5 client split +
+  022e224 binding/docs). SendCommandAsync: synchronous ordered write,
+  verdict on a 1-buffered channel, pending-map cleanup in its goroutine;
+  SendCommandWaitResult is a blocking wrapper. Binding: opts 4th arg;
+  wait=false sends inline (send errors raise) then awaits the verdict off
+  the goroutine; failures ride runner.asyncErrCh (never closed, like reqCh
+  — the event channel closes on stop, a late verdict must not panic) into
+  dispatchException → on_exception. Nil-dep check is per-path now (async
+  wiring alone is enough for wait=false). MEASURED: QuickToggleNoWait
+  off-ns/op 0.37ms vs QuickToggle 100.7ms (~270x). mirrored_switches
+  example + lua_api.md + DOCS.md updated.
 - M3 memory-authoritative state mirror — pending
 - M4 background batched writer — pending
-- M5 docs + release — pending
+- M5 docs + release — pending (bench-compare against baseline at M5)
 
 ## Decisions so far
 

@@ -11,15 +11,14 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Latency round 3: after v3.0.1 (batch-window opt-out + synchronous=NORMAL,
-see `state/bundled-examples.md`) a quick on→off still lags ~500 ms —
-diagnosed as the synchronous ha.call_service parking the script event
-loop until HA's result frame (sent only after the service completes,
-Zigbee round trip included). Wrote `event-latency-spec.md`: opt-in
-`{ wait = false }` for call_service + memory-authoritative state mirror
-with a background batched SQLite writer. M0 (internal/e2e latency
-benchmark harness) is DONE and confirms both diagnoses by measurement;
-baselines committed. M1–M5 next. Details in `state/event-latency.md`.
+Event-latency track (event-latency-spec.md): M0 benchmark harness, M1
+dispatch-delay instrumentation, and M2 call_service { wait = false }
+are DONE — measured: QuickToggle off-latency fell from 100.7ms (tracked
+the simulated device ack exactly; the user's felt half second) to
+0.37ms with wait=false; mirrored_switches example + docs updated.
+NEXT: M3 memory-authoritative state mirror, M4 background batched
+writer, M5 docs + release (bench-compare vs committed baselines).
+Details in `state/event-latency.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
