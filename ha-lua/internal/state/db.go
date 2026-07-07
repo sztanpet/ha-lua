@@ -55,11 +55,20 @@ CREATE INDEX IF NOT EXISTS idx_timers_next ON timers(next_run);
 // OpenDB opens two handles against path: a single-connection write handle
 // and a pooled read handle. WAL mode is enabled on open.
 //
+// synchronous=NORMAL because every state_changed event commits on the write
+// handle BEFORE it is dispatched to scripts: at the default FULL, that is an
+// fsync per event, and on the flash storage of a typical HA box fsync jitter
+// (ms to tens of ms) shows up directly as handler-latency variance. NORMAL
+// under WAL syncs only at checkpoints; a power loss can drop the last few
+// commits but cannot corrupt the DB. Nothing here needs those commits: the
+// states mirror is re-seeded from HA on every connect, history is short-lived
+// observability data, and every/at timer rows are rebuilt at script load.
+//
 // modernc.org/sqlite takes pragmas as _pragma=name(value) — the mattn-style
 // _journal_mode=WAL is silently ignored and leaves the default rollback
 // journal. TestOpenDBEnablesWAL guards against regressing this.
 func OpenDB(path string) (writeDB, readDB *sql.DB, err error) {
-	pragmas := "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)"
+	pragmas := "_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)"
 
 	// _txlock=immediate: write transactions take the write lock up front
 	// instead of upgrading from a read lock mid-transaction, which is the

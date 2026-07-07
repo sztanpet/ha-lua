@@ -34,5 +34,14 @@ func TestOpenDBEnablesWAL(t *testing.T) {
 		if fk != 1 {
 			t.Errorf("%s handle foreign_keys = %d, want 1", name, fk)
 		}
+		// 1 = NORMAL. FULL would put an fsync per state_changed commit on the
+		// event-dispatch critical path.
+		var sync int
+		if err := db.QueryRowContext(t.Context(), "PRAGMA synchronous").Scan(&sync); err != nil {
+			t.Fatalf("%s: query synchronous: %v", name, err)
+		}
+		if sync != 1 {
+			t.Errorf("%s handle synchronous = %d, want 1 (NORMAL)", name, sync)
+		}
 	}
 }
