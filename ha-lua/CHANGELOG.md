@@ -4,6 +4,26 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.0.1 - 2026-07-07
+
+### Fixed
+- **Script handler latency no longer jitters by tens of milliseconds.**
+  The SQLite database is now opened with `synchronous=NORMAL` (the
+  standard WAL pairing). At the previous default of `FULL`, every state
+  change in the home fsynced the WAL before scripts saw the event, and
+  on flash storage that fsync's jitter landed directly on handler
+  latency. A power cut can now lose the last few commits (never corrupt
+  the database); nothing stored needs them — the state mirror re-seeds
+  from Home Assistant on every connect, history is short-lived, and
+  timers are rebuilt at script load.
+
+### Changed
+- The `mirrored_switches` example now calls `ha.immediate_events()`:
+  a light following a wall switch is exactly the case where the default
+  100 ms event batch window is human-visible. The batch window — why it
+  exists (event loss without it) and when to opt out — is now called
+  out prominently in `lua_api.md`, `DOCS.md`, and `README.md`.
+
 ## 3.0.0 - 2026-07-03
 
 ### Changed
