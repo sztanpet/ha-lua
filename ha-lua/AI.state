@@ -11,12 +11,14 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v3.0.1: the mirrored_switches latency work, two rounds: (1) the
-100 ms batch window — example now calls ha.immediate_events() (46a0f6b),
-window documented loudly incl. why batching stays default (e1b57e7);
-(2) residual VARIANCE — SQLite ran at synchronous=FULL, one fsync per
-state_changed commit on the dispatch critical path; c09f35f sets
-WAL+synchronous=NORMAL. Details in `state/bundled-examples.md`.
+Latency round 3: after v3.0.1 (batch-window opt-out + synchronous=NORMAL,
+see `state/bundled-examples.md`) a quick on→off still lags ~500 ms —
+diagnosed as the synchronous ha.call_service parking the script event
+loop until HA's result frame (sent only after the service completes,
+Zigbee round trip included). Wrote `event-latency-spec.md`: opt-in
+`{ wait = false }` for call_service + memory-authoritative state mirror
+with a background batched SQLite writer. **Awaiting user review before
+build.** Details in `state/event-latency.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -31,6 +33,9 @@ WAL+synchronous=NORMAL. Details in `state/bundled-examples.md`.
   + Lovelace card (enhanced-climate-spec.md). Released v2.7.0, card at 0.3.8.
 - `state/code-review.md` — 2026-07-01 whole-codebase review findings + fix
   status (no spec; review track).
+- `state/event-latency.md` — event-to-action latency: async call_service +
+  memory mirror + background writer (event-latency-spec.md). Spec written,
+  build pending review.
 - (sse-spec.md has no implementation yet — no state file.)
 
 ## Release log
