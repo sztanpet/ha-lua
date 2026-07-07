@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,12 @@ type haAPI struct {
 	scheduler *scheduler.Scheduler
 	// callService sends a service call to HA; set by runner wiring.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
+	// callServiceAsync backs { wait = false }: synchronous ordered send,
+	// verdict on the channel; set by runner wiring.
+	callServiceAsync func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error)
+	// asyncErrCh routes async-call failures back to the run loop for
+	// on_exception dispatch; set by runner wiring.
+	asyncErrCh chan<- asyncScriptError
 	// fireEvent fires a HA event; set by runner wiring.
 	fireEvent func(ctx context.Context, eventType string, data jsontext.Value) error
 	// setState publishes an entity via the core REST API; set by runner wiring.
@@ -187,10 +194,6 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 	}))
 
 	L.SetField(haTable, "call_service", L.NewFunction(func(L *lua.LState) int {
-		if api.callService == nil {
-			L.RaiseError("call_service not available")
-			return 0
-		}
 		domain := L.CheckString(1)
 		service := L.CheckString(2)
 		data := jsontext.Value("{}")
@@ -203,9 +206,52 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			}
 			data = jsontext.Value(b)
 		}
-		if err := api.callService(L.Context(), domain, service, data); err != nil {
-			L.RaiseError("call_service: %v", err)
+		wait := true
+		if L.GetTop() >= 4 {
+			opts := L.CheckTable(4)
+			if v := opts.RawGetString("wait"); v == lua.LFalse {
+				wait = false
+			}
 		}
+		if wait {
+			if api.callService == nil {
+				L.RaiseError("call_service not available")
+				return 0
+			}
+			if err := api.callService(L.Context(), domain, service, data); err != nil {
+				L.RaiseError("call_service: %v", err)
+			}
+			return 0
+		}
+
+		// wait=false: the command is written before this returns (send
+		// errors still raise inline, wire order is call order), but HA's
+		// verdict is awaited off the script goroutine, so the event loop
+		// keeps running while the device round trip completes. A rejection
+		// lands in ha.on_exception instead of raising here.
+		if api.callServiceAsync == nil {
+			L.RaiseError("call_service: wait=false not available")
+			return 0
+		}
+		ctx := L.Context()
+		verdict, err := api.callServiceAsync(ctx, domain, service, data)
+		if err != nil {
+			L.RaiseError("call_service: %v", err)
+			return 0
+		}
+		go func() {
+			err := <-verdict
+			if err == nil {
+				return
+			}
+			select {
+			case api.asyncErrCh <- asyncScriptError{
+				callback: "call_service",
+				errMsg:   fmt.Sprintf("call_service %s.%s (wait=false): %v", domain, service, err),
+			}:
+			case <-ctx.Done():
+			}
+		}()
 		return 0
 	}))
 

@@ -128,6 +128,38 @@ func BenchmarkQuickToggle(b *testing.B) {
 	b.ReportMetric(float64(totalOff.Nanoseconds())/float64(b.N), "off-ns/op")
 }
 
+// BenchmarkQuickToggleNoWait is BenchmarkQuickToggle with { wait = false }:
+// the on handler no longer parks on the 100ms ack, so the off command should
+// go out at plain pipeline latency — this is the fix for the user-felt half
+// second, and off-ns/op is where it shows.
+func BenchmarkQuickToggleNoWait(b *testing.B) {
+	const deviceAck = 100 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p := startPipeline(b, ctx, mirrorScriptNoWait, benchSeed(), deviceAck)
+
+	var totalOff time.Duration
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := p.HA.injectStateChanged(ctx, "switch.a", "on"); err != nil {
+			b.Fatal(err)
+		}
+		nextCall(b, p) // turn_on arrives; its ack is now pending for deviceAck
+
+		offSent := time.Now()
+		if err := p.HA.injectStateChanged(ctx, "switch.a", "off"); err != nil {
+			b.Fatal(err)
+		}
+		offCall := nextCall(b, p)
+		totalOff += offCall.RecvAt.Sub(offSent)
+
+		// Let both acks drain so iterations don't overlap.
+		time.Sleep(deviceAck + 10*time.Millisecond)
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(totalOff.Nanoseconds())/float64(b.N), "off-ns/op")
+}
+
 // drainLastAck gives the final iteration's in-flight ack a moment to reach
 // the parked handler before the deferred cancel aborts it mid-call — pure
 // teardown-noise prevention, outside the timed section.

@@ -214,6 +214,23 @@ func main() {
 			}
 			return client.SendCommandWaitResult(ctx, id, raw)
 		},
+		// The wait=false path: the send happens before this returns, HA's
+		// verdict arrives on the channel — the script's event loop is not
+		// parked for the device round trip.
+		CallServiceAsync: func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error) {
+			id := client.NextID()
+			raw, err := json.Marshal(serviceCallMsg{
+				ID:      id,
+				Type:    "call_service",
+				Domain:  domain,
+				Service: service,
+				Data:    data,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return client.SendCommandAsync(ctx, id, raw)
+		},
 		FireEvent: func(ctx context.Context, eventType string, data jsontext.Value) error {
 			raw, err := json.Marshal(fireEventMsg{
 				ID:        client.NextID(),

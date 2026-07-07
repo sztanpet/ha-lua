@@ -247,6 +247,17 @@ func startPipeline(tb testing.TB, ctx context.Context, script string, seed []map
 			}
 			return client.SendCommandWaitResult(ctx, id, raw)
 		},
+		CallServiceAsync: func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error) {
+			id := client.NextID()
+			raw, err := json.Marshal(serviceCallMsg{
+				ID: id, Type: "call_service",
+				Domain: domain, Service: service, Data: data,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return client.SendCommandAsync(ctx, id, raw)
+		},
 	})
 	if err := sup.LoadAll(ctx); err != nil {
 		tb.Fatal(err)
@@ -291,6 +302,17 @@ const mirrorScript = `
 ha.immediate_events()
 ha.on_state_change("switch.a", function(change)
   ha.call_service("switch", "turn_" .. change.new_state.state, { entity_id = "switch.b" })
+end)
+global.set("loaded", "bench")
+`
+
+// mirrorScriptNoWait is mirrorScript with { wait = false }: the handler does
+// not park on HA's ack, so the event loop stays free during the device
+// round trip.
+const mirrorScriptNoWait = `
+ha.immediate_events()
+ha.on_state_change("switch.a", function(change)
+  ha.call_service("switch", "turn_" .. change.new_state.state, { entity_id = "switch.b" }, { wait = false })
 end)
 global.set("loaded", "bench")
 `

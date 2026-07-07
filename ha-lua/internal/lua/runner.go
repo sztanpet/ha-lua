@@ -32,6 +32,16 @@ type TimerFiredEvent struct {
 	TimerID string
 }
 
+// asyncScriptError carries a failure from a fire-and-forget operation (a
+// call_service with wait=false) back to the script goroutine, where it is
+// dispatched to the script's on_exception handler. It rides its own
+// never-closed channel — the event channel closes on script stop and a
+// late verdict must not panic.
+type asyncScriptError struct {
+	callback string
+	errMsg   string
+}
+
 // batchWindow is how long HA events are coalesced before a script's handlers
 // run. state_changed events for the same entity within a window collapse to the
 // newest (a chatty sensor that flaps 50×/s becomes one dispatch per window);
@@ -73,6 +83,10 @@ type Runner struct {
 	// (bounded by its deadline), never panic.
 	reqCh    chan *request
 	timerFns map[string]*lua.LFunction
+	// asyncErrCh delivers async-call failures to the run loop for
+	// on_exception dispatch. Never closed, like reqCh; senders bail out on
+	// the script context instead.
+	asyncErrCh chan asyncScriptError
 
 	// LoadedCh is closed once the script has finished loading.
 	LoadedCh chan struct{}
@@ -88,26 +102,30 @@ type Runner struct {
 
 	// Wired by caller after construction; nil = not yet connected.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
-	fireEvent   func(ctx context.Context, eventType string, data jsontext.Value) error
-	setState    func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
-	removeState func(ctx context.Context, entityID string) error
+	// callServiceAsync sends synchronously (wire order = call order) and
+	// yields HA's verdict on the returned channel; backs { wait = false }.
+	callServiceAsync func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error)
+	fireEvent        func(ctx context.Context, eventType string, data jsontext.Value) error
+	setState         func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
+	removeState      func(ctx context.Context, entityID string) error
 }
 
 // NewRunner creates a Runner. Call Start to load and run the script.
 func NewRunner(scriptID, scriptDir string, root, logsRoot *os.Root, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
 	return &Runner{
-		scriptID:  scriptID,
-		scriptDir: scriptDir,
-		root:      root,
-		logsRoot:  logsRoot,
-		ch:        make(chan Event, 256),
-		reqCh:     make(chan *request),
-		LoadedCh:  make(chan struct{}),
-		timerFns:  make(map[string]*lua.LFunction),
-		tracker:   tracker,
-		scheduler: scheduler,
-		kv:        kv,
-		global:    global,
+		scriptID:   scriptID,
+		scriptDir:  scriptDir,
+		root:       root,
+		logsRoot:   logsRoot,
+		ch:         make(chan Event, 256),
+		reqCh:      make(chan *request),
+		asyncErrCh: make(chan asyncScriptError, 16),
+		LoadedCh:   make(chan struct{}),
+		timerFns:   make(map[string]*lua.LFunction),
+		tracker:    tracker,
+		scheduler:  scheduler,
+		kv:         kv,
+		global:     global,
 	}
 }
 
@@ -117,6 +135,12 @@ func (r *Runner) ScriptID() string { return r.scriptID }
 // SetCallService wires the call_service function. Must be called before Start.
 func (r *Runner) SetCallService(fn func(ctx context.Context, domain, service string, data jsontext.Value) error) {
 	r.callService = fn
+}
+
+// SetCallServiceAsync wires the fire-and-forget service call used by
+// ha.call_service{ wait = false }. Must be called before Start.
+func (r *Runner) SetCallServiceAsync(fn func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error)) {
+	r.callServiceAsync = fn
 }
 
 // SetFireEvent wires the fire_event function. Must be called before Start.
@@ -176,14 +200,16 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	defer L.Close()
 
 	api := &haAPI{
-		scriptID:    r.scriptID,
-		tracker:     r.tracker,
-		scheduler:   r.scheduler,
-		callService: r.callService,
-		fireEvent:   r.fireEvent,
-		setState:    r.setState,
-		removeState: r.removeState,
-		timerFns:    make(map[string]*lua.LFunction),
+		scriptID:         r.scriptID,
+		tracker:          r.tracker,
+		scheduler:        r.scheduler,
+		callService:      r.callService,
+		callServiceAsync: r.callServiceAsync,
+		asyncErrCh:       r.asyncErrCh,
+		fireEvent:        r.fireEvent,
+		setState:         r.setState,
+		removeState:      r.removeState,
+		timerFns:         make(map[string]*lua.LFunction),
 	}
 	r.registerHaAPI(L, api)
 	registerStoreAPI(L, r.kv, r.global)
@@ -232,6 +258,8 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			return
 		case req := <-r.reqCh:
 			r.handleRequest(L, api, req)
+		case aerr := <-r.asyncErrCh:
+			dispatchException(L, api, aerr.errMsg, "", aerr.callback, nil)
 		case ev, ok := <-r.ch:
 			if !ok {
 				flush() // channel closed: dispatch the final window, then stop
