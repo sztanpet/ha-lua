@@ -16,7 +16,9 @@ func newTracker(t *testing.T) *Tracker {
 	if err := Migrate(writeDB); err != nil {
 		t.Fatal(err)
 	}
-	return New(writeDB, readDB)
+	tr := New(writeDB, readDB)
+	tr.Start(t.Context())
+	return tr
 }
 
 func TestSeedAndGetState(t *testing.T) {
@@ -200,6 +202,7 @@ func TestHandleStateChangedRemoval(t *testing.T) {
 	}
 
 	// The seeded state happened; history must still carry it.
+	tr.Flush() // the removal's mirror delete is write-behind
 	history, err := tr.GetHistory(ctx, "automation.foo", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +228,8 @@ func TestStateHistoryAppended(t *testing.T) {
 		"new_state": {"entity_id":"light.living","state":"on","attributes":{},"last_changed":"2026-01-01T01:00:00Z","last_updated":"2026-01-01T01:00:00Z"}
 	}`))
 
+	// History appends are write-behind; Flush is the test barrier.
+	tr.Flush()
 	history, err := tr.GetHistory(ctx, "light.living", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
 	if err != nil {
 		t.Fatal(err)
@@ -322,8 +327,9 @@ func BenchmarkStateInsert(b *testing.B) {
 		b.Fatal(err)
 	}
 	tr := New(writeDB, readDB)
-	_ = tr.Seed(context.Background(), nil) // ensure tables exist
 	ctx := context.Background()
+	tr.Start(ctx)
+	_ = tr.Seed(ctx, nil) // ensure tables exist
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -331,4 +337,6 @@ func BenchmarkStateInsert(b *testing.B) {
 			"entity_id":"bench.entity","new_state":{"entity_id":"bench.entity","state":"on","attributes":{},"last_changed":"2026-01-01T00:00:00Z","last_updated":"2026-01-01T00:00:00Z"}
 		}`))
 	}
+	// Include the persistence drain so the number stays honest end-to-end.
+	tr.Flush()
 }

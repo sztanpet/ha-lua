@@ -193,6 +193,7 @@ func startPipeline(tb testing.TB, ctx context.Context, script string, seed []map
 	tb.Cleanup(func() { writeDB.Close(); readDB.Close() })
 
 	tracker := state.New(writeDB, readDB)
+	tracker.Start(ctx)
 	global := store.NewGlobal(writeDB, readDB)
 	reg := luapkg.NewRegistry()
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)

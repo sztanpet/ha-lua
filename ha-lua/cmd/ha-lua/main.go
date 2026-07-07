@@ -79,6 +79,7 @@ func main() {
 	defer readDB.Close()
 
 	tracker := state.New(writeDB, readDB)
+	tracker.Start(ctx)
 	globalStore := store.NewGlobal(writeDB, readDB)
 
 	loc, err := scheduler.ResolveLocation(cfg.Timezone)

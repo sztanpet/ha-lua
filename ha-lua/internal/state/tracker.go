@@ -20,22 +20,172 @@ import (
 // events are dispatched to scripts, so a handler's GetState always reflects
 // every change dispatched before its own event — without putting SQLite on
 // the read path. History queries stay on SQLite (that is what it is for).
+//
+// Persistence is write-behind: HandleStateChanged enqueues, and a single
+// writer goroutine (Start) drains the queue into one batched transaction per
+// wakeup. The event-dispatch path therefore never waits on the write handle —
+// not for a WAL checkpoint, not for the purge DELETE, not for a script's
+// store.set.
 type Tracker struct {
 	writeDB *sql.DB
 	readDB  *sql.DB
 
 	mu  sync.RWMutex
 	mem map[string]ha.StateData
+
+	queue chan writeReq
 }
+
+// writeReq is one unit of write-behind work: an upsert (upsert != nil), a
+// mirror-row delete (del != ""), or a flush marker (flush != nil, closed by
+// the writer once everything enqueued before it is committed).
+type writeReq struct {
+	upsert *ha.StateData
+	del    string
+	flush  chan struct{}
+}
+
+// writeQueueCap bounds the write-behind queue. With batching, the writer
+// outruns any realistic event rate; a full queue means the disk has stalled
+// for thousands of events, and blocking (backpressure) is then honest —
+// dropping history rows silently is not.
+const writeQueueCap = 1024
 
 // New creates a Tracker. Both handles must already have the schema applied.
 // The memory mirror starts empty; Seed fills it (scripts only start after the
-// first seed, so nothing reads before then).
+// first seed, so nothing reads before then). Call Start to begin persisting —
+// until then writes only accumulate in the queue.
 func New(writeDB, readDB *sql.DB) *Tracker {
 	return &Tracker{
 		writeDB: writeDB,
 		readDB:  readDB,
 		mem:     make(map[string]ha.StateData),
+		queue:   make(chan writeReq, writeQueueCap),
+	}
+}
+
+// Start launches the write-behind goroutine. It exits when ctx is cancelled,
+// after a best-effort drain of whatever is already queued.
+func (t *Tracker) Start(ctx context.Context) {
+	go t.writeLoop(ctx)
+}
+
+// Flush blocks until every write enqueued before it is committed. Test
+// helper by design; production code never needs a barrier (memory is
+// authoritative and history is read on human timescales).
+func (t *Tracker) Flush() {
+	done := make(chan struct{})
+	t.queue <- writeReq{flush: done}
+	<-done
+}
+
+func (t *Tracker) writeLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			// Best-effort final drain: commit what is buffered, then stop.
+			// Anything arriving after this is lost, which is inside the
+			// accepted durability class (same as a power cut).
+			t.commitBatch(t.drainQueue(nil))
+			return
+		case req := <-t.queue:
+			t.commitBatch(t.drainQueue([]writeReq{req}))
+		}
+	}
+}
+
+// drainQueue appends everything immediately available to batch.
+func (t *Tracker) drainQueue(batch []writeReq) []writeReq {
+	for {
+		select {
+		case req := <-t.queue:
+			batch = append(batch, req)
+		default:
+			return batch
+		}
+	}
+}
+
+// commitBatch writes one batch in a single transaction, retrying once. On
+// repeated failure the batch is dropped loudly: memory stays authoritative,
+// scripts keep working, only history has a gap. Flush markers are resolved
+// after the commit (or the drop — a barrier must not deadlock on a bad disk).
+func (t *Tracker) commitBatch(batch []writeReq) {
+	work := 0
+	for _, req := range batch {
+		if req.flush == nil {
+			work++
+		}
+	}
+	if work > 0 {
+		err := t.writeBatch(batch)
+		if err != nil {
+			slog.Warn("state: batch write failed, retrying", "n", work, "err", err)
+			err = t.writeBatch(batch)
+		}
+		if err != nil {
+			slog.Error("state: batch write failed twice, dropping",
+				"n", work, "err", err)
+		}
+	}
+	for _, req := range batch {
+		if req.flush != nil {
+			close(req.flush)
+		}
+	}
+}
+
+func (t *Tracker) writeBatch(batch []writeReq) error {
+	// context.Background on purpose: a daemon shutdown must not abort a
+	// commit that is already in flight.
+	ctx := context.Background()
+	tx, err := t.writeDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, req := range batch {
+		switch {
+		case req.del != "":
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM states WHERE entity_id = ?`, req.del); err != nil {
+				return fmt.Errorf("delete removed entity %s: %w", req.del, err)
+			}
+		case req.upsert != nil:
+			s := req.upsert
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
+				VALUES(?,?,?,?,?)
+				ON CONFLICT(entity_id) DO UPDATE SET
+				  state=excluded.state, attributes=excluded.attributes,
+				  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
+				s.EntityID, s.State, string(s.Attributes), s.LastChanged, s.LastUpdated); err != nil {
+				return fmt.Errorf("upsert states %s: %w", s.EntityID, err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO state_history(entity_id, state, attributes, changed_at)
+				VALUES(?,?,?,?)`,
+				s.EntityID, s.State, string(s.Attributes), s.LastChanged); err != nil {
+				return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
+			}
+		}
+	}
+	return tx.Commit()
+}
+
+// enqueue hands a write to the writer goroutine. Blocks when the queue is
+// full (see writeQueueCap); ctx aborts the wait so a shutdown can't wedge
+// the caller.
+func (t *Tracker) enqueue(ctx context.Context, req writeReq) {
+	select {
+	case t.queue <- req:
+	default:
+		slog.Warn("state: write queue full, backpressuring event dispatch")
+		select {
+		case t.queue <- req:
+		case <-ctx.Done():
+			slog.Warn("state: shutdown with full write queue, dropping write")
+		}
 	}
 }
 
@@ -138,10 +288,10 @@ type StateChangedData struct {
 	OldState *ha.StateData `json:"old_state"`
 }
 
-// HandleStateChanged applies the change to the memory mirror, then upserts
-// the new state and appends a history row in SQLite. Memory is updated first
-// and unconditionally: reads must see the new state even if the disk write
-// fails — scripts keep working on a dying disk, only history gets gaps.
+// HandleStateChanged applies the change to the memory mirror synchronously
+// (the caller dispatches to scripts right after, and their GetState must see
+// it), then enqueues the SQLite work for the write-behind goroutine. Only a
+// decode failure is an error; persistence problems are the writer's to log.
 func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) error {
 	var data StateChangedData
 	if err := json.Unmarshal(raw, &data); err != nil {
@@ -157,44 +307,17 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 		t.mu.Lock()
 		delete(t.mem, data.EntityID)
 		t.mu.Unlock()
-		if _, err := t.writeDB.ExecContext(ctx,
-			`DELETE FROM states WHERE entity_id = ?`, data.EntityID); err != nil {
-			return fmt.Errorf("delete removed entity %s: %w", data.EntityID, err)
-		}
+		t.enqueue(ctx, writeReq{del: data.EntityID})
 		return nil
 	}
 
-	ns := data.NewState
-	attrs := attrStr(ns.Attributes)
-
-	mem := *ns
-	mem.Attributes = jsontext.Value(attrs)
+	ns := *data.NewState
+	ns.Attributes = jsontext.Value(attrStr(ns.Attributes))
 	t.mu.Lock()
-	t.mem[ns.EntityID] = mem
+	t.mem[ns.EntityID] = ns
 	t.mu.Unlock()
-
-	tx, err := t.writeDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
-		VALUES(?,?,?,?,?)
-		ON CONFLICT(entity_id) DO UPDATE SET
-		  state=excluded.state, attributes=excluded.attributes,
-		  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
-		ns.EntityID, ns.State, attrs, ns.LastChanged, ns.LastUpdated); err != nil {
-		return fmt.Errorf("upsert states %s: %w", ns.EntityID, err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO state_history(entity_id, state, attributes, changed_at)
-		VALUES(?,?,?,?)`,
-		ns.EntityID, ns.State, attrs, ns.LastChanged); err != nil {
-		return fmt.Errorf("insert state_history %s: %w", ns.EntityID, err)
-	}
-	return tx.Commit()
+	t.enqueue(ctx, writeReq{upsert: &ns})
+	return nil
 }
 
 // GetState returns the current state for an entity, from memory.
