@@ -1,6 +1,10 @@
 package ha
 
-import "github.com/go-json-experiment/json/jsontext"
+import (
+	"time"
+
+	"github.com/go-json-experiment/json/jsontext"
+)
 
 // Outgoing message types
 type authMsg struct {
@@ -57,6 +61,11 @@ type Event struct {
 	Type      string         `json:"event_type"`
 	TimeFired string         `json:"time_fired"`
 	Data      jsontext.Value `json:"data"`
+	// ReceivedAt is stamped by the read loop when the frame arrives, so
+	// consumers can measure how long an event waited for its handler
+	// (tracker write, channel, batch window, a parked event loop). Not a
+	// wire field.
+	ReceivedAt time.Time `json:"-"`
 }
 
 // eventEnvelope matches the outer "event" wrapper in a subscription message

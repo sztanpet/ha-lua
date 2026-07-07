@@ -413,6 +413,7 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			slog.Warn("ha: failed to parse event", "err", err)
 			continue
 		}
+		env.Event.ReceivedAt = time.Now()
 		select {
 		case c.Events <- env.Event:
 		case <-ctx.Done():

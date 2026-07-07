@@ -290,8 +290,24 @@ func (r *Runner) deliverInitialStates(ctx context.Context, L *lua.LState, api *h
 	}
 }
 
+// warnDispatchDelay is the queue-to-handler delay above which an event gets a
+// warning instead of a debug line. It sits well above the batch window, so a
+// warning always means something real: a parked event loop (a handler blocked
+// in a synchronous call) or a backed-up channel.
+const warnDispatchDelay = 250 * time.Millisecond
+
 func (r *Runner) handleEvent(L *lua.LState, api *haAPI, ev Event) {
 	if ev.HAEvent != nil {
+		if !ev.HAEvent.ReceivedAt.IsZero() {
+			delay := time.Since(ev.HAEvent.ReceivedAt)
+			if delay >= warnDispatchDelay {
+				slog.Warn("lua: event waited long for its handler",
+					"script", r.scriptID, "event", ev.HAEvent.Type, "delay", delay)
+			} else {
+				slog.Debug("lua: event dispatch delay",
+					"script", r.scriptID, "event", ev.HAEvent.Type, "delay", delay)
+			}
+		}
 		r.handleHAEvent(L, api, *ev.HAEvent)
 	}
 	if ev.TimerFired != nil {

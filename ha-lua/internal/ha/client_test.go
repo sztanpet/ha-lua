@@ -179,6 +179,9 @@ func TestEventDelivery(t *testing.T) {
 		if ev.Type != "state_changed" {
 			t.Errorf("expected state_changed, got %q", ev.Type)
 		}
+		if ev.ReceivedAt.IsZero() {
+			t.Error("event not stamped with ReceivedAt")
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for event")
 	}
