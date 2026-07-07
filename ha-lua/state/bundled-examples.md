@@ -32,3 +32,24 @@ Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0).
 
 NOTE: the cards/ embed package (enhanced-climate-card.js → /config/www/ha-lua)
 follows this same Materialize pattern — see `enhanced-climate.md`.
+
+## mirrored_switches latency follow-up (2026-07-07)
+- User benchmarked mirrored_switches.lua against the equivalent built-in HA
+  automation and found ha-lua empirically slower. Root cause: the default
+  100 ms event batch window (internal/lua/runner.go batchWindow), NOT the
+  architecture — the inherent floor (two WS hops + WAL write before dispatch)
+  is a few ms. The example never called ha.immediate_events().
+- 46a0f6b examples: mirrored_switches now calls ha.immediate_events() with a
+  comment explaining the human-visible-lag case AND why batching is the
+  default (real event loss without it).
+- e1b57e7 docs: loud callouts everywhere a user would look — lua_api.md
+  immediate_events blockquote ("first thing to check when a script feels
+  slower than a built-in automation") + pointer from on_state_change,
+  DOCS.md "feels slower?" note after the first-script walkthrough + API
+  table row, README.md design-decisions entry on the batching trade-off.
+- Deliberately NOT changed: the 100 ms default itself — batching was added
+  because unbatched bursts REALLY dropped events (user-confirmed history,
+  not hypothetical), so immediate delivery stays per-script opt-in — and
+  the tracker-write-before-dispatch ordering in main.go
+  (load-bearing: handlers read partner state via ha.get_state from the
+  mirror, so persisting first is what makes the handler see fresh state).

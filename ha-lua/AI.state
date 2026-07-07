@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-03 (v3.0.0: fs write support + rooted log_file)
+Last updated: 2026-07-07 (mirrored_switches latency: immediate_events + docs)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,12 +11,14 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v3.0.0, fully closing fs-plugin-spec.md: fs.write/append/mkdir/
-remove on the scripts root (§9.1, un-deferred on user request), and
-ha.exceptions.log_file confined to a SECOND os.Root over log_dir —
-BREAKING: log_file paths are now relative to /config/ha-lua/logs, bad
-paths / unset log_dir raise at registration. Also rooted LoadAll script
-enumeration (§9.6). Details in `state/fs-plugin.md`.
+Investigated why mirrored_switches.lua felt slower than the equivalent
+built-in HA automation: the default 100 ms event batch window, not the
+architecture (inherent floor is a few ms). The example now calls
+ha.immediate_events() (46a0f6b) and the window is called out loudly in
+lua_api.md, DOCS.md, and README.md (e1b57e7) — including WHY batching
+is the default (unbatched bursts really dropped events). The 100 ms
+default and the tracker-write-before-dispatch ordering stay as-is.
+Details in `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -144,6 +146,7 @@ add-on change, minor = feature, patch = fix.
 - **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
 - **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie). The watcher only watches .lua — editing a sibling .html alone does NOT reload
 - **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect
+- **Event batching**: 100 ms per-script coalescing window (runner.go batchWindow) is the default because unbatched bursts REALLY dropped events (overflowed script channels) before batching existed; latency-sensitive scripts opt out per-script via ha.immediate_events() (do NOT make immediate the default or lower the window). Tracker write stays BEFORE Dispatch in main.go — handlers read fresh state via ha.get_state
 - **Lua VM stays gopher-lua**: arnodel/golua (Lua 5.4/5.5) evaluated 2026-06-13 and rejected — v0.x single-maintainer vs battle-tested v1.x; CPS binding API is more verbose than LState stack API across ~30 bindings; M6 stop semantics depend on SetContext; 5.3+ integers would split the number type through the whole JSON layer. Reasons documented in README. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real script-author problem
 - **Card components**: the Lovelace card uses plain HTML + HA CSS theme variables, NOT HA's undocumented styling primitives (ha-button/ha-switch/...), which churn across releases. It DOES use the load-safe ones: <ha-card>, <ha-icon>, and ha-entity-picker/ha-entities-picker in the config editor (flagged as version-fragile). No build step, no imports — one vanilla file
 - **No vendoring**: vendor/ measures 241MB (226MB = modernc.org); go.sum + module proxy pin and preserve everything; `go mod vendor` is one command away if hermetic offline builds are ever needed
