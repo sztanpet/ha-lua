@@ -36,12 +36,11 @@ type Tracker struct {
 	queue chan writeReq
 }
 
-// writeReq is one unit of write-behind work: an upsert (upsert != nil), a
-// mirror-row delete (del != ""), or a flush marker (flush != nil, closed by
-// the writer once everything enqueued before it is committed).
+// writeReq is one unit of write-behind work: a history append (upsert !=
+// nil) or a flush marker (flush != nil, closed by the writer once everything
+// enqueued before it is committed).
 type writeReq struct {
 	upsert *ha.StateData
-	del    string
 	flush  chan struct{}
 }
 
@@ -145,29 +144,15 @@ func (t *Tracker) writeBatch(batch []writeReq) error {
 	}
 	defer tx.Rollback()
 	for _, req := range batch {
-		switch {
-		case req.del != "":
-			if _, err := tx.ExecContext(ctx,
-				`DELETE FROM states WHERE entity_id = ?`, req.del); err != nil {
-				return fmt.Errorf("delete removed entity %s: %w", req.del, err)
-			}
-		case req.upsert != nil:
-			s := req.upsert
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
-				VALUES(?,?,?,?,?)
-				ON CONFLICT(entity_id) DO UPDATE SET
-				  state=excluded.state, attributes=excluded.attributes,
-				  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
-				s.EntityID, s.State, string(s.Attributes), s.LastChanged, s.LastUpdated); err != nil {
-				return fmt.Errorf("upsert states %s: %w", s.EntityID, err)
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO state_history(entity_id, state, attributes, changed_at)
-				VALUES(?,?,?,?)`,
-				s.EntityID, s.State, string(s.Attributes), s.LastChanged); err != nil {
-				return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
-			}
+		if req.upsert == nil {
+			continue
+		}
+		s := req.upsert
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO state_history(entity_id, state, attributes, changed_at)
+			VALUES(?,?,?,?)`,
+			s.EntityID, s.State, string(s.Attributes), s.LastChanged); err != nil {
+			return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
 		}
 	}
 	return tx.Commit()
@@ -189,56 +174,69 @@ func (t *Tracker) enqueue(ctx context.Context, req writeReq) {
 	}
 }
 
-// Seed upserts all states returned by get_states into the mirror. A history
-// row is appended only when the state or attributes differ from the mirror —
-// reconnects re-seed, and unconditional appends would fill the history with
-// phantom state changes.
+// Seed replaces the memory mirror with the batch and appends a history row
+// for every entity whose state or attributes differ from the last known
+// value. The comparison baseline is the memory mirror when populated (a
+// reconnect re-seed — it reflects every event applied so far), or, on a cold
+// start, the newest history row per entity. Unconditional appends would fill
+// the history with phantom state changes on every reconnect.
 //
-// Mirror rows absent from the batch are deleted: an entity removed from HA
-// while the daemon was disconnected sends no nil-new_state event, so the seed
-// is the only place the removal can be observed. An empty batch deletes
-// nothing — get_states never legitimately returns zero states, so treating it
-// as "everything was removed" would wipe the mirror on a protocol hiccup.
+// Cold-start corollary: an entity whose entire history has been purged (it
+// last changed before the retention window) gets one fresh baseline row per
+// daemon restart. That is a truthful "state at startup" observation, bounded
+// to one row per stale entity per restart, and it keeps the retention window
+// self-contained.
+//
+// Ghost entities (present before, absent from the batch) drop out with the
+// map replacement — the seed is the only place a removal that happened while
+// disconnected can be observed. Their history ages out via the purge. An
+// empty batch replaces nothing: get_states never legitimately returns zero
+// states, and treating it as "everything was removed" would wipe the mirror
+// on a protocol hiccup.
 func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
+	if len(states) == 0 {
+		return nil
+	}
+
+	type mirror struct{ state, attrs string }
+	current := make(map[string]mirror)
+	t.mu.RLock()
+	for id, s := range t.mem {
+		current[id] = mirror{state: s.State, attrs: string(s.Attributes)}
+	}
+	t.mu.RUnlock()
+
+	if len(current) == 0 {
+		// Cold start: the newest history row per entity is the last state
+		// this daemon ever recorded (id is the autoincrement insert order).
+		rows, err := t.readDB.QueryContext(ctx, `
+			SELECT entity_id, state, attributes FROM state_history
+			WHERE id IN (SELECT MAX(id) FROM state_history GROUP BY entity_id)`)
+		if err != nil {
+			return fmt.Errorf("read history baseline: %w", err)
+		}
+		for rows.Next() {
+			var id string
+			var m mirror
+			if err := rows.Scan(&id, &m.state, &m.attrs); err != nil {
+				rows.Close()
+				return err
+			}
+			current[id] = m
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
 	tx, err := t.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	type mirror struct{ state, attrs string }
-	current := make(map[string]mirror)
-	rows, err := tx.QueryContext(ctx, `SELECT entity_id, state, attributes FROM states`)
-	if err != nil {
-		return fmt.Errorf("read mirror: %w", err)
-	}
-	for rows.Next() {
-		var id string
-		var m mirror
-		if err := rows.Scan(&id, &m.state, &m.attrs); err != nil {
-			rows.Close()
-			return err
-		}
-		current[id] = m
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	seen := make(map[string]struct{}, len(states))
 	for _, s := range states {
-		seen[s.EntityID] = struct{}{}
 		attrs := attrStr(s.Attributes)
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO states(entity_id, state, attributes, last_changed, last_updated)
-			VALUES(?,?,?,?,?)
-			ON CONFLICT(entity_id) DO UPDATE SET
-			  state=excluded.state, attributes=excluded.attributes,
-			  last_changed=excluded.last_changed, last_updated=excluded.last_updated`,
-			s.EntityID, s.State, attrs, s.LastChanged, s.LastUpdated); err != nil {
-			return fmt.Errorf("upsert states %s: %w", s.EntityID, err)
-		}
 		if m, ok := current[s.EntityID]; ok && m.state == s.State && m.attrs == attrs {
 			continue
 		}
@@ -249,35 +247,18 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 			return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
 		}
 	}
-	if len(states) > 0 {
-		for id := range current {
-			if _, ok := seen[id]; ok {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx,
-				`DELETE FROM states WHERE entity_id = ?`, id); err != nil {
-				return fmt.Errorf("delete ghost entity %s: %w", id, err)
-			}
-			slog.Debug("state: entity gone from seed, dropping from mirror", "entity", id)
-		}
-	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 
-	// Replace the memory mirror with the batch — it is a full snapshot, so
-	// ghosts drop out for free. An empty batch replaces nothing, matching
-	// the SQL guard above.
-	if len(states) > 0 {
-		mem := make(map[string]ha.StateData, len(states))
-		for _, s := range states {
-			s.Attributes = jsontext.Value(attrStr(s.Attributes))
-			mem[s.EntityID] = s
-		}
-		t.mu.Lock()
-		t.mem = mem
-		t.mu.Unlock()
+	mem := make(map[string]ha.StateData, len(states))
+	for _, s := range states {
+		s.Attributes = jsontext.Value(attrStr(s.Attributes))
+		mem[s.EntityID] = s
 	}
+	t.mu.Lock()
+	t.mem = mem
+	t.mu.Unlock()
 	return nil
 }
 
@@ -300,14 +281,14 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 	if data.NewState == nil {
 		// HA sends a nil new_state when an entity is removed (e.g. deleting an
 		// automation). That is normal lifecycle, not an error, so log it at
-		// debug rather than warning. Drop the entity from the current-state
-		// mirror so get_state reports it as gone; state_history is append-only
-		// and keeps the past states it really had.
+		// debug rather than warning. Drop the entity from the memory mirror so
+		// get_state reports it as gone; state_history is append-only and keeps
+		// the past states it really had. Nothing to persist — the mirror lives
+		// in memory only.
 		slog.Debug("state: entity removed (nil new_state)", "entity", data.EntityID)
 		t.mu.Lock()
 		delete(t.mem, data.EntityID)
 		t.mu.Unlock()
-		t.enqueue(ctx, writeReq{del: data.EntityID})
 		return nil
 	}
 

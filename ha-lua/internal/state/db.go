@@ -1,5 +1,6 @@
-// Package state mirrors Home Assistant entity state into SQLite: a
-// current-state table for fast lookups plus an append-only history log.
+// Package state mirrors Home Assistant entity state: current state lives in
+// an in-memory map (authoritative, rebuilt from HA's seed on every connect),
+// and an append-only history log is persisted to SQLite write-behind.
 package state
 
 import (
@@ -11,13 +12,10 @@ import (
 )
 
 const schema = `
-CREATE TABLE IF NOT EXISTS states (
-    entity_id    TEXT PRIMARY KEY,
-    state        TEXT NOT NULL,
-    attributes   TEXT NOT NULL DEFAULT '{}',
-    last_changed TEXT NOT NULL,
-    last_updated TEXT NOT NULL
-);
+-- The states mirror table is retired: current state is memory-authoritative
+-- (rebuilt from HA's seed on every connect) and only history is persisted.
+-- The DROP sheds the table from installs that predate the change.
+DROP TABLE IF EXISTS states;
 
 CREATE TABLE IF NOT EXISTS state_history (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,

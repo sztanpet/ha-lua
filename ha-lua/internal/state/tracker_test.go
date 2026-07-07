@@ -102,6 +102,55 @@ func TestSeedSkipsUnchangedHistory(t *testing.T) {
 	}
 }
 
+// TestSeedDedupAcrossRestart: a fresh tracker over an existing database (a
+// daemon restart — memory empty, history persisted) must dedup its first
+// seed against the newest history row per entity, not append a phantom row
+// for every entity in the home.
+func TestSeedDedupAcrossRestart(t *testing.T) {
+	writeDB, readDB := testutil.NewTestDB(t, nil)
+	if err := Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	states := []ha.StateData{
+		{EntityID: "light.test", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	}
+	before := New(writeDB, readDB)
+	before.Start(t.Context())
+	if err := before.Seed(ctx, states); err != nil {
+		t.Fatalf("seed before restart: %v", err)
+	}
+
+	// "Restart": a new tracker over the same database.
+	after := New(writeDB, readDB)
+	after.Start(t.Context())
+	if err := after.Seed(ctx, states); err != nil {
+		t.Fatalf("seed after restart: %v", err)
+	}
+	since := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	h, err := after.GetHistory(ctx, "light.test", since, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h) != 1 {
+		t.Errorf("identical seed across restart: want 1 history row, got %d", len(h))
+	}
+
+	// A state that really changed while the daemon was down gets its row.
+	states[0].State = "off"
+	states[0].LastChanged = "2026-01-01T02:00:00Z"
+	again := New(writeDB, readDB)
+	again.Start(t.Context())
+	if err := again.Seed(ctx, states); err != nil {
+		t.Fatalf("changed seed after restart: %v", err)
+	}
+	if h, err = again.GetHistory(ctx, "light.test", since, 100); err != nil || len(h) != 2 {
+		t.Errorf("changed seed across restart: want 2 history rows, got %d (%v)", len(h), err)
+	}
+}
+
 // TestSeedDeletesGhostEntities covers an entity removed from HA while the
 // daemon was disconnected: it sends no nil-new_state event, so the re-seed is
 // the only place the removal is visible. The mirror must drop it; its history
