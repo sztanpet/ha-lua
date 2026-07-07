@@ -4,6 +4,21 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.2.0 - 2026-07-07
+
+### Changed
+- **The `states` mirror table is gone from the database** — current state
+  has been memory-authoritative since 3.1.0, and the table's last reader
+  (seed deduplication) now compares against memory on reconnect and
+  against the newest history row per entity on a cold start. The schema
+  drops the table automatically on upgrade; only `state_history` (and
+  the KV/timer tables) are persisted now, and all SQLite writes flow
+  through one batched write-behind path.
+- Startup edge worth knowing: an entity whose entire history has aged
+  out of the retention window gets one fresh "state at startup" history
+  row per daemon restart, so the retention window is always
+  self-contained.
+
 ## 3.1.0 - 2026-07-07
 
 ### Added
