@@ -4,6 +4,37 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.1.0 - 2026-07-07
+
+### Added
+- **`ha.call_service(domain, service, data, { wait = false })`** — the
+  command is still sent (in order) before the call returns, but HA's
+  confirmation is awaited in the background and a rejection is routed to
+  `ha.on_exception` instead of raising in the handler. Without it, the
+  synchronous wait parks the script's whole event loop for the device
+  round trip: a quick on-then-off toggle delivered the second flip only
+  after the first one's confirmation (measured ~100ms ack → ~0.4ms).
+  The `mirrored_switches` example uses it.
+- Slow event dispatch is now visible in the log: every event carries a
+  receive timestamp, the queue-to-handler delay is logged at debug, and
+  anything above 250ms logs a warning naming the script.
+
+### Changed
+- **Current entity state is now held in memory** and every event is
+  applied to it before your handlers run: `ha.get_state` /
+  `ha.get_entities` are map lookups that can never be stale and never
+  touch the database. SQLite persistence happens write-behind in batched
+  transactions, so event dispatch no longer waits on the disk — WAL
+  checkpoints, the retention purge, and `store.set` traffic can't delay
+  handlers anymore (measured: p99 event→command latency fell ~14×, and
+  disk-contention spikes disappeared).
+- `ha.get_entities` / `ha.get_entity_ids` results are sorted by entity
+  id, and a malformed glob pattern now raises instead of silently
+  matching nothing.
+- `ha.get_history` may not yet include an event dispatched in the same
+  instant (history is written behind by design; current state is not
+  affected).
+
 ## 3.0.1 - 2026-07-07
 
 ### Fixed
