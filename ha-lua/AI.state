@@ -11,13 +11,12 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-mirrored_switches latency vs built-in HA automations, two rounds: (1) the
+Released v3.0.1: the mirrored_switches latency work, two rounds: (1) the
 100 ms batch window — example now calls ha.immediate_events() (46a0f6b),
 window documented loudly incl. why batching stays default (e1b57e7);
 (2) residual VARIANCE — SQLite ran at synchronous=FULL, one fsync per
 state_changed commit on the dispatch critical path; c09f35f sets
-WAL+synchronous=NORMAL. Not yet released — needs a patch release to
-reach the add-on. Details in `state/bundled-examples.md`.
+WAL+synchronous=NORMAL. Details in `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -37,6 +36,10 @@ reach the add-on. Details in `state/bundled-examples.md`.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.0.1 (2026-07-07): latency fixes — SQLite synchronous=NORMAL (fsync
+  jitter was on the event-dispatch critical path); mirrored_switches
+  example opts into ha.immediate_events(); 100 ms batch window documented
+  loudly. See `state/bundled-examples.md`.
 - 3.0.0 (2026-07-03): fs write support (write/append/mkdir/remove on the
   scripts root) + BREAKING ha.exceptions.log_file paths now relative to
   log_dir (own os.Root; abs/../unset-log_dir raise at registration);

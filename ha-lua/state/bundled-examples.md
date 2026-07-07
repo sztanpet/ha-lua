@@ -63,3 +63,4 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   WAL autocheckpoint (~1000 pages, runs on the committing writer) and
   the hourly purge DELETE holding the write connection; both left alone
   until actually measured as a problem.
+- Both rounds shipped in v3.0.1 (2026-07-07, tag on 4cdd2a1).
