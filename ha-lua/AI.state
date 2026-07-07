@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-07 (latency round 2: SQLite synchronous=NORMAL)
+Last updated: 2026-07-07 (v3.2.0: states table retired, phase 2 reviewed)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,12 +11,15 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v3.1.0, completing the event-latency track (M0–M5, all in
-one day): call_service { wait = false } (off-toggle 100.7ms→0.37ms),
-memory-authoritative state mirror + write-behind batched persistence
-(event→command p99 5.2ms→0.36ms, disk-contention spikes eliminated),
-dispatch-delay instrumentation, docs. Phase-2 deferred: dropping the
-write-only states table. Details in `state/event-latency.md`.
+Released v3.2.0, closing the event-latency track's phase 2: the states
+mirror table is retired (seed dedups vs memory on reconnect / newest
+history row on cold start; schema DROPs it on upgrade), and the
+user-requested post-refactor review landed one simplification (seed
+appends ride the write-behind queue — writeBatch is the single SQL
+write site). v3.1.0 earlier the same day shipped the track itself
+(wait=false, memory mirror, write-behind, instrumentation). Final
+numbers: event→command mean 150µs, p99 0.33ms, off-toggle 0.2ms.
+Details in `state/event-latency.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -39,6 +42,10 @@ write-only states table. Details in `state/event-latency.md`.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.2.0 (2026-07-07): states mirror table retired — memory-authoritative
+  since 3.1.0; seed dedups vs memory (reconnect) / newest history row
+  (cold start); schema DROPs the table on upgrade; seed appends ride the
+  write-behind queue. See `state/event-latency.md` (phase 2 + review).
 - 3.1.0 (2026-07-07): event-latency track — call_service { wait = false }
   (async verdict → on_exception), memory-authoritative state mirror,
   write-behind batched persistence, dispatch-delay warn logs. See
