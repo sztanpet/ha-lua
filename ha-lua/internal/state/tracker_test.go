@@ -293,6 +293,16 @@ func TestGetEntities(t *testing.T) {
 	if len(ids) != 2 {
 		t.Errorf("expected 2 entity IDs, got %d", len(ids))
 	}
+	// Sorted output: map iteration is random, callers (and tests) deserve
+	// deterministic order.
+	if ids[0] != "light.bedroom" || ids[1] != "light.kitchen" {
+		t.Errorf("ids not sorted: %v", ids)
+	}
+
+	// A malformed glob is an error, not a silent empty result.
+	if _, err := tr.GetEntities(ctx, "light.["); err == nil {
+		t.Error("malformed pattern: expected an error")
+	}
 }
 
 func TestMigrateIdempotent(t *testing.T) {

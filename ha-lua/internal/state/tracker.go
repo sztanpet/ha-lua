@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-json-experiment/json"
@@ -12,16 +15,28 @@ import (
 	"github.com/sztanpet/ha-lua/internal/ha"
 )
 
-// Tracker writes state changes to SQLite and serves read queries from
-// the read handle.
+// Tracker mirrors current entity state in memory and persists everything to
+// SQLite. The memory map is authoritative for reads: it is updated before
+// events are dispatched to scripts, so a handler's GetState always reflects
+// every change dispatched before its own event — without putting SQLite on
+// the read path. History queries stay on SQLite (that is what it is for).
 type Tracker struct {
 	writeDB *sql.DB
 	readDB  *sql.DB
+
+	mu  sync.RWMutex
+	mem map[string]ha.StateData
 }
 
 // New creates a Tracker. Both handles must already have the schema applied.
+// The memory mirror starts empty; Seed fills it (scripts only start after the
+// first seed, so nothing reads before then).
 func New(writeDB, readDB *sql.DB) *Tracker {
-	return &Tracker{writeDB: writeDB, readDB: readDB}
+	return &Tracker{
+		writeDB: writeDB,
+		readDB:  readDB,
+		mem:     make(map[string]ha.StateData),
+	}
 }
 
 // Seed upserts all states returned by get_states into the mirror. A history
@@ -96,7 +111,24 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 			slog.Debug("state: entity gone from seed, dropping from mirror", "entity", id)
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Replace the memory mirror with the batch — it is a full snapshot, so
+	// ghosts drop out for free. An empty batch replaces nothing, matching
+	// the SQL guard above.
+	if len(states) > 0 {
+		mem := make(map[string]ha.StateData, len(states))
+		for _, s := range states {
+			s.Attributes = jsontext.Value(attrStr(s.Attributes))
+			mem[s.EntityID] = s
+		}
+		t.mu.Lock()
+		t.mem = mem
+		t.mu.Unlock()
+	}
+	return nil
 }
 
 // StateChangedData is the data portion of a state_changed event.
@@ -106,7 +138,10 @@ type StateChangedData struct {
 	OldState *ha.StateData `json:"old_state"`
 }
 
-// HandleStateChanged upserts the new state and appends a history row.
+// HandleStateChanged applies the change to the memory mirror, then upserts
+// the new state and appends a history row in SQLite. Memory is updated first
+// and unconditionally: reads must see the new state even if the disk write
+// fails — scripts keep working on a dying disk, only history gets gaps.
 func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) error {
 	var data StateChangedData
 	if err := json.Unmarshal(raw, &data); err != nil {
@@ -119,6 +154,9 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 		// mirror so get_state reports it as gone; state_history is append-only
 		// and keeps the past states it really had.
 		slog.Debug("state: entity removed (nil new_state)", "entity", data.EntityID)
+		t.mu.Lock()
+		delete(t.mem, data.EntityID)
+		t.mu.Unlock()
 		if _, err := t.writeDB.ExecContext(ctx,
 			`DELETE FROM states WHERE entity_id = ?`, data.EntityID); err != nil {
 			return fmt.Errorf("delete removed entity %s: %w", data.EntityID, err)
@@ -128,6 +166,13 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 
 	ns := data.NewState
 	attrs := attrStr(ns.Attributes)
+
+	mem := *ns
+	mem.Attributes = jsontext.Value(attrs)
+	t.mu.Lock()
+	t.mem[ns.EntityID] = mem
+	t.mu.Unlock()
+
 	tx, err := t.writeDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -152,52 +197,48 @@ func (t *Tracker) HandleStateChanged(ctx context.Context, raw jsontext.Value) er
 	return tx.Commit()
 }
 
-// GetState returns the current state for an entity.
-func (t *Tracker) GetState(ctx context.Context, entityID string) (*ha.StateData, error) {
-	row := t.readDB.QueryRowContext(ctx,
-		`SELECT entity_id, state, attributes, last_changed, last_updated
-		 FROM states WHERE entity_id = ?`, entityID)
-	var s ha.StateData
-	var attrs string
-	if err := row.Scan(&s.EntityID, &s.State, &attrs, &s.LastChanged, &s.LastUpdated); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+// GetState returns the current state for an entity, from memory.
+func (t *Tracker) GetState(_ context.Context, entityID string) (*ha.StateData, error) {
+	t.mu.RLock()
+	s, ok := t.mem[entityID]
+	t.mu.RUnlock()
+	if !ok {
+		return nil, nil
 	}
-	s.Attributes = jsontext.Value(attrs)
 	return &s, nil
 }
 
-// GetEntities returns all states whose entity_id matches the SQL GLOB pattern.
-func (t *Tracker) GetEntities(ctx context.Context, pattern string) ([]ha.StateData, error) {
-	rows, err := t.readDB.QueryContext(ctx,
-		`SELECT entity_id, state, attributes, last_changed, last_updated
-		 FROM states WHERE entity_id GLOB ?`, pattern)
-	if err != nil {
-		return nil, err
+// GetEntities returns all states whose entity_id matches the glob pattern
+// (filepath.Match syntax — the same matcher ha.on_state_change patterns use),
+// sorted by entity_id. Errors only on a malformed pattern.
+func (t *Tracker) GetEntities(_ context.Context, pattern string) ([]ha.StateData, error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	var result []ha.StateData
+	for id, s := range t.mem {
+		ok, err := filepath.Match(pattern, id)
+		if err != nil {
+			return nil, fmt.Errorf("bad pattern %q: %w", pattern, err)
+		}
+		if ok {
+			result = append(result, s)
+		}
 	}
-	defer rows.Close()
-	return scanStates(rows)
+	sort.Slice(result, func(i, j int) bool { return result[i].EntityID < result[j].EntityID })
+	return result, nil
 }
 
-// GetEntityIDs returns entity IDs matching the glob pattern.
+// GetEntityIDs returns entity IDs matching the glob pattern, sorted.
 func (t *Tracker) GetEntityIDs(ctx context.Context, pattern string) ([]string, error) {
-	rows, err := t.readDB.QueryContext(ctx,
-		`SELECT entity_id FROM states WHERE entity_id GLOB ?`, pattern)
+	states, err := t.GetEntities(ctx, pattern)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	ids := make([]string, len(states))
+	for i := range states {
+		ids[i] = states[i].EntityID
 	}
-	return ids, rows.Err()
+	return ids, nil
 }
 
 // sinceLayout renders the get_history `since` bound. changed_at holds HA's
