@@ -153,6 +153,7 @@ Paths below are relative to the `ha-lua/` add-on subfolder (Go module root).
 | `internal/debug/` | Optional pprof/trace HTTP server |
 | `internal/config/` | Config loading — `/data/options.json` in prod, YAML via `--config` in dev |
 | `internal/testutil/` | `NewTestDB`, seed helpers shared across test packages |
+| `internal/e2e/` | End-to-end latency benchmarks: fake HA WS server → full pipeline → `call_service` (test-only; see `event-latency-spec.md`) |
 
 ---
 

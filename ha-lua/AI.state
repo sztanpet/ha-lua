@@ -17,8 +17,9 @@ diagnosed as the synchronous ha.call_service parking the script event
 loop until HA's result frame (sent only after the service completes,
 Zigbee round trip included). Wrote `event-latency-spec.md`: opt-in
 `{ wait = false }` for call_service + memory-authoritative state mirror
-with a background batched SQLite writer. **Awaiting user review before
-build.** Details in `state/event-latency.md`.
+with a background batched SQLite writer. M0 (internal/e2e latency
+benchmark harness) is DONE and confirms both diagnoses by measurement;
+baselines committed. M1–M5 next. Details in `state/event-latency.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

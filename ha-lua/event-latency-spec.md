@@ -158,6 +158,18 @@ also tells us afterwards what the fixes actually bought.
 
 Each is a bisectable commit (or a few) that compiles and passes `make test`.
 
+0. **M0 — measurement harness (done).** `internal/e2e`: fake HA WS server →
+   real client → the verbatim main.go router loop → supervisor-run mirror
+   script → `call_service` back to the fake server, on file-backed SQLite.
+   Three benchmarks map one-to-one onto this spec's claims:
+   `EventToServiceCall` (headline latency + p50/p99),
+   `EventToServiceCallBusyKV` (§3 head-of-line blocking),
+   `QuickToggle` (§2; `off-ns/op` is the user's half second). Baselines are
+   committed in `benchmarks/baseline.txt`; every milestone below must show
+   its effect in `make bench-compare`. Dev-machine baseline: event→command
+   mean ~0.4 ms, p99 ~5 ms; KV noise lifts p99 to ~7–10 ms; `off-ns/op`
+   tracks the simulated 100 ms device ack to the millisecond — both
+   diagnoses confirmed.
 1. **M1 — dispatch-delay instrumentation.** Event timestamps + debug/warn
    logging in the runner.
 2. **M2 — `{ wait = false }` for `ha.call_service`** + async error routing to

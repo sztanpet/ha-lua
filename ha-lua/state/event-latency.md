@@ -26,8 +26,21 @@ synchronous=NORMAL (per-event fsync jitter was on the dispatch path).
 
 ## Milestones
 
+- M0 measurement harness — **DONE** (6c2f5f9 internal/e2e + baseline
+  commit). Fake HA WS server, real client, verbatim main.go router loop,
+  file-backed SQLite, supervisor-run mirror script. Benchmarks:
+  EventToServiceCall (+p50/p99 via ReportMetric), ...BusyKV, QuickToggle
+  (off-ns/op = the user's half second). Dev-machine baseline: mean ~0.4ms,
+  p99 ~5ms, KV noise p99 ~7-10ms, off-ns/op = 100.6ms vs the 100ms
+  simulated ack — BOTH spec diagnoses confirmed by measurement.
+  Workflow: make bench-compare after each milestone; baselines in
+  benchmarks/baseline.txt. NOTE: make bench-update re-RUNS the suite
+  (bench-update: bench); to promote an existing run, cp current.txt
+  baseline.txt.
 - M1 dispatch-delay instrumentation — pending
 - M2 call_service { wait = false } + async error → on_exception — pending
+  (QuickToggle keeps the sync path honest; M2 adds a wait=false variant
+  benchmark alongside)
 - M3 memory-authoritative state mirror — pending
 - M4 background batched writer — pending
 - M5 docs + release — pending
