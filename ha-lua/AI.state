@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-07 (mirrored_switches latency: immediate_events + docs)
+Last updated: 2026-07-07 (latency round 2: SQLite synchronous=NORMAL)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,14 +11,13 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Investigated why mirrored_switches.lua felt slower than the equivalent
-built-in HA automation: the default 100 ms event batch window, not the
-architecture (inherent floor is a few ms). The example now calls
-ha.immediate_events() (46a0f6b) and the window is called out loudly in
-lua_api.md, DOCS.md, and README.md (e1b57e7) — including WHY batching
-is the default (unbatched bursts really dropped events). The 100 ms
-default and the tracker-write-before-dispatch ordering stay as-is.
-Details in `state/bundled-examples.md`.
+mirrored_switches latency vs built-in HA automations, two rounds: (1) the
+100 ms batch window — example now calls ha.immediate_events() (46a0f6b),
+window documented loudly incl. why batching stays default (e1b57e7);
+(2) residual VARIANCE — SQLite ran at synchronous=FULL, one fsync per
+state_changed commit on the dispatch critical path; c09f35f sets
+WAL+synchronous=NORMAL. Not yet released — needs a patch release to
+reach the add-on. Details in `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -143,6 +142,7 @@ add-on change, minor = feature, patch = fix.
 - **golangci-lint**: v2.12.2 (config format version "2"); a `tool` dependency in go.mod alongside staticcheck and benchstat — run via `go tool golangci-lint run`, never go install or a release binary; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow, fsnotify Watcher.Close, os.Root.Close) — configure the tool, don't litter the code with `_ =`
 - **Tool dependencies**: staticcheck, benchstat, golangci-lint are `tool` directives in go.mod (Go 1.24+ idiom; tools.go removed). `make` targets call them as `go tool <name>`. Root `make install-tools` only runs `go mod download`; nothing lands in a bin dir
 - **SQLite DSN**: modernc.org/sqlite pragmas use `_pragma=name(value)` — mattn-style params are silently ignored; any new DB open site must use the modernc form (TestOpenDBEnablesWAL is the canary)
+- **SQLite synchronous=NORMAL** (not the FULL default): every state_changed commits on the write handle before dispatch, and at FULL that fsync's jitter (ms–tens of ms on HA flash) lands directly on script handler latency. WAL+NORMAL loses at most the last commits on power cut, never corrupts; the mirror re-seeds from HA, history is throwaway, timers rebuild at load — do NOT "fix durability" back to FULL
 - **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
 - **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie). The watcher only watches .lua — editing a sibling .html alone does NOT reload
 - **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect

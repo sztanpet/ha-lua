@@ -53,3 +53,13 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   the tracker-write-before-dispatch ordering in main.go
   (load-bearing: handlers read partner state via ha.get_state from the
   mirror, so persisting first is what makes the handler see fresh state).
+- Round 2 (2026-07-07): with immediate_events the user still saw high
+  VARIANCE vs built-in automations. Cause: OpenDB set no synchronous
+  pragma → SQLite default FULL → one WAL fsync per state_changed commit,
+  serialized on the single write connection, on the dispatch critical
+  path (queues behind every other entity's fsync too). c09f35f sets
+  synchronous=NORMAL (+ regression test asserting PRAGMA synchronous=1
+  on both handles). Remaining known spike sources if variance persists:
+  WAL autocheckpoint (~1000 pages, runs on the committing writer) and
+  the hourly purge DELETE holding the write connection; both left alone
+  until actually measured as a problem.
