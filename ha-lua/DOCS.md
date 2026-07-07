@@ -61,6 +61,13 @@ ha.on_exception(ha.exceptions.log_file("hallway-errors.log"))
 
 Save it. The add-on log shows the script loading, and the automation is live.
 
+> **Feels slower than a built-in HA automation?** By default handlers run up to
+> 100 ms after an event arrives: events are batched because unbatched bursts
+> used to overflow script queues and drop events outright. For automations
+> where a human is waiting — a light following a wall switch — put
+> `ha.immediate_events()` at the top of the script. See the
+> `ha.immediate_events()` section in [`lua_api.md`](./lua_api.md).
+
 ## Configuration
 
 ```yaml
@@ -123,6 +130,7 @@ temporarily — it exposes an unauthenticated debug server.
 |----------|---------|
 | `ha.on_state_change(pattern, fn, opts)` | Run `fn` when matching entities change (glob patterns; `opts.initial = true` replays current state on load) |
 | `ha.on_event(type, fn)` | Run `fn` on any Home Assistant event type |
+| `ha.immediate_events()` | Opt out of the default 100 ms event batching — use for latency-sensitive automations |
 | `ha.get_state(entity_id)` | Current state of one entity |
 | `ha.get_entities(pattern)` / `ha.get_entity_ids(pattern)` | Bulk lookup by glob |
 | `ha.get_history(entity_id, since, limit)` | History from the local mirror |

@@ -149,6 +149,10 @@ end)
 state to `fn` once at load (so a script that just started acts on the present
 state, not only on future changes).
 
+Handlers run up to **100 ms after** the event arrives, because events are
+batched by default — see [`ha.immediate_events()`](#haimmediate_events) if the
+automation is latency-sensitive.
+
 #### `ha.on_event(type, fn)`
 
 Registers `fn` to run on every Home Assistant event of `type`. The daemon
@@ -165,6 +169,15 @@ end)
 
 #### `ha.immediate_events()`
 
+> **The default 100 ms batch window is the first thing to check when a script
+> feels slower than a built-in HA automation.** Built-in automations react
+> in-process in single-digit milliseconds; a script that races one without
+> `ha.immediate_events()` loses by the width of the batch window, not because
+> of any inherent overhead. Immediate delivery is not the default because
+> without batching, event bursts genuinely overflowed script channels and
+> **dropped events** — batching fixed real event loss, so opting out is a
+> per-script decision, not a global one.
+
 By default the daemon **coalesces** incoming events over a 100 ms window before
 running your handlers: repeated `state_changed` events for the same entity
 collapse to the newest one, and the batch is delivered together. This keeps a
@@ -173,12 +186,22 @@ from overflowing the script's event channel and dropping events; the cost is up
 to 100 ms of latency and not seeing intermediate states.
 
 Call `ha.immediate_events()` at load time to opt out — every event is then
-delivered as it arrives, with no per-entity collapse. Use it only when a handler
-must observe **every** transition (e.g. counting button presses):
+delivered as it arrives, with no per-entity collapse:
 
 ```lua
 ha.immediate_events()
 ```
+
+Use it when either of these holds:
+
+- **A human is waiting on the result.** Anything wired to a physical control —
+  a light following a wall switch, a mirrored relay — where a 100 ms lag is
+  visible. See `examples/mirrored_switches.lua`.
+- **The handler must observe every transition**, not just the newest state
+  (e.g. counting button presses).
+
+Leave the default for everything else: broad `binary_sensor.*`-style
+subscriptions in a chatty home are exactly what the batching protects.
 
 ### Timers
 

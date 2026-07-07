@@ -120,6 +120,20 @@ attractive features (hard CPU/memory quotas). We stayed on gopher-lua:
 The VM is fully contained inside `internal/lua`; if the trade-offs shift,
 swapping it stays a one-package job.
 
+**Events are batched by default, 100 ms.** Each script's events are
+coalesced over a 100 ms window (repeated `state_changed` for the same
+entity keeps only the newest) so a burst in a chatty home can't overflow a
+script's event channel and drop events. This is not a hypothetical:
+before batching existed, bursts really did drop events, which is why
+immediate delivery is opt-in rather than the default. The cost is up to
+100 ms of added
+handler latency — which is why a naive side-by-side against a built-in HA
+automation makes ha-lua look slow. That comparison is measuring the
+default, not the architecture: `ha.immediate_events()` opts a script out,
+and the remaining floor (two WebSocket hops plus a WAL write) is a few
+milliseconds. Latency-sensitive scripts — anything a human is waiting on —
+should opt out; `examples/mirrored_switches.lua` shows how.
+
 **No vendoring.** A `vendor/` tree for this project measures **241 MB** —
 226 MB of it is `modernc.org` (pure-Go SQLite is a machine-translated C
 library). `go.sum` already pins every dependency by checksum and the Go
