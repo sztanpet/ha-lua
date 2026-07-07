@@ -73,7 +73,9 @@ registered at load time or from within callbacks.
 #### `ha.get_state(entity_id)`
 
 Returns the current state of one entity as a table, or `nil` if the entity is
-unknown. Raises on a database error.
+unknown. Reads come from the daemon's in-memory mirror — a map lookup, never a
+database query — and always reflect every event dispatched before the one your
+handler is processing.
 
 ```lua
 local s = ha.get_state("light.kitchen")
@@ -89,8 +91,9 @@ local s = ha.get_state("light.kitchen")
 #### `ha.get_entities(pattern)`
 
 Returns an array of state tables (same shape as `ha.get_state`) for every entity
-whose id matches the glob `pattern` (e.g. `"light.*"`, `"sensor.temp_*"`).
-Raises on error.
+whose id matches the glob `pattern` (e.g. `"light.*"`, `"sensor.temp_*"`),
+sorted by entity id. The glob syntax is the same one `ha.on_state_change`
+patterns use. Raises on a malformed pattern.
 
 #### `ha.get_entity_ids(pattern)`
 
@@ -106,6 +109,11 @@ instant is compared. `limit` is an integer. Raises on error.
 
 History depth is bounded by the `state_history.retention_days` option — older
 rows are purged.
+
+History is persisted **write-behind**: a query made in the same instant an
+event is dispatched may not include that event's row yet (it lands milliseconds
+later). Current state via `ha.get_state` is never stale; only the history log
+trails by a beat.
 
 ### Services and events
 

@@ -79,9 +79,17 @@ The rules that keep this simple:
 
 - **One Lua VM per script, owned by one goroutine.** VMs are never shared,
   so scripts need no locks and a misbehaving script cannot corrupt another.
+- **Current state lives in memory; SQLite is write-behind.** The tracker
+  applies every event to an in-memory mirror before scripts see it —
+  `ha.get_state` is a map lookup that can never be stale — and a single
+  background goroutine batches the persistence into one transaction per
+  wakeup. Event dispatch never waits on the write handle: not for a WAL
+  checkpoint, not for the retention purge, not for another script's
+  `store.set`.
 - **Two SQLite handles per database.** A single-connection write handle
   serializes all writes (no `SQLITE_BUSY`, ever); a pooled read handle lets
-  every script query concurrently. WAL mode makes this safe.
+  history queries and the KV stores read concurrently. WAL mode makes this
+  safe.
 - **Reconnects heal everything.** Every reconnect re-authenticates,
   re-seeds the state mirror (deduplicated — no phantom history rows), and
   re-subscribes. Scripts keep running through it.

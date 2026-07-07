@@ -114,7 +114,8 @@ make trace        # capture 5s execution trace
 See `ha-lua/plan.md` for the full design. Short version:
 
 - **One `*lua.LState` per script, owned exclusively by its goroutine.** Never pass an LState across goroutines — gopher-lua is not goroutine-safe.
-- **Two `*sql.DB` handles per DB file.** Write handle: `SetMaxOpenConns(1)` — serializes all writes, eliminates SQLITE_BUSY. Read handle: default pool — concurrent reads from multiple script goroutines proceed in parallel. WAL makes this safe.
+- **Current state is memory-authoritative; SQLite persistence is write-behind.** The tracker applies each event to an RWMutex-guarded map before dispatch (`ha.get_state` reads only that map), and one background goroutine drains a queue into batched transactions. The `states` table is write-only (kept for now; dropping it is a phase-2 decision — see `event-latency-spec.md` §3.3). History reads stay on SQLite and may trail the newest event by a beat.
+- **Two `*sql.DB` handles per DB file.** Write handle: `SetMaxOpenConns(1)` — serializes all writes, eliminates SQLITE_BUSY. Read handle: default pool — concurrent history/KV reads proceed in parallel. WAL makes this safe.
 - **WAL mode** is enabled on every DB open.
 - The WS reader goroutine feeds two consumers: the state tracker (fast, synchronous) and the event router (fans out to per-script channels, non-blocking, drops + warns on full).
 - Script KV values round-trip via `github.com/go-json-experiment/json` (json/v2) so types (number, boolean, string, table) are preserved.
