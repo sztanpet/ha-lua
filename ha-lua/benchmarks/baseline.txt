@@ -2,158 +2,714 @@ PASS
 ok  	github.com/sztanpet/ha-lua/cards	0.003s
 ?   	github.com/sztanpet/ha-lua/cmd/ha-lua	[no test files]
 PASS
-ok  	github.com/sztanpet/ha-lua/examples	0.003s
+ok  	github.com/sztanpet/ha-lua/examples	0.002s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/config
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkLoadConfig-4   	  122191	      9742 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  124426	      9437 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  120532	      9426 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  123342	      9498 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  121137	      9713 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  123810	      9559 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  123357	      9533 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  124178	      9508 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  124670	      9427 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  123466	      9522 ns/op	    1368 B/op	      14 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/config	6.361s
+ok  	github.com/sztanpet/ha-lua/internal/config	6.396s
 ?   	github.com/sztanpet/ha-lua/internal/debug	[no test files]
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/e2e
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkEventToServiceCall-4         	    3771	    402307 ns/op	    254489 p50-ns	   5183827 p99-ns	   26192 B/op	     299 allocs/op
-BenchmarkEventToServiceCall-4         	    3891	    409868 ns/op	    253708 p50-ns	   5104117 p99-ns	   26158 B/op	     299 allocs/op
-BenchmarkEventToServiceCall-4         	    3933	    398907 ns/op	    253728 p50-ns	   5025799 p99-ns	   26162 B/op	     299 allocs/op
-BenchmarkEventToServiceCall-4         	    3960	    405610 ns/op	    252726 p50-ns	   5142869 p99-ns	   26157 B/op	     299 allocs/op
-BenchmarkEventToServiceCall-4         	    3920	    427253 ns/op	    259719 p50-ns	   5290388 p99-ns	   26161 B/op	     299 allocs/op
-BenchmarkEventToServiceCallBusyKV-4   	    4507	    518478 ns/op	    264048 p50-ns	   7192792 p99-ns	   28299 B/op	     372 allocs/op
-BenchmarkEventToServiceCallBusyKV-4   	    4039	    525586 ns/op	    263847 p50-ns	   7280547 p99-ns	   28340 B/op	     374 allocs/op
-BenchmarkEventToServiceCallBusyKV-4   	    3805	    542627 ns/op	    264950 p50-ns	   8908625 p99-ns	   28307 B/op	     373 allocs/op
-BenchmarkEventToServiceCallBusyKV-4   	    3984	    537894 ns/op	    267243 p50-ns	   7336684 p99-ns	   28323 B/op	     373 allocs/op
-BenchmarkEventToServiceCallBusyKV-4   	    4070	    536606 ns/op	    259138 p50-ns	   9486092 p99-ns	   28421 B/op	     377 allocs/op
-BenchmarkQuickToggle-4                	       5	 211694371 ns/op	 100600665 off-ns/op	   52880 B/op	     601 allocs/op
-BenchmarkQuickToggle-4                	       5	 211646481 ns/op	 100547089 off-ns/op	   52732 B/op	     605 allocs/op
-BenchmarkQuickToggle-4                	       5	 211629265 ns/op	 100603088 off-ns/op	   53049 B/op	     605 allocs/op
-BenchmarkQuickToggle-4                	       5	 211664444 ns/op	 100614636 off-ns/op	   53484 B/op	     606 allocs/op
-BenchmarkQuickToggle-4                	       5	 211534600 ns/op	 100529893 off-ns/op	   56284 B/op	     630 allocs/op
+BenchmarkEventToServiceCall-4         	    8485	    144917 ns/op	    135855 p50-ns	    326184 p99-ns	   24845 B/op	     272 allocs/op
+BenchmarkEventToServiceCall-4         	    8187	    145312 ns/op	    137429 p50-ns	    309704 p99-ns	   24841 B/op	     272 allocs/op
+BenchmarkEventToServiceCall-4         	    8293	    143074 ns/op	    133731 p50-ns	    306978 p99-ns	   24848 B/op	     272 allocs/op
+BenchmarkEventToServiceCall-4         	    8343	    145199 ns/op	    135025 p50-ns	    342345 p99-ns	   24834 B/op	     271 allocs/op
+BenchmarkEventToServiceCall-4         	    8638	    145238 ns/op	    134002 p50-ns	    338068 p99-ns	   24837 B/op	     272 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    8862	    136681 ns/op	    127671 p50-ns	    322668 p99-ns	   25220 B/op	     285 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    8646	    137488 ns/op	    127450 p50-ns	    342656 p99-ns	   25370 B/op	     289 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    8797	    136767 ns/op	    128873 p50-ns	    331284 p99-ns	   25342 B/op	     289 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    8838	    135999 ns/op	    127770 p50-ns	    327468 p99-ns	   25378 B/op	     289 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    8793	    136129 ns/op	    128322 p50-ns	    330834 p99-ns	   25383 B/op	     289 allocs/op
+BenchmarkQuickToggle-4                	       5	 211487132 ns/op	 100623097 off-ns/op	   54366 B/op	     586 allocs/op
+BenchmarkQuickToggle-4                	       5	 211337160 ns/op	 100557787 off-ns/op	   50483 B/op	     556 allocs/op
+BenchmarkQuickToggle-4                	       5	 211451003 ns/op	 100566680 off-ns/op	   51452 B/op	     558 allocs/op
+BenchmarkQuickToggle-4                	       5	 211327819 ns/op	 100517446 off-ns/op	   51155 B/op	     554 allocs/op
+BenchmarkQuickToggle-4                	       5	 211303112 ns/op	 100543771 off-ns/op	   50192 B/op	     552 allocs/op
+BenchmarkQuickToggleNoWait-4          	      10	 110958409 ns/op	    205159 off-ns/op	   53176 B/op	     586 allocs/op
+BenchmarkQuickToggleNoWait-4          	      10	 110959455 ns/op	    211731 off-ns/op	   52665 B/op	     575 allocs/op
+BenchmarkQuickToggleNoWait-4          	      10	 111008647 ns/op	    220413 off-ns/op	   53863 B/op	     583 allocs/op
+BenchmarkQuickToggleNoWait-4          	      10	 111011226 ns/op	    227486 off-ns/op	   52378 B/op	     576 allocs/op
+BenchmarkQuickToggleNoWait-4          	      10	 111003880 ns/op	    187042 off-ns/op	   53073 B/op	     579 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/e2e	32.659s
+ok  	github.com/sztanpet/ha-lua/internal/e2e	42.560s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/ha
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkEventParsing-4   	  618056	      1754 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  661675	      1743 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  662276	      1733 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  660154	      1740 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  662412	      1753 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  588348	      1752 ns/op	     264 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  599445	      1738 ns/op	     264 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  654075	      1744 ns/op	     264 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  655316	      1738 ns/op	     264 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  655074	      1752 ns/op	     264 B/op	       3 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/ha	5.802s
+ok  	github.com/sztanpet/ha-lua/internal/ha	5.609s
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/logwriter	0.002s
+ok  	github.com/sztanpet/ha-lua/internal/logwriter	0.003s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/lua
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkStoreStateProxyWrite-4   	   98295	     11939 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	   99067	     11807 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	   97923	     12034 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	   94696	     12161 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	   96679	     11966 ns/op	     367 B/op	      17 allocs/op
-BenchmarkLuaJSONEncode-4          	  207301	      5677 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  195819	      5674 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  206202	      5674 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  200418	      5750 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  202077	      5746 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONDecode-4          	  131427	      9128 ns/op	   18413 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  128190	      9345 ns/op	   18413 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  130502	      9282 ns/op	   18413 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  131306	      8944 ns/op	   18414 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  132135	      9012 ns/op	   18413 B/op	     125 allocs/op
-BenchmarkRegistryDispatch-4       	  152334	      9573 ns/op	    6563 B/op	     110 allocs/op
-BenchmarkRegistryDispatch-4       	   89938	     11859 ns/op	    6516 B/op	     107 allocs/op
-BenchmarkRegistryDispatch-4       	   87464	     11821 ns/op	    6504 B/op	     106 allocs/op
-BenchmarkRegistryDispatch-4       	  174068	     11809 ns/op	    6526 B/op	     107 allocs/op
-BenchmarkRegistryDispatch-4       	  161670	     11262 ns/op	    6485 B/op	     105 allocs/op
-BenchmarkReMatchCached-4          	  128775	      9404 ns/op	   33186 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  120252	      9878 ns/op	   33192 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  120229	     10160 ns/op	   33205 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  120703	     10135 ns/op	   33205 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  122055	     10076 ns/op	   33206 B/op	      71 allocs/op
-BenchmarkReMatchCold-4            	   84597	     14172 ns/op	   42213 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   74179	     16190 ns/op	   42336 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   74350	     16113 ns/op	   42364 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   74624	     16431 ns/op	   42321 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   73878	     16581 ns/op	   42366 B/op	      95 allocs/op
-BenchmarkHTTPGet-4                	   11090	    106847 ns/op	   46102 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   10000	    105944 ns/op	   46103 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   10000	    106821 ns/op	   46101 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   10000	    105270 ns/op	   46107 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   10671	    109828 ns/op	   46106 B/op	     171 allocs/op
-BenchmarkTimeNow-4                	  135637	      8872 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  125299	      8681 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  141877	      9313 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  115650	      9133 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  137976	      9721 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkCryptoSHA256-4           	  124951	      9893 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  122884	      9920 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  117080	     10102 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  123814	      9864 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  127552	      9770 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   94826	     12263 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   95007	     12167 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   92864	     12470 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   93090	     12243 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   94885	     12343 ns/op	     367 B/op	      17 allocs/op
+BenchmarkLuaJSONEncode-4          	  207046	      5695 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  208412	      5776 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  184548	      5758 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  199627	      5692 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  205922	      5766 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONDecode-4          	  133080	      9119 ns/op	   18414 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  134424	      9335 ns/op	   18415 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  124515	      9160 ns/op	   18413 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  130804	      9535 ns/op	   18414 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  131420	      9171 ns/op	   18413 B/op	     125 allocs/op
+BenchmarkRegistryDispatch-4       	   89893	     13291 ns/op	    8090 B/op	     105 allocs/op
+BenchmarkRegistryDispatch-4       	  103034	     10851 ns/op	    8081 B/op	     105 allocs/op
+BenchmarkRegistryDispatch-4       	   85057	     12278 ns/op	    8063 B/op	     103 allocs/op
+BenchmarkRegistryDispatch-4       	   90762	     12740 ns/op	    8128 B/op	     108 allocs/op
+BenchmarkRegistryDispatch-4       	   90813	     11870 ns/op	    8071 B/op	     104 allocs/op
+BenchmarkReMatchCached-4          	  136057	      9461 ns/op	   33165 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  125320	     10125 ns/op	   33182 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  124804	     10237 ns/op	   33184 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  126498	      9557 ns/op	   33187 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  116906	      9602 ns/op	   33195 B/op	      71 allocs/op
+BenchmarkReMatchCold-4            	   83487	     13615 ns/op	   42232 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   73639	     16352 ns/op	   42363 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   76472	     15681 ns/op	   42346 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   75416	     15437 ns/op	   42326 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   74532	     16515 ns/op	   42323 B/op	      95 allocs/op
+BenchmarkHTTPGet-4                	   10000	    108010 ns/op	   46100 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   11194	    108169 ns/op	   46101 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   11164	    106019 ns/op	   46104 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   10000	    105773 ns/op	   46111 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	    9474	    107332 ns/op	   46104 B/op	     171 allocs/op
+BenchmarkTimeNow-4                	  151332	      8217 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  135187	      8571 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  125888	      8981 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  141450	      8342 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  133666	      8644 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkCryptoSHA256-4           	  127909	      9492 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  115940	     10988 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  127531	     10016 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  124840	     10046 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  126283	      9801 ns/op	   33744 B/op	      69 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/lua	63.713s
+ok  	github.com/sztanpet/ha-lua/internal/lua	59.427s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/purge
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkPurge-4   	      68	  18918646 ns/op	    1234 B/op	      10 allocs/op
-BenchmarkPurge-4   	      61	  18998349 ns/op	     208 B/op	      10 allocs/op
-BenchmarkPurge-4   	      67	  18924645 ns/op	     208 B/op	      10 allocs/op
-BenchmarkPurge-4   	      67	  18957489 ns/op	     208 B/op	      10 allocs/op
-BenchmarkPurge-4   	      69	  18905470 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      68	  17344570 ns/op	    1777 B/op	      10 allocs/op
+BenchmarkPurge-4   	      69	  17302838 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      68	  17369144 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      67	  17317541 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      66	  17323169 ns/op	     208 B/op	      10 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/purge	44.780s
+ok  	github.com/sztanpet/ha-lua/internal/purge	44.422s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/scheduler
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkSchedulerFire-4                	     942	   1259027 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     885	   1261812 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     934	   1260785 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     955	   1263275 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     931	   1254619 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9177	    121138 ns/op	    5919 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9813	    122458 ns/op	    5913 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    8892	    118346 ns/op	    5912 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9273	    118946 ns/op	    5912 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9925	    120694 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerFire-4                	     927	   1264466 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     944	   1237081 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     961	   1230159 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     952	   1255818 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     933	   1266474 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9076	    119293 ns/op	    5918 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9100	    120429 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	   10000	    119108 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9097	    119205 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9382	    125422 ns/op	    5910 B/op	     151 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/scheduler	11.793s
+ok  	github.com/sztanpet/ha-lua/internal/scheduler	11.797s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/state
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkStateInsert-4   	   26367	     43050 ns/op	    1587 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   27866	     43549 ns/op	    1587 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   26293	     41599 ns/op	    1588 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   28633	     43367 ns/op	    1587 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   26074	     44530 ns/op	    1587 B/op	      40 allocs/op
+BenchmarkStateInsert-4   	2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:28 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+  105418	     11707 ns/op	     870 B/op	      20 allocs/op
+BenchmarkStateInsert-4   	2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:29 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:30 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+  105693	     11603 ns/op	     869 B/op	      20 allocs/op
+BenchmarkStateInsert-4   	2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:31 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+  102300	     11582 ns/op	     870 B/op	      20 allocs/op
+BenchmarkStateInsert-4   	2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:32 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+  103599	     11634 ns/op	     870 B/op	      20 allocs/op
+BenchmarkStateInsert-4   	2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:33 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:34 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+2026/07/07 21:55:35 WARN state: write queue full, backpressuring event dispatch
+  106822	     11501 ns/op	     870 B/op	      20 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/state	8.136s
+ok  	github.com/sztanpet/ha-lua/internal/state	6.730s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/store
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkKVGet-4   	  142864	      8113 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  144349	      8111 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  141796	      8084 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  140726	      8100 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  142180	      8089 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVSet-4   	  102331	     11606 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  100866	     11809 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  103936	     11335 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  105054	     11723 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  103069	     11404 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVGet-4   	  134721	      8296 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  136168	      8362 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  137427	      8494 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  137860	      8441 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  135618	      8587 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVSet-4   	  103552	     11185 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  105045	     11316 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  104040	     11127 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  104746	     11275 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  105882	     11111 ns/op	     343 B/op	      15 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/store	12.817s
+ok  	github.com/sztanpet/ha-lua/internal/store	12.710s
 ?   	github.com/sztanpet/ha-lua/internal/testutil	[no test files]
 ?   	github.com/sztanpet/ha-lua/internal/web	[no test files]
 ?   	github.com/sztanpet/ha-lua/tools/icon	[no test files]
