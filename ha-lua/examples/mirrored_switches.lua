@@ -51,6 +51,10 @@ for _, entity_id in ipairs(SWITCHES) do
       return
     end
 
-    ha.call_service("switch", "turn_" .. new_state, { entity_id = partner })
+    -- wait = false: don't park this script's event loop until Home Assistant
+    -- confirms the call (that includes the Zigbee round trip). Without it, a
+    -- quick on-then-off delivers the second flip only after the first one's
+    -- confirmation. Failures still surface via ha.on_exception.
+    ha.call_service("switch", "turn_" .. new_state, { entity_id = partner }, { wait = false })
   end)
 end

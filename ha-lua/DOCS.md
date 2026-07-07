@@ -134,7 +134,7 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.get_state(entity_id)` | Current state of one entity |
 | `ha.get_entities(pattern)` / `ha.get_entity_ids(pattern)` | Bulk lookup by glob |
 | `ha.get_history(entity_id, since, limit)` | History from the local mirror |
-| `ha.call_service(domain, service, data)` | Call any Home Assistant service |
+| `ha.call_service(domain, service, data, opts)` | Call any Home Assistant service (`opts.wait = false` to not block the handler on HA's confirmation) |
 | `ha.fire_event(type, data)` | Fire a custom event |
 | `ha.set_state(entity_id, state, attrs)` / `ha.remove_state(entity_id)` | Publish or remove an entity through the core REST API (non-raising: returns `value\|nil, err`) |
 | `ha.on_command(handler)` | Receive `ha_lua_command` events addressed to this script as `handler(action, data)` — the transport the cards use |

@@ -109,7 +109,7 @@ rows are purged.
 
 ### Services and events
 
-#### `ha.call_service(domain, service [, data])`
+#### `ha.call_service(domain, service [, data [, opts]])`
 
 Calls a Home Assistant service. `data` is an optional table of service fields
 (including `entity_id`); it is JSON-encoded and sent as-is. Raises on a marshal
@@ -121,6 +121,26 @@ ha.call_service("light", "turn_on", {
   brightness = 200,
 })
 ```
+
+By default the call **waits for Home Assistant's result** and raises if HA
+rejects it (e.g. a setpoint above the device's maximum). HA sends that result
+only after the service *completes* — for a Zigbee device that includes the
+radio round trip — and the wait parks this script's **whole event loop**: a
+second event arriving meanwhile is handled only after the first call's
+confirmation.
+
+`opts.wait = false` opts out for latency-sensitive handlers:
+
+```lua
+ha.call_service("switch", "turn_on", { entity_id = partner }, { wait = false })
+```
+
+The command still goes out before the call returns (send failures still raise
+inline, and calls stay in order on the wire), but HA's verdict is awaited in
+the background: a rejection is delivered to `ha.on_exception` instead of
+raising in the handler. Use it when nothing after the call depends on its
+success — a switch mirror, a notification blast. Keep the default when the
+handler reads state it just changed or must react to a failure inline.
 
 #### `ha.fire_event(type [, data])`
 
