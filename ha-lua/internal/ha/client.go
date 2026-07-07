@@ -136,46 +136,71 @@ func (c *Client) SendRaw(ctx context.Context, data []byte) error {
 	return conn.Write(ctx, websocket.MessageText, data)
 }
 
-// SendCommandWaitResult writes a command and blocks until HA returns the result
-// frame for its id, returning an error if HA reports the command failed (for
-// example a set_temperature above the device's max_temp), if no connection is
-// active, or if ctx is cancelled. The id must be the one embedded in data
-// (allocate it with NextID). Unlike SendRaw, this surfaces HA-side rejections,
-// which the WebSocket protocol reports asynchronously in a separate frame.
-func (c *Client) SendCommandWaitResult(ctx context.Context, id int, data []byte) error {
-	// Bound the wait so a command HA never answers can't pin the calling
-	// script goroutine forever. HA answers every command in practice; this is
-	// only a liveness floor on top of the disconnect drain.
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+// commandTimeout bounds the wait for a command's result frame so a command HA
+// never answers can't pin its waiter forever. HA answers every command in
+// practice; this is only a liveness floor on top of the disconnect drain.
+const commandTimeout = 10 * time.Second
 
+// SendCommandAsync writes a command and returns a 1-buffered channel that
+// yields HA's verdict exactly once: nil on success, or an error for a
+// rejection, disconnect, ctx cancellation, or the liveness timeout. The write
+// itself is synchronous — a send-side failure (no connection, dead socket) is
+// returned here, in the caller's send order, and never on the channel. The id
+// must be the one embedded in data (allocate it with NextID).
+func (c *Client) SendCommandAsync(ctx context.Context, id int, data []byte) (<-chan error, error) {
 	ch := make(chan cmdResult, 1)
 	c.mu.Lock()
 	conn := c.conn
 	if conn == nil {
 		c.mu.Unlock()
-		return fmt.Errorf("ha: not connected")
+		return nil, fmt.Errorf("ha: not connected")
 	}
 	c.pending[id] = ch
 	c.mu.Unlock()
-	defer func() {
+
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
-	}()
+		return nil, err
+	}
 
-	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+	out := make(chan error, 1)
+	go func() {
+		defer func() {
+			c.mu.Lock()
+			delete(c.pending, id)
+			c.mu.Unlock()
+		}()
+		select {
+		case res := <-ch:
+			if !res.success {
+				out <- fmt.Errorf("ha: command rejected: %s", res.errMsg)
+				return
+			}
+			out <- nil
+		case <-time.After(commandTimeout):
+			out <- fmt.Errorf("ha: no result after %v", commandTimeout)
+		case <-ctx.Done():
+			out <- ctx.Err()
+		}
+	}()
+	return out, nil
+}
+
+// SendCommandWaitResult writes a command and blocks until HA returns the result
+// frame for its id, returning an error if HA reports the command failed (for
+// example a set_temperature above the device's max_temp), if no connection is
+// active, or if ctx is cancelled. Unlike SendRaw, this surfaces HA-side
+// rejections, which the WebSocket protocol reports asynchronously in a
+// separate frame.
+func (c *Client) SendCommandWaitResult(ctx context.Context, id int, data []byte) error {
+	out, err := c.SendCommandAsync(ctx, id, data)
+	if err != nil {
 		return err
 	}
-	select {
-	case res := <-ch:
-		if !res.success {
-			return fmt.Errorf("ha: command rejected: %s", res.errMsg)
-		}
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	// out always yields: result, disconnect drain, ctx, or commandTimeout.
+	return <-out
 }
 
 // deliverResult routes a "result" frame to the goroutine waiting on its id.

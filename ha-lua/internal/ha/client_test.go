@@ -337,6 +337,31 @@ func TestSendCommandWaitResult(t *testing.T) {
 	if !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("error %q does not carry HA's message", err)
 	}
+
+	// The async form: the send returns immediately, the verdict arrives on
+	// the channel — nil for success, HA's message for a rejection.
+	callAsync := func(temp float64) (<-chan error, error) {
+		id := c.NextID()
+		raw := []byte(fmt.Sprintf(
+			`{"id":%d,"type":"call_service","domain":"climate","service":"set_temperature","service_data":{"temperature":%v}}`,
+			id, temp))
+		return c.SendCommandAsync(ctx, id, raw)
+	}
+
+	okCh, err := callAsync(20)
+	if err != nil {
+		t.Fatalf("async in-range send: %v", err)
+	}
+	if err := <-okCh; err != nil {
+		t.Errorf("async in-range verdict: unexpected error %v", err)
+	}
+	rejCh, err := callAsync(99)
+	if err != nil {
+		t.Fatalf("async out-of-range send: %v", err)
+	}
+	if err := <-rejCh; err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("async verdict %v does not carry HA's rejection", err)
+	}
 }
 
 // The REST base is derived from the WS URL: ws→http / wss→https, the trailing
