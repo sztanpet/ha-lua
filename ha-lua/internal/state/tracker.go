@@ -230,31 +230,18 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 		}
 	}
 
-	tx, err := t.writeDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, s := range states {
-		attrs := attrStr(s.Attributes)
-		if m, ok := current[s.EntityID]; ok && m.state == s.State && m.attrs == attrs {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO state_history(entity_id, state, attributes, changed_at)
-			VALUES(?,?,?,?)`,
-			s.EntityID, s.State, attrs, s.LastChanged); err != nil {
-			return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-
+	// Appends ride the write-behind queue like every other history row:
+	// writeBatch is then the only place SQL is written, and the queue's FIFO
+	// keeps insert order (and so the MAX(id) baseline above) total.
 	mem := make(map[string]ha.StateData, len(states))
 	for _, s := range states {
 		s.Attributes = jsontext.Value(attrStr(s.Attributes))
 		mem[s.EntityID] = s
+		if m, ok := current[s.EntityID]; ok && m.state == s.State && m.attrs == string(s.Attributes) {
+			continue
+		}
+		row := s
+		t.enqueue(ctx, writeReq{upsert: &row})
 	}
 	t.mu.Lock()
 	t.mem = mem

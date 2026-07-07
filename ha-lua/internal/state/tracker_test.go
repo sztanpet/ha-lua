@@ -60,6 +60,7 @@ func TestSeedSkipsUnchangedHistory(t *testing.T) {
 	}
 
 	historyCount := func(entity string) int {
+		tr.Flush() // seed appends are write-behind
 		h, err := tr.GetHistory(ctx, entity, time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), 100)
 		if err != nil {
 			t.Fatal(err)
@@ -122,6 +123,7 @@ func TestSeedDedupAcrossRestart(t *testing.T) {
 	if err := before.Seed(ctx, states); err != nil {
 		t.Fatalf("seed before restart: %v", err)
 	}
+	before.Flush() // the "restart" below must find the appends on disk
 
 	// "Restart": a new tracker over the same database.
 	after := New(writeDB, readDB)
@@ -129,6 +131,7 @@ func TestSeedDedupAcrossRestart(t *testing.T) {
 	if err := after.Seed(ctx, states); err != nil {
 		t.Fatalf("seed after restart: %v", err)
 	}
+	after.Flush()
 	since := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	h, err := after.GetHistory(ctx, "light.test", since, 100)
 	if err != nil {
@@ -146,6 +149,7 @@ func TestSeedDedupAcrossRestart(t *testing.T) {
 	if err := again.Seed(ctx, states); err != nil {
 		t.Fatalf("changed seed after restart: %v", err)
 	}
+	again.Flush()
 	if h, err = again.GetHistory(ctx, "light.test", since, 100); err != nil || len(h) != 2 {
 		t.Errorf("changed seed across restart: want 2 history rows, got %d (%v)", len(h), err)
 	}
@@ -183,6 +187,7 @@ func TestSeedDeletesGhostEntities(t *testing.T) {
 	if s, err := tr.GetState(ctx, "light.kept"); err != nil || s == nil {
 		t.Errorf("kept entity missing from mirror: %+v, %v", s, err)
 	}
+	tr.Flush() // seed appends are write-behind
 	history, err := tr.GetHistory(ctx, "automation.removed", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +256,7 @@ func TestHandleStateChangedRemoval(t *testing.T) {
 	}
 
 	// The seeded state happened; history must still carry it.
-	tr.Flush() // the removal's mirror delete is write-behind
+	tr.Flush() // seed appends are write-behind
 	history, err := tr.GetHistory(ctx, "automation.foo", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
 	if err != nil {
 		t.Fatal(err)
@@ -300,6 +305,7 @@ func TestGetHistorySinceTimezone(t *testing.T) {
 		{EntityID: "sensor.temp", State: "21", Attributes: jsontext.Value(`{}`),
 			LastChanged: "2026-01-01T12:00:00Z", LastUpdated: "2026-01-01T12:00:00Z"},
 	})
+	tr.Flush() // seed appends are write-behind
 
 	// 14:00+02:00 is 12:00Z — the same instant as the row, so it must match.
 	plus2 := time.FixedZone("+02:00", 2*3600)
