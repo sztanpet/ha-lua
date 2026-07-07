@@ -72,10 +72,20 @@ synchronous=NORMAL (per-event fsync jitter was on the dispatch path).
 ## Track complete (2026-07-07, v3.1.0)
 
 All five milestones shipped. Remaining latency floor is WS hops + Go
-scheduling (~150µs mean on dev hardware). Phase-2 candidates recorded in
-the spec, deliberately NOT done: dropping the write-only states table
-(§3.3, wants production soak first), and any batching-default change
-(event loss history — see bundled-examples.md).
+scheduling (~150µs mean on dev hardware).
+
+## Phase 2: states table retired (2026-07-07, 12f107b)
+
+Done on user request the same day. Key finding: spec §3.3's "write-only"
+claim missed that Seed still READ the table for reconnect/restart dedup.
+Resolution: dedup baseline = memory when populated (reconnect; more
+precise than the table), newest history row per entity on cold start
+(same info the mirror row carried). writeBatch is history-appends only;
+entity removal persists nothing; ghost deletion = the map replacement.
+Schema DROPs the table on upgraded installs. Accepted corollary
+(documented on Seed): fully-purged-history entities get one baseline
+history row per daemon restart. NOT changed: batching default (event
+loss history — see bundled-examples.md).
 
 ## Decisions so far
 

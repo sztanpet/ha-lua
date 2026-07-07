@@ -68,7 +68,8 @@ See `plan.md` for the full design rationale behind the API.
 ```
 HA WebSocket ──► client (auth, reconnect, re-seed, subscriptions)
                    │
-                   ├──► state tracker ──► SQLite (current mirror + history)
+                   ├──► state tracker ──► memory (current state)
+                   │                      └─► SQLite (history, write-behind)
                    │
                    └──► registry ──► per-script channels ──► one Lua VM
                                                              per goroutine
