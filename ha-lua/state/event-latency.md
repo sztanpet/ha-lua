@@ -3,7 +3,7 @@
 Working state for the latency track. Spec: `event-latency-spec.md`.
 Global decisions live in `../AI.state`.
 
-Status: **spec written 2026-07-07, awaiting user review before build.**
+Status: **COMPLETE** — M0–M5 shipped in v3.1.0 (2026-07-07).
 
 ## History (pre-spec rounds, shipped in v3.0.1)
 
@@ -51,9 +51,31 @@ synchronous=NORMAL (per-event fsync jitter was on the dispatch path).
   wiring alone is enough for wait=false). MEASURED: QuickToggleNoWait
   off-ns/op 0.37ms vs QuickToggle 100.7ms (~270x). mirrored_switches
   example + lua_api.md + DOCS.md updated.
-- M3 memory-authoritative state mirror — pending
-- M4 background batched writer — pending
-- M5 docs + release — pending (bench-compare against baseline at M5)
+- M3 memory-authoritative state mirror — **DONE** (30c3e0c). Tracker holds
+  an RWMutex map, applied before dispatch; GetState/GetEntities/GetEntityIDs
+  read only memory (filepath.Match globs — same as handler patterns —
+  sorted output, malformed pattern errors). Seed keeps SQL-tx dedup against
+  the persisted mirror (restart would otherwise spam one phantom history
+  row per entity: memory is empty then, the SQLite mirror isn't).
+- M4 background batched writer — **DONE** (766681f). HandleStateChanged =
+  memory + enqueue; one writer goroutine drains → single batched tx per
+  wakeup. Queue cap 1024, full = block with warn; failed batch retried
+  once then dropped loudly (memory stays authoritative); Flush() is the
+  test barrier; shutdown drains best-effort. Seed stays synchronous.
+  MEASURED (e2e): event→command mean 407µs→148µs, p99 5.2ms→0.36ms;
+  BusyKV p99 7-10ms→0.37ms — busy and idle now identical.
+- M5 docs + release — **DONE**: lua_api.md (get_state never stale,
+  get_entities sorted/validating, get_history write-behind note), README +
+  CLAUDE.md architecture updates (7a9d049), changelog (46812ae), release
+  v3.1.0 (65813e6, tagged).
+
+## Track complete (2026-07-07, v3.1.0)
+
+All five milestones shipped. Remaining latency floor is WS hops + Go
+scheduling (~150µs mean on dev hardware). Phase-2 candidates recorded in
+the spec, deliberately NOT done: dropping the write-only states table
+(§3.3, wants production soak first), and any batching-default change
+(event loss history — see bundled-examples.md).
 
 ## Decisions so far
 

@@ -11,14 +11,12 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Event-latency track (event-latency-spec.md): M0 benchmark harness, M1
-dispatch-delay instrumentation, and M2 call_service { wait = false }
-are DONE — measured: QuickToggle off-latency fell from 100.7ms (tracked
-the simulated device ack exactly; the user's felt half second) to
-0.37ms with wait=false; mirrored_switches example + docs updated.
-NEXT: M3 memory-authoritative state mirror, M4 background batched
-writer, M5 docs + release (bench-compare vs committed baselines).
-Details in `state/event-latency.md`.
+Released v3.1.0, completing the event-latency track (M0–M5, all in
+one day): call_service { wait = false } (off-toggle 100.7ms→0.37ms),
+memory-authoritative state mirror + write-behind batched persistence
+(event→command p99 5.2ms→0.36ms, disk-contention spikes eliminated),
+dispatch-delay instrumentation, docs. Phase-2 deferred: dropping the
+write-only states table. Details in `state/event-latency.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -41,6 +39,10 @@ Details in `state/event-latency.md`.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.1.0 (2026-07-07): event-latency track — call_service { wait = false }
+  (async verdict → on_exception), memory-authoritative state mirror,
+  write-behind batched persistence, dispatch-delay warn logs. See
+  `state/event-latency.md`.
 - 3.0.1 (2026-07-07): latency fixes — SQLite synchronous=NORMAL (fsync
   jitter was on the event-dispatch critical path); mirrored_switches
   example opts into ha.immediate_events(); 100 ms batch window documented
@@ -154,7 +156,9 @@ add-on change, minor = feature, patch = fix.
 - **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
 - **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie). The watcher only watches .lua — editing a sibling .html alone does NOT reload
 - **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect
-- **Event batching**: 100 ms per-script coalescing window (runner.go batchWindow) is the default because unbatched bursts REALLY dropped events (overflowed script channels) before batching existed; latency-sensitive scripts opt out per-script via ha.immediate_events() (do NOT make immediate the default or lower the window). Tracker write stays BEFORE Dispatch in main.go — handlers read fresh state via ha.get_state
+- **Event batching**: 100 ms per-script coalescing window (runner.go batchWindow) is the default because unbatched bursts REALLY dropped events (overflowed script channels) before batching existed; latency-sensitive scripts opt out per-script via ha.immediate_events() (do NOT make immediate the default or lower the window). Tracker apply stays BEFORE Dispatch in main.go — handlers read fresh state via ha.get_state
+- **State mirror (v3.1.0)**: current state is memory-authoritative (RWMutex map in Tracker, applied before dispatch); SQLite persistence is write-behind via one goroutine batching a 1024-cap queue into single transactions (full queue blocks with warn — never drop silently; failed batch retried once then dropped loudly). Seed stays synchronous and dedups against the PERSISTED mirror, not memory (restart: memory empty, SQL isn't — else phantom history per restart). states table is write-only; dropping it is phase 2 after soak
+- **call_service wait=false (v3.1.0)**: opts 4th arg; send is synchronous+ordered (SendCommandAsync), verdict awaited off-loop, rejection → on_exception via runner.asyncErrCh (never-closed channel — event channel closes on stop). Default STAYS wait=true; do not flip it
 - **Lua VM stays gopher-lua**: arnodel/golua (Lua 5.4/5.5) evaluated 2026-06-13 and rejected — v0.x single-maintainer vs battle-tested v1.x; CPS binding API is more verbose than LState stack API across ~30 bindings; M6 stop semantics depend on SetContext; 5.3+ integers would split the number type through the whole JSON layer. Reasons documented in README. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real script-author problem
 - **Card components**: the Lovelace card uses plain HTML + HA CSS theme variables, NOT HA's undocumented styling primitives (ha-button/ha-switch/...), which churn across releases. It DOES use the load-safe ones: <ha-card>, <ha-icon>, and ha-entity-picker/ha-entities-picker in the config editor (flagged as version-fragile). No build step, no imports — one vanilla file
 - **No vendoring**: vendor/ measures 241MB (226MB = modernc.org); go.sum + module proxy pin and preserve everything; `go mod vendor` is one command away if hermetic offline builds are ever needed
