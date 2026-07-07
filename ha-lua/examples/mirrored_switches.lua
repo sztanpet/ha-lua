@@ -17,6 +17,15 @@
 --
 -- Edit SWITCHES to your two entity ids (Developer Tools -> States).
 
+-- By default the daemon batches events for 100 ms before running handlers
+-- (see "ha.immediate_events" in lua_api.md). Batching is the default because
+-- unbatched bursts overflowed script event channels and dropped events
+-- outright. Two switches produce no such bursts, and a wall switch is
+-- exactly the case where the delay is human-visible: the partner light
+-- would lag a tenth of a second behind the pressed one. Opt into immediate
+-- delivery so the mirror reacts as fast as a built-in HA automation.
+ha.immediate_events()
+
 local SWITCHES = {
   "switch.zbminir2_bejaratiajtokapcsolo",
   "switch.zbminir2_folyoso",
