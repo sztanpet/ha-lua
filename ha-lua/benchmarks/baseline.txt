@@ -7,132 +7,153 @@ goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/config
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkLoadConfig-4   	  120019	      9527 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  123748	      9537 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  125008	      9548 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  124320	      9495 ns/op	    1368 B/op	      14 allocs/op
-BenchmarkLoadConfig-4   	  123406	      9641 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  122191	      9742 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  124426	      9437 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  120532	      9426 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  123342	      9498 ns/op	    1368 B/op	      14 allocs/op
+BenchmarkLoadConfig-4   	  121137	      9713 ns/op	    1368 B/op	      14 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/config	6.394s
+ok  	github.com/sztanpet/ha-lua/internal/config	6.361s
 ?   	github.com/sztanpet/ha-lua/internal/debug	[no test files]
+goos: linux
+goarch: amd64
+pkg: github.com/sztanpet/ha-lua/internal/e2e
+cpu: AMD Ryzen 5 5600G with Radeon Graphics         
+BenchmarkEventToServiceCall-4         	    3771	    402307 ns/op	    254489 p50-ns	   5183827 p99-ns	   26192 B/op	     299 allocs/op
+BenchmarkEventToServiceCall-4         	    3891	    409868 ns/op	    253708 p50-ns	   5104117 p99-ns	   26158 B/op	     299 allocs/op
+BenchmarkEventToServiceCall-4         	    3933	    398907 ns/op	    253728 p50-ns	   5025799 p99-ns	   26162 B/op	     299 allocs/op
+BenchmarkEventToServiceCall-4         	    3960	    405610 ns/op	    252726 p50-ns	   5142869 p99-ns	   26157 B/op	     299 allocs/op
+BenchmarkEventToServiceCall-4         	    3920	    427253 ns/op	    259719 p50-ns	   5290388 p99-ns	   26161 B/op	     299 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    4507	    518478 ns/op	    264048 p50-ns	   7192792 p99-ns	   28299 B/op	     372 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    4039	    525586 ns/op	    263847 p50-ns	   7280547 p99-ns	   28340 B/op	     374 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    3805	    542627 ns/op	    264950 p50-ns	   8908625 p99-ns	   28307 B/op	     373 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    3984	    537894 ns/op	    267243 p50-ns	   7336684 p99-ns	   28323 B/op	     373 allocs/op
+BenchmarkEventToServiceCallBusyKV-4   	    4070	    536606 ns/op	    259138 p50-ns	   9486092 p99-ns	   28421 B/op	     377 allocs/op
+BenchmarkQuickToggle-4                	       5	 211694371 ns/op	 100600665 off-ns/op	   52880 B/op	     601 allocs/op
+BenchmarkQuickToggle-4                	       5	 211646481 ns/op	 100547089 off-ns/op	   52732 B/op	     605 allocs/op
+BenchmarkQuickToggle-4                	       5	 211629265 ns/op	 100603088 off-ns/op	   53049 B/op	     605 allocs/op
+BenchmarkQuickToggle-4                	       5	 211664444 ns/op	 100614636 off-ns/op	   53484 B/op	     606 allocs/op
+BenchmarkQuickToggle-4                	       5	 211534600 ns/op	 100529893 off-ns/op	   56284 B/op	     630 allocs/op
+PASS
+ok  	github.com/sztanpet/ha-lua/internal/e2e	32.659s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/ha
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkEventParsing-4   	  683544	      1744 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  663408	      1737 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  659956	      1734 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  665648	      1742 ns/op	     232 B/op	       3 allocs/op
-BenchmarkEventParsing-4   	  670014	      1732 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  618056	      1754 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  661675	      1743 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  662276	      1733 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  660154	      1740 ns/op	     232 B/op	       3 allocs/op
+BenchmarkEventParsing-4   	  662412	      1753 ns/op	     232 B/op	       3 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/ha	6.907s
+ok  	github.com/sztanpet/ha-lua/internal/ha	5.802s
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/logwriter	0.003s
+ok  	github.com/sztanpet/ha-lua/internal/logwriter	0.002s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/lua
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkStoreStateProxyWrite-4   	   94314	     11675 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	  103675	     11851 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	  100898	     11461 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	   98308	     11454 ns/op	     367 B/op	      17 allocs/op
-BenchmarkStoreStateProxyWrite-4   	   97795	     11586 ns/op	     367 B/op	      17 allocs/op
-BenchmarkLuaJSONEncode-4          	  202940	      5808 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  193459	      5755 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  206247	      5861 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  203494	      5848 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONEncode-4          	  207250	      5786 ns/op	    2305 B/op	      77 allocs/op
-BenchmarkLuaJSONDecode-4          	  117031	      9274 ns/op	   18413 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  125548	      9308 ns/op	   18414 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  128652	      9108 ns/op	   18415 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  130215	      9310 ns/op	   18415 B/op	     125 allocs/op
-BenchmarkLuaJSONDecode-4          	  125088	      9788 ns/op	   18414 B/op	     125 allocs/op
-BenchmarkRegistryDispatch-4       	  157639	      7514 ns/op	    6735 B/op	     120 allocs/op
-BenchmarkRegistryDispatch-4       	  167274	      7264 ns/op	    6756 B/op	     122 allocs/op
-BenchmarkRegistryDispatch-4       	  164593	     12611 ns/op	    6480 B/op	     105 allocs/op
-BenchmarkRegistryDispatch-4       	  168398	     14546 ns/op	    6524 B/op	     107 allocs/op
-BenchmarkRegistryDispatch-4       	  169368	      7216 ns/op	    6784 B/op	     124 allocs/op
-BenchmarkReMatchCached-4          	  134812	      9426 ns/op	   33168 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  120974	      9814 ns/op	   33187 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  117054	     10170 ns/op	   33196 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  119642	     10049 ns/op	   33209 B/op	      71 allocs/op
-BenchmarkReMatchCached-4          	  112423	      9745 ns/op	   33211 B/op	      71 allocs/op
-BenchmarkReMatchCold-4            	   81837	     13534 ns/op	   42252 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   75649	     16387 ns/op	   42376 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   73227	     17043 ns/op	   42361 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   76136	     15482 ns/op	   42422 B/op	      95 allocs/op
-BenchmarkReMatchCold-4            	   75871	     17292 ns/op	   42362 B/op	      95 allocs/op
-BenchmarkHTTPGet-4                	    9871	    106632 ns/op	   46099 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	    9639	    105093 ns/op	   46106 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   11103	    106516 ns/op	   46108 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   11188	    107703 ns/op	   46104 B/op	     171 allocs/op
-BenchmarkHTTPGet-4                	   11312	    104544 ns/op	   46103 B/op	     171 allocs/op
-BenchmarkTimeNow-4                	  133958	      8327 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  143049	      8825 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  133852	      8788 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  141105	      8620 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkTimeNow-4                	  137816	      8555 ns/op	   32488 B/op	      61 allocs/op
-BenchmarkCryptoSHA256-4           	  118044	      9819 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  121594	     10039 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  120987	     10241 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  123070	     10177 ns/op	   33744 B/op	      69 allocs/op
-BenchmarkCryptoSHA256-4           	  119800	     10304 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   98295	     11939 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   99067	     11807 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   97923	     12034 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   94696	     12161 ns/op	     367 B/op	      17 allocs/op
+BenchmarkStoreStateProxyWrite-4   	   96679	     11966 ns/op	     367 B/op	      17 allocs/op
+BenchmarkLuaJSONEncode-4          	  207301	      5677 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  195819	      5674 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  206202	      5674 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  200418	      5750 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONEncode-4          	  202077	      5746 ns/op	    2305 B/op	      77 allocs/op
+BenchmarkLuaJSONDecode-4          	  131427	      9128 ns/op	   18413 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  128190	      9345 ns/op	   18413 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  130502	      9282 ns/op	   18413 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  131306	      8944 ns/op	   18414 B/op	     125 allocs/op
+BenchmarkLuaJSONDecode-4          	  132135	      9012 ns/op	   18413 B/op	     125 allocs/op
+BenchmarkRegistryDispatch-4       	  152334	      9573 ns/op	    6563 B/op	     110 allocs/op
+BenchmarkRegistryDispatch-4       	   89938	     11859 ns/op	    6516 B/op	     107 allocs/op
+BenchmarkRegistryDispatch-4       	   87464	     11821 ns/op	    6504 B/op	     106 allocs/op
+BenchmarkRegistryDispatch-4       	  174068	     11809 ns/op	    6526 B/op	     107 allocs/op
+BenchmarkRegistryDispatch-4       	  161670	     11262 ns/op	    6485 B/op	     105 allocs/op
+BenchmarkReMatchCached-4          	  128775	      9404 ns/op	   33186 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  120252	      9878 ns/op	   33192 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  120229	     10160 ns/op	   33205 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  120703	     10135 ns/op	   33205 B/op	      71 allocs/op
+BenchmarkReMatchCached-4          	  122055	     10076 ns/op	   33206 B/op	      71 allocs/op
+BenchmarkReMatchCold-4            	   84597	     14172 ns/op	   42213 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   74179	     16190 ns/op	   42336 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   74350	     16113 ns/op	   42364 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   74624	     16431 ns/op	   42321 B/op	      95 allocs/op
+BenchmarkReMatchCold-4            	   73878	     16581 ns/op	   42366 B/op	      95 allocs/op
+BenchmarkHTTPGet-4                	   11090	    106847 ns/op	   46102 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   10000	    105944 ns/op	   46103 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   10000	    106821 ns/op	   46101 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   10000	    105270 ns/op	   46107 B/op	     171 allocs/op
+BenchmarkHTTPGet-4                	   10671	    109828 ns/op	   46106 B/op	     171 allocs/op
+BenchmarkTimeNow-4                	  135637	      8872 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  125299	      8681 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  141877	      9313 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  115650	      9133 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkTimeNow-4                	  137976	      9721 ns/op	   32488 B/op	      61 allocs/op
+BenchmarkCryptoSHA256-4           	  124951	      9893 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  122884	      9920 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  117080	     10102 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  123814	      9864 ns/op	   33744 B/op	      69 allocs/op
+BenchmarkCryptoSHA256-4           	  127552	      9770 ns/op	   33744 B/op	      69 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/lua	63.339s
+ok  	github.com/sztanpet/ha-lua/internal/lua	63.713s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/purge
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkPurge-4   	      67	  18715416 ns/op	    1802 B/op	      10 allocs/op
-BenchmarkPurge-4   	      68	  18709929 ns/op	     208 B/op	      10 allocs/op
-BenchmarkPurge-4   	      68	  18683208 ns/op	     208 B/op	      10 allocs/op
-BenchmarkPurge-4   	      69	  18574517 ns/op	     208 B/op	      10 allocs/op
-BenchmarkPurge-4   	      67	  18797863 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      68	  18918646 ns/op	    1234 B/op	      10 allocs/op
+BenchmarkPurge-4   	      61	  18998349 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      67	  18924645 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      67	  18957489 ns/op	     208 B/op	      10 allocs/op
+BenchmarkPurge-4   	      69	  18905470 ns/op	     208 B/op	      10 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/purge	46.096s
+ok  	github.com/sztanpet/ha-lua/internal/purge	44.780s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/scheduler
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkSchedulerFire-4                	     939	   1246862 ns/op	   37606 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     958	   1248024 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     954	   1247788 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     939	   1271345 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerFire-4                	     919	   1254115 ns/op	   37600 B/op	    1300 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    8512	    125813 ns/op	    5919 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9507	    123279 ns/op	    5912 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9812	    121984 ns/op	    5911 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	    9280	    121506 ns/op	    5912 B/op	     151 allocs/op
-BenchmarkSchedulerConcurrencyStress-4   	   10000	    120626 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerFire-4                	     942	   1259027 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     885	   1261812 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     934	   1260785 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     955	   1263275 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerFire-4                	     931	   1254619 ns/op	   37600 B/op	    1300 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9177	    121138 ns/op	    5919 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9813	    122458 ns/op	    5913 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    8892	    118346 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9273	    118946 ns/op	    5912 B/op	     151 allocs/op
+BenchmarkSchedulerConcurrencyStress-4   	    9925	    120694 ns/op	    5912 B/op	     151 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/scheduler	11.943s
+ok  	github.com/sztanpet/ha-lua/internal/scheduler	11.793s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/state
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkStateInsert-4   	   28041	     41115 ns/op	    1587 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   28915	     40824 ns/op	    1587 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   28990	     41422 ns/op	    1586 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   28552	     42064 ns/op	    1587 B/op	      40 allocs/op
-BenchmarkStateInsert-4   	   29240	     41599 ns/op	    1587 B/op	      40 allocs/op
+BenchmarkStateInsert-4   	   26367	     43050 ns/op	    1587 B/op	      40 allocs/op
+BenchmarkStateInsert-4   	   27866	     43549 ns/op	    1587 B/op	      40 allocs/op
+BenchmarkStateInsert-4   	   26293	     41599 ns/op	    1588 B/op	      40 allocs/op
+BenchmarkStateInsert-4   	   28633	     43367 ns/op	    1587 B/op	      40 allocs/op
+BenchmarkStateInsert-4   	   26074	     44530 ns/op	    1587 B/op	      40 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/state	8.109s
+ok  	github.com/sztanpet/ha-lua/internal/state	8.136s
 goos: linux
 goarch: amd64
 pkg: github.com/sztanpet/ha-lua/internal/store
 cpu: AMD Ryzen 5 5600G with Radeon Graphics         
-BenchmarkKVGet-4   	  140646	      8419 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  133502	      8302 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  144006	      8227 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  135669	      8462 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVGet-4   	  140647	      8653 ns/op	     632 B/op	      24 allocs/op
-BenchmarkKVSet-4   	   98562	     11579 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  104593	     11394 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  101500	     11309 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  101988	     11452 ns/op	     343 B/op	      15 allocs/op
-BenchmarkKVSet-4   	  102700	     11379 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVGet-4   	  142864	      8113 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  144349	      8111 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  141796	      8084 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  140726	      8100 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVGet-4   	  142180	      8089 ns/op	     632 B/op	      24 allocs/op
+BenchmarkKVSet-4   	  102331	     11606 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  100866	     11809 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  103936	     11335 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  105054	     11723 ns/op	     343 B/op	      15 allocs/op
+BenchmarkKVSet-4   	  103069	     11404 ns/op	     343 B/op	      15 allocs/op
 PASS
-ok  	github.com/sztanpet/ha-lua/internal/store	12.766s
+ok  	github.com/sztanpet/ha-lua/internal/store	12.817s
 ?   	github.com/sztanpet/ha-lua/internal/testutil	[no test files]
 ?   	github.com/sztanpet/ha-lua/internal/web	[no test files]
 ?   	github.com/sztanpet/ha-lua/tools/icon	[no test files]
