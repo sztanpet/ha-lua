@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-07 (v3.2.0: states table retired, phase 2 reviewed)
+Last updated: 2026-07-08 (v3.2.1: mirrored_switches echo attribution)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,15 +11,16 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v3.2.0, closing the event-latency track's phase 2: the states
-mirror table is retired (seed dedups vs memory on reconnect / newest
-history row on cold start; schema DROPs it on upgrade), and the
-user-requested post-refactor review landed one simplification (seed
-appends ride the write-behind queue — writeBatch is the single SQL
-write site). v3.1.0 earlier the same day shipped the track itself
-(wait=false, memory mirror, write-behind, instrumentation). Final
-numbers: event→command mean 150µs, p99 0.33ms, off-toggle 0.2ms.
-Details in `state/event-latency.md`.
+Released v3.2.1: mirrored_switches echo-attribution fix. Field report
+after v3.2.0 (latency now comparable to built-ins): ~4 toggles/sec lost
+an on/off. Not infra — the example's guard compared the partner's
+REPORTED state (lags commanded state by the Zigbee round trip), so a
+flip inside the window skipped its command and the late echo bounced
+the pressed switch back. Fixed with a per-entity FIFO of expected
+echoes + commanded-state comparison; regression tests drive the real
+example file through tracker+runner (mirror_test.go, fails on the old
+script). Users with a live copy must re-copy the script — the fix is
+Lua-only. Details in `state/event-latency.md` round 4.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -42,6 +43,10 @@ Details in `state/event-latency.md`.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.2.1 (2026-07-08): mirrored_switches fast-toggle fix — echo attribution
+  (FIFO of expected reports) replaces the reported-state guard that lost
+  commands at ~4 toggles/sec; regression tests drive the real example
+  file. Script-only fix. See `state/event-latency.md` round 4.
 - 3.2.0 (2026-07-07): states mirror table retired — memory-authoritative
   since 3.1.0; seed dedups vs memory (reconnect) / newest history row
   (cold start); schema DROPs the table on upgrade; seed appends ride the
