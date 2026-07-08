@@ -112,3 +112,20 @@ p99 0.33ms, BusyKV identical to idle, off-ns/op 0.2ms — all holding.
   decision after production soak.
 - Overflow: block with warn (never drop history silently). Writer failure:
   retry once, then drop batch loudly; memory stays authoritative.
+
+## Round 4: fast-toggle command loss (2026-07-08, 70719fb)
+
+Field report post-v3.2.0: latency comparable to HA automations, but
+~4 toggles/sec loses an on or off. NOT infra — commands ordered, no
+channel drops, no rejections. The example's "partner already matches"
+guard compared against the partner's REPORTED state, which lags its
+COMMANDED state by the Zigbee round trip; a flip inside that window
+skipped its command, and the late echo bounced the pressed switch back.
+Fixed with echo attribution (per-entity FIFO of expected reports, 10s
+expiry, presses compare against commanded state). Regression tests
+drive the real example file (mirror_test.go); fast-toggle test fails
+against the old script. Lesson recorded: state-comparison echo guards
+in mirror scripts are latency bugs; attribution is the pattern.
+Remaining latency gap vs built-ins is the WS hop (~1-2ms) — inherent
+to being out-of-process; nothing further to shave without moving into
+core.
