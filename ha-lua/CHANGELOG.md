@@ -4,6 +4,20 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.2.1 - 2026-07-08
+
+### Fixed
+- **The `mirrored_switches` example no longer loses fast toggles.**
+  Flipping a switch faster than the partner's device round trip
+  (~4×/second on Zigbee) hit a race in the example's echo guard: it
+  compared against the partner's *reported* state, which lags its
+  *commanded* state, so the second flip wrongly concluded the partner
+  already matched, skipped its service call, and the late echo flipped
+  the pressed switch back. The example now attributes echoes explicitly
+  (a FIFO of expected reports per entity, with expiry) and compares
+  presses against the partner's commanded state. If you copied the old
+  example, copy the new one — the fix is entirely in the script.
+
 ## 3.2.0 - 2026-07-07
 
 ### Changed
