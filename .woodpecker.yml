@@ -1,0 +1,62 @@
+# CI for ha-lua
+#
+# Runs on the homelab Woodpecker agent; every step executes as a container inside
+# the agent's dind instance.
+#
+# The Go module lives in the ha-lua/ add-on subfolder (that folder is also the
+# Docker build context), so every step cd's into it -- the repository-root
+# Makefile only delegates.
+#
+# Dependencies are NOT vendored, so the module cache matters (see caching below).
+# The analyzers (staticcheck, golangci-lint, benchstat) are `tool` directives in
+# go.mod, so `go tool <name>` builds them at the pinned version -- there is no
+# separate tool-install step.
+#
+# golang:1.26 ships go1.26.5, satisfying the go1.26.4 line in go.mod, plus make,
+# git and gcc -- gcc matters because `make test` uses -race, which needs cgo.
+#
+# The chromedp browser UI tests (internal/lua) skip cleanly when no Chrome is on
+# PATH, so CI stays a pure Go toolchain job.
+#
+# Caching: the agent mounts a persistent /cache into every step (a docker named
+# volume inside dind). Without it each run refetches every module and rebuilds
+# the analyzers from source. The first run after the cache is cleared is cold.
+
+variables:
+  - &golang_image golang:1.26
+  - &go_cache
+    GOCACHE: /cache/go-build
+    GOPATH: /cache/gopath
+    GOLANGCI_LINT_CACHE: /cache/golangci-lint
+
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: build
+    image: *golang_image
+    environment: *go_cache
+    commands:
+      - cd ha-lua && make build
+
+  - name: test
+    image: *golang_image
+    environment: *go_cache
+    commands:
+      - cd ha-lua && make test
+
+  - name: vet
+    image: *golang_image
+    environment: *go_cache
+    commands:
+      - cd ha-lua && make vet
+
+  # Left non-blocking on purpose -- drop `failure: ignore` once you want it
+  # gating merges.
+  - name: lint
+    image: *golang_image
+    environment: *go_cache
+    failure: ignore
+    commands:
+      - cd ha-lua && make staticcheck
+      - cd ha-lua && make lint
