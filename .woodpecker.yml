@@ -58,5 +58,6 @@ steps:
     environment: *go_cache
     failure: ignore
     commands:
-      - cd ha-lua && make staticcheck
-      - cd ha-lua && make lint
+      - cd ha-lua
+      - make staticcheck
+      - make lint
