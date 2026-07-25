@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-08 (v3.2.1: mirrored_switches echo attribution)
+Last updated: 2026-07-25 (v3.2.2: review round 2, five bug fixes)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,16 +11,18 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v3.2.1: mirrored_switches echo-attribution fix. Field report
-after v3.2.0 (latency now comparable to built-ins): ~4 toggles/sec lost
-an on/off. Not infra — the example's guard compared the partner's
-REPORTED state (lags commanded state by the Zigbee round trip), so a
-flip inside the window skipped its command and the late echo bounced
-the pressed switch back. Fixed with a per-entity FIFO of expected
-echoes + commanded-state comparison; regression tests drive the real
-example file through tracker+runner (mirror_test.go, fails on the old
-script). Users with a live copy must re-copy the script — the fix is
-Lua-only. Details in `state/event-latency.md` round 4.
+Released v3.2.2: five bug fixes from a second whole-codebase review
+(round 2 in `state/code-review.md`). The one that mattered: a cyclic Lua
+table (`t.self = t`) recursed until the goroutine stack overflowed, and a
+Go stack overflow is a *fatal* error — not catchable by pcall — so one
+script's bad payload killed the daemon and every other script's LState.
+Now depth-capped. Also: StopScript unregistered runners outside s.mu and
+could deafen a script a concurrent reload had just started; ha.after from
+a callback leaked a timer ID per call; time's `__tostring` was on the
+wrong table; time.Local was written after goroutines started. Findings
+1/2/4 were confirmed with throwaway probe tests before write-up — do that
+again, it separated real from theoretical fast. Details, plus the list of
+things checked and found NOT to be bugs, in `state/code-review.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -33,8 +35,9 @@ Lua-only. Details in `state/event-latency.md` round 4.
   (load-examples-spec.md). COMPLETE.
 - `state/enhanced-climate.md` — REST/command transport + enhanced_climate example
   + Lovelace card (enhanced-climate-spec.md). Released v2.7.0, card at 0.3.8.
-- `state/code-review.md` — 2026-07-01 whole-codebase review findings + fix
-  status (no spec; review track).
+- `state/code-review.md` — whole-codebase review findings + fix status
+  (no spec; review track). Round 1 2026-07-01 (CLOSED, v2.8.9), round 2
+  2026-07-25 (CLOSED, v3.2.2).
 - `state/event-latency.md` — event-to-action latency: async call_service +
   memory mirror + background writer (event-latency-spec.md). Spec written,
   build pending review.
@@ -43,6 +46,11 @@ Lua-only. Details in `state/event-latency.md` round 4.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.2.2 (2026-07-25): five review fixes — cyclic-table stack overflow
+  (fatal, killed the daemon), StopScript unregistering a newer runner
+  outside the lock, ha.after keepIDs leak from callbacks, time
+  __tostring on the wrong table, time.Local data race. See
+  `state/code-review.md` round 2.
 - 3.2.1 (2026-07-08): mirrored_switches fast-toggle fix — echo attribution
   (FIFO of expected reports) replaces the reported-state guard that lost
   commands at ~4 toggles/sec; regression tests drive the real example

@@ -141,3 +141,88 @@ re-open every lifecycle bug for zero user-visible gain. One real flaw fixed:
 
 STATUS: follow-up COMPLETE. Released as v2.8.9 on 2026-07-02 (tag on release
 commit 27761c8; ships card 0.3.25 + the eight review fixes). Track CLOSED.
+
+---
+
+# Round 2 — whole-codebase review (2026-07-25)
+
+Second full read of all non-test Go, prompted by "check the code for bugs".
+Five real bugs, all fixed and released as v3.2.2. Findings 1, 2 and 4 were
+confirmed empirically (throwaway probes) before being written up — worth doing
+again next round, it separated the real from the theoretical fast.
+
+## Fixed
+
+1. **[DONE 86e030a] Cyclic Lua table crashed the whole daemon.**
+   `json.go luaToAny`/`luaTableToAny` recursed with no bound, so `t.self = t`
+   ran the goroutine stack out. A Go stack overflow is `fatal error`, NOT a
+   panic: `pcall` can't catch it, `dispatchException` never runs, the process
+   dies and takes every other script's LState with it. Confirmed with a probe
+   test (`fatal error: stack overflow` at json.go:56). Fixed with a depth cap
+   (`maxTableDepth = 100`) threaded through `luaToAnyDepth`. Chose a depth cap
+   over a visited-set: one int, no allocation, also catches absurd non-cyclic
+   nesting. Blast radius was every table-encoding binding — `store.set`,
+   `global.set`, `store.state` assignment, `ha.call_service`, `ha.fire_event`,
+   `ha.set_state` — not just `json.encode`.
+
+2. **[DONE cef27ad] StopScript could unregister a *newer* runner.**
+   The handle left `s.scripts` under `s.mu`, but `reg.Remove` +
+   `Scheduler.RemoveScript` ran after unlocking. A `StartScript` in that gap
+   installed a fresh runner into both maps; the stale removals then
+   unregistered it. End state: live script, tracked by the supervisor (so every
+   later Reload is a no-op) but absent from the Registry — no events, no
+   timers, 404 from the router. Reachable because the watcher deletes a
+   script's debounce entry *before* running the reload, so a second save while
+   the first Reload is still inside StopScript (≤ stopTimeout = 5s) issues two
+   overlapping stops. Fix: both removals moved inside the critical section,
+   mirroring StartScript's add. Lock order sup.mu → reg.mu / sched.mu already
+   existed in StartScript, so no new deadlock risk; only the drain wait stays
+   outside.
+   **Test seam:** the natural window is a few instructions wide and 300 rounds
+   of concurrent Reload did NOT reproduce it, so the regression test parks a
+   stop in the old gap via `stopScriptHook` (a no-op prod var, same pattern as
+   `smtpSendMail`). Verified it fails on the old ordering.
+
+3. **[DONE 2b26c95] `keepIDs` leaked one ID per callback `ha.after`.**
+   `PruneScript` is keepIDs' only reader and runs once after the main chunk,
+   but the `ha.after` binding appended unconditionally — and ha.after is
+   explicitly callable from callbacks. A debounce firing a few times a second
+   retained a random ID per call for the script's lifetime. Fix: `haAPI.loaded`
+   flag + `keepTimer()` helper; runner nils the slice after pruning. Same class
+   as the timerFns leak fixed in M-whatever; keepIDs was missed because it only
+   started carrying after-IDs in f71f78e (round 1, finding 2).
+
+4. **[DONE d8a041d] `tostring(time.now())` printed a userdata address.**
+   `__tostring` sat in `timeMethods`, which is installed as the metatable's
+   `__index` — Lua looks metamethods up on the metatable itself, so it was only
+   reachable as an explicit `t:__tostring()`. Confirmed with a probe
+   (`userdata: 0x1c1ae8981bc0`). Moved onto the metatable.
+
+5. **[DONE 886df72] Data race on `time.Local`.**
+   Assigned in main.go *after* `debug.Start` and `tracker.Start` had spawned
+   goroutines that log, and every slog record reads time.Local via time.Now().
+   Invisible to `go test -race` because main has no tests. Moved to just after
+   logger setup, while the process is still single-threaded (ResolveLocation
+   warns through slog, so it can't move earlier than that).
+
+## Checked and NOT bugs (don't re-derive)
+
+- `ha/client.go` subscribe/reconnect bookkeeping: `conn` and `subscribed` are
+  always swapped inside one critical section, so a mark can never land on a
+  connection it wasn't taken from. No double- or missed subscription.
+- `purge.go` cutoff is `time.RFC3339` (`…Z`) while `changed_at` is HA's
+  `last_changed` verbatim (`…+00:00`, often fractional). Lexical comparison
+  resolves at the date field, so the mismatch can only differ *within the same
+  second*. Left alone.
+- In-place slice filtering in `Router.Unregister` and
+  `Scheduler.RemoveScript`: write index never runs ahead of read index.
+- `Runner.Close()` vs `Registry.Dispatch`: Remove blocks on reg.mu until
+  in-flight dispatches finish, and the registry is keyed by script ID, so no
+  send-on-closed-channel path exists.
+- `cachedEventHandlers` read from the OnLoaded goroutine while the script
+  goroutine appends to `api.eventHandlers`: append writes at index len, which
+  the reader's slice never covers.
+- Event coalescing keeps the newest state_changed at the entity's *first*
+  arrival position, so it can reorder against a custom event that arrived
+  later. Documented behavior ("other events are kept in order"),
+  `ha.immediate_events()` is the escape hatch. Left.
