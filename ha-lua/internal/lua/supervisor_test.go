@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,5 +189,59 @@ func TestSupervisorOnLoaded(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("OnLoaded never called")
+	}
+}
+
+// TestStopScriptDoesNotUnregisterANewRunner: StopScript once removed the handle
+// from s.scripts under s.mu but unregistered the runner afterwards, outside it.
+// A Reload landing in that gap installed a fresh runner into s.scripts and the
+// Registry, and the stale stop then unregistered THAT runner — leaving a script
+// the supervisor still tracks (so Reload can never revive it) but the Registry
+// has never heard of: no events, no timers, 404s in the UI.
+//
+// stopScriptHook parks the first stop in that window so the interleaving is
+// deterministic rather than a one-in-a-million preemption.
+func TestStopScriptDoesNotUnregisterANewRunner(t *testing.T) {
+	dir := t.TempDir()
+	writeScript(t, dir, "s.lua", `global.set("s", "loaded")`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sup, reg, _ := newSupervisor(t, dir)
+	defer func() { cancel(); sup.Wait() }()
+
+	sup.StartScript(ctx, "s")
+	<-reg.Get("s").LoadedCh
+
+	// Delay only the first stop through the hook; the Reload's own stop (and
+	// every later one) must run at full speed or it would block behind it.
+	var hookMu sync.Mutex
+	firstStop := true
+	stopScriptHook = func() {
+		hookMu.Lock()
+		mine := firstStop
+		firstStop = false
+		hookMu.Unlock()
+		if mine {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	defer func() { stopScriptHook = func() {} }()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); sup.StopScript("s") }()
+	time.Sleep(50 * time.Millisecond) // let the stop reach the hook
+	sup.Reload(ctx, "s")              // its StopScript no-ops, its StartScript re-registers
+	wg.Wait()
+
+	sup.mu.Lock()
+	_, tracked := sup.scripts["s"]
+	sup.mu.Unlock()
+	inRegistry := reg.Get("s") != nil
+
+	if tracked != inRegistry {
+		t.Fatalf("supervisor and registry disagree: tracked=%v inRegistry=%v; "+
+			"a tracked-but-unregistered script gets no events and can never be reloaded",
+			tracked, inRegistry)
 	}
 }
