@@ -663,3 +663,51 @@ func TestTimerExceptionHandling(t *testing.T) {
 		t.Errorf("expected stack traceback, got %q", caughtTraceback)
 	}
 }
+
+// TestAfterFromCallbackDoesNotGrowKeepIDs: ha.after is documented as callable
+// from callbacks, and each call minted a random ID that was appended to
+// keepIDs forever. PruneScript is keepIDs' only reader and runs once at load,
+// so a debounce firing a few times a second leaked one ID per call for the
+// lifetime of the script.
+func TestAfterFromCallbackDoesNotGrowKeepIDs(t *testing.T) {
+	writeDB, _ := testutil.NewTestDB(t, nil)
+	if err := state.Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	L := lua.NewState()
+	defer L.Close()
+	L.SetContext(ctx)
+
+	sched := scheduler.New(writeDB, time.UTC, func(string, string) {})
+	runner := &Runner{scriptID: "test", timerFns: make(map[string]*lua.LFunction), scheduler: sched}
+	api := &haAPI{scriptID: "test", scheduler: sched, timerFns: runner.timerFns}
+	runner.registerHaAPI(L, api)
+
+	// Load time: this registration must be kept, or PruneScript deletes the row
+	// and the restart-orphan warning is lost.
+	if err := L.DoString(`ha.after("1h", function() end)`); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.keepIDs) != 1 {
+		t.Fatalf("load-time ha.after: keepIDs = %v, want 1 entry", api.keepIDs)
+	}
+
+	// The runner does this once the main chunk has run and pruning is done.
+	api.loaded = true
+	api.keepIDs = nil
+
+	for i := 0; i < 50; i++ {
+		if err := L.DoString(`ha.after("1h", function() end)`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(api.keepIDs) != 0 {
+		t.Errorf("after load, 50 ha.after calls grew keepIDs to %d entries", len(api.keepIDs))
+	}
+	// The timers themselves must still be registered — only the prune bookkeeping
+	// stops.
+	if len(api.timerFns) != 51 {
+		t.Errorf("timerFns = %d, want 51 registered timers", len(api.timerFns))
+	}
+}

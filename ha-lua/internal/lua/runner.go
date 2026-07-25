@@ -225,6 +225,12 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			slog.Warn("lua: timer pruning failed", "script", r.scriptID, "err", err)
 		}
 	}
+	// Pruning is the only reader of keepIDs and it has now run. Release the set
+	// and stop collecting: ha.after may be called from callbacks for as long as
+	// the script lives, and every one of those IDs would otherwise be retained
+	// forever. See haAPI.keepTimer.
+	api.loaded = true
+	api.keepIDs = nil
 
 	// Cache event handlers and routes for the supervisor/router, then signal
 	// loaded. Both are safe to read once LoadedCh is closed.
