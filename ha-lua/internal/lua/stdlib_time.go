@@ -25,25 +25,29 @@ func registerTime(L *lua.LState) {
 	mod.RawSetString("day", lua.LNumber(86400))
 
 	mt.RawSetString("__index", L.SetFuncs(L.NewTable(), timeMethods))
+	// __tostring must sit on the metatable itself, not in the __index method
+	// table: tostring() looks the metamethod up on the metatable, so an entry
+	// under __index is only reachable as an explicit t:__tostring() call and
+	// tostring(t) falls back to "userdata: 0x…".
+	mt.RawSetString("__tostring", L.NewFunction(luaTimeToString))
 }
 
 var timeMethods = map[string]lua.LGFunction{
-	"format":     luaTimeFormat,
-	"unix":       luaTimeGetUnix,
-	"add":        luaTimeAdd,
-	"sub":        luaTimeSub,
-	"before":     luaTimeBefore,
-	"after":      luaTimeAfter,
-	"year":       luaTimeYear,
-	"month":      luaTimeMonth,
-	"day":        luaTimeDay,
-	"hour":       luaTimeHour,
-	"minute":     luaTimeMinute,
-	"second":     luaTimeSecond,
-	"weekday":    luaTimeWeekday,
-	"is_zero":    luaTimeIsZero,
-	"utc":        luaTimeUTC,
-	"__tostring": luaTimeToString,
+	"format":  luaTimeFormat,
+	"unix":    luaTimeGetUnix,
+	"add":     luaTimeAdd,
+	"sub":     luaTimeSub,
+	"before":  luaTimeBefore,
+	"after":   luaTimeAfter,
+	"year":    luaTimeYear,
+	"month":   luaTimeMonth,
+	"day":     luaTimeDay,
+	"hour":    luaTimeHour,
+	"minute":  luaTimeMinute,
+	"second":  luaTimeSecond,
+	"weekday": luaTimeWeekday,
+	"is_zero": luaTimeIsZero,
+	"utc":     luaTimeUTC,
 }
 
 func pushTime(L *lua.LState, t time.Time) {

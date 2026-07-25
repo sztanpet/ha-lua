@@ -231,6 +231,12 @@ func TestTimeModule(t *testing.T) {
 		local utc = off:utc()
 		assert(utc:unix() == off:unix())
 		assert(utc:format(time.RFC3339) == "2026-06-15T10:00:00Z")
+
+		-- tostring() must reach __tostring on the metatable, not print a
+		-- "userdata: 0x…" address
+		assert(tostring(t) == "2026-06-15T12:00:00Z",
+			"tostring(time) = " .. tostring(t))
+		assert(("at " .. tostring(t)):find("2026"), "concat via tostring")
 	`)
 	if err != nil {
 		t.Error(err)
