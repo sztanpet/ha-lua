@@ -102,6 +102,68 @@ func TestJSONToLua(t *testing.T) {
 	}
 }
 
+// TestLuaMarshalCyclicTable: a table that reaches itself must come back as an
+// error. Before the depth cap this recursed until the goroutine stack
+// overflowed, which is a Go *fatal* error — unrecoverable by pcall, so a single
+// script's bad payload killed the daemon and every other script with it.
+func TestLuaMarshalCyclicTable(t *testing.T) {
+	L := lua.NewState()
+	defer L.Close()
+
+	cases := map[string]string{
+		"direct":   `_v = {}; _v.self = _v`,
+		"indirect": `_v = {}; local mid = { back = _v }; _v.mid = mid`,
+		"array":    `_v = {}; _v[1] = _v`,
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := L.DoString(src); err != nil {
+				t.Fatalf("lua: %v", err)
+			}
+			if _, err := luaMarshal(L, L.GetGlobal("_v")); err == nil {
+				t.Fatal("marshal of a cyclic table succeeded, want an error")
+			}
+		})
+	}
+}
+
+// TestJSONEncodeCyclicIsCatchable: the Lua-visible half of the same guard —
+// json.encode raises an error the script can pcall, and the VM survives.
+func TestJSONEncodeCyclicIsCatchable(t *testing.T) {
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	defer L.Close()
+	RegisterStdlib(L, t.TempDir(), nil)
+
+	if err := L.DoString(`
+		local t = {}
+		t.self = t
+		local ok, err = pcall(function() return json.encode(t) end)
+		assert(not ok, "json.encode of a cyclic table must fail")
+		assert(type(err) == "string" and err:find("nested"), "unexpected error: " .. tostring(err))
+		-- the VM is still usable afterwards
+		assert(json.encode({a = 1}) == '{"a":1}')
+	`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLuaMarshalDeepButFinite: the cap must not reject payloads that merely
+// nest a few levels, which real HA attribute tables do.
+func TestLuaMarshalDeepButFinite(t *testing.T) {
+	L := lua.NewState()
+	defer L.Close()
+	if err := L.DoString(`
+		_v = {}
+		local cur = _v
+		for i = 1, 20 do cur.next = {}; cur = cur.next end
+	`); err != nil {
+		t.Fatalf("lua: %v", err)
+	}
+	if _, err := luaMarshal(L, L.GetGlobal("_v")); err != nil {
+		t.Fatalf("20 levels of nesting rejected: %v", err)
+	}
+}
+
 func BenchmarkLuaJSONEncode(b *testing.B) {
 	L := lua.NewState()
 	defer L.Close()
