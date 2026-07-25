@@ -65,6 +65,23 @@ func main() {
 		slog.Warn("file logging disabled", "dir", cfg.LogDir, "err", logFileErr)
 	}
 
+	// Resolve the wall-clock zone and align the process with it before ANY
+	// goroutine exists: time.Local is a package variable, and every slog record
+	// reads it through time.Now(). Assigning it once the tracker's writer and
+	// the pprof server were already running was an unsynchronized write against
+	// their reads.
+	//
+	// The alignment itself is so that scripts' time.now() (used by e.g. the
+	// thermostat's schedule) agrees with the scheduler's ha.at. Without it, a
+	// non-UTC user on a UTC container sees schedules fire at the wrong
+	// wall-clock time.
+	loc, err := scheduler.ResolveLocation(cfg.Timezone)
+	if err != nil {
+		slog.Error("bad timezone", "err", err)
+		os.Exit(1)
+	}
+	time.Local = loc
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -82,16 +99,6 @@ func main() {
 	tracker.Start(ctx)
 	globalStore := store.NewGlobal(writeDB, readDB)
 
-	loc, err := scheduler.ResolveLocation(cfg.Timezone)
-	if err != nil {
-		slog.Error("bad timezone", "err", err)
-		os.Exit(1)
-	}
-	// Align the process wall-clock with the configured zone so that scripts'
-	// time.now() (used by e.g. the thermostat's schedule) agrees with the
-	// scheduler's ha.at. Without this, a non-UTC user on a UTC container would
-	// see schedules fire at the wrong wall-clock time.
-	time.Local = loc
 	reg := luapkg.NewRegistry()
 	router := luapkg.NewRouter(reg)
 	sched := scheduler.New(writeDB, loc, reg.DispatchToTimer)
