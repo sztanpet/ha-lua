@@ -4,6 +4,36 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.2.2 - 2026-07-25
+
+### Fixed
+- **A self-referential table no longer kills the daemon.** Converting a
+  Lua table that reaches itself (`local t = {}; t.self = t`) recursed
+  until the goroutine stack overflowed, and a Go stack overflow is a
+  *fatal* error — `pcall` cannot catch it, so one script's bad payload
+  took down the add-on and every other script with it. Nesting past 100
+  levels is now an ordinary Lua error. This covers every binding that
+  encodes a script-supplied table, not just `json.encode`: `store.set`,
+  `global.set`, `store.state` assignment, `ha.call_service`,
+  `ha.fire_event` and `ha.set_state`.
+- **A reloaded script could go silently deaf.** Stopping a script
+  unregistered it from event dispatch outside the lock that guards the
+  running-script table, so a reload landing in that window left the new
+  runner live but invisible: no events, no timers, and 404s from the UI
+  router — permanently, because further reloads then did nothing. Two
+  overlapping reloads of the same file (a second save while the first
+  reload is still draining) were enough to trigger it.
+- **Memory leak in `ha.after` when called from a callback.** Each call
+  minted a timer ID that was retained for the lifetime of the script,
+  even though the only consumer (row pruning) runs once at load. Debounce
+  patterns firing a few times a second leaked steadily. The timers
+  themselves are unchanged.
+- `tostring()` on a `time` value returned `userdata: 0x…` instead of the
+  RFC3339 timestamp, because `__tostring` was registered where Lua does
+  not look for it. Printing or concatenating a time value now works.
+- Fixed a data race on the process timezone: it was assigned after the
+  first background goroutines had already started logging.
+
 ## 3.2.1 - 2026-07-08
 
 ### Fixed
