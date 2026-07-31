@@ -204,3 +204,30 @@ websocket lib is github.com/coder/websocket.
   URL/token/paths from the Supervisor environment and ignores any connection
   fields in options.json; tests in internal/config/config_test.go (677d96d)
 - Tree gofmt'ed — earlier milestones had misaligned fields (d49ca17)
+
+## pprof goroutine labels (2026-07-31, commits 6aa3052, 842c711, 34e2419)
+Every goroutine the daemon starts now runs inside `runtime/pprof.Do` with a
+`goroutine` label naming its job, so CPU/block/goroutine profiles from the
+debug server group by subsystem instead of being read stack by stack.
+
+- Long-lived: `ha-client`, `state-writer`, `state-seed`, `event-router`,
+  `scheduler`, `purge`, `script-watcher`, `web` (+`addr`, since LAN and
+  ingress serve the same router from two servers), `debug-pprof`.
+- Short-lived: `ha-command` (one per HA command waiter) and
+  `call-service-async` (one per `wait=false` call) — the two goroutines that
+  can leak, so worth naming in a dump.
+- Per script: `goroutine=script, script=<id>` on the runner goroutine
+  (supervisor.StartScript). This is the one that matters: every script runs
+  the same gopher-lua interpreter loop, so a stack alone cannot say which
+  script burns the CPU — the label can. Labels are inherited by goroutines
+  spawned inside and travel in the context handed to the LState, so the
+  async waiters keep their script name for free.
+- Per UI request: `goroutine=web-request, script=<id>` (Router.ServeHTTP →
+  new Router.serve). Requests block on the script goroutine's channel, and
+  block profiling is on whenever the debug server runs; the label turns
+  "N goroutines parked in a chan send" into "queued behind thermostat".
+- Cost: none measurable. e2e latency benchmarked pre vs post in a worktree,
+  `-benchtime 3s -count 6`: EventToServiceCall 148.9µs → 148.2µs (p=0.240),
+  BusyKV 140.1µs → 140.6µs (p=0.563). A single `make bench-compare` against
+  the older baseline showed +4.7% on BusyKV; that was machine noise, not the
+  labels — always re-measure both sides in one session before believing it.

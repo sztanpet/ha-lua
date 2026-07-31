@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-07-25 (v3.2.2: review round 2, five bug fixes)
+Last updated: 2026-07-31 (pprof goroutine labels)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,18 +11,14 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Released v3.2.2: five bug fixes from a second whole-codebase review
-(round 2 in `state/code-review.md`). The one that mattered: a cyclic Lua
-table (`t.self = t`) recursed until the goroutine stack overflowed, and a
-Go stack overflow is a *fatal* error — not catchable by pcall — so one
-script's bad payload killed the daemon and every other script's LState.
-Now depth-capped. Also: StopScript unregistered runners outside s.mu and
-could deafen a script a concurrent reload had just started; ha.after from
-a callback leaked a timer ID per call; time's `__tostring` was on the
-wrong table; time.Local was written after goroutines started. Findings
-1/2/4 were confirmed with throwaway probe tests before write-up — do that
-again, it separated real from theoretical fast. Details, plus the list of
-things checked and found NOT to be bugs, in `state/code-review.md`.
+pprof goroutine labels across the daemon (unreleased, commits 6aa3052,
+842c711, 34e2419). Every goroutine now runs inside `pprof.Do` with a
+`goroutine` label naming its job, and script goroutines additionally carry
+`script=<id>` — the label set is inherited by everything they spawn and
+rides in the context handed to the LState, so async waiters and UI requests
+keep the script's name. Without it a CPU profile of the daemon is one
+undifferentiated pile of gopher-lua frames. Measured: no latency cost
+(e2e pre/post, p>0.2). Detail in `state/core-daemon.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
