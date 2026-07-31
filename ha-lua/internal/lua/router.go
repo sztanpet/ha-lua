@@ -1,8 +1,10 @@
 package lua
 
 import (
+	"context"
 	"io"
 	"net/http"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"sync"
@@ -128,6 +130,18 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A request spends nearly all its life blocked on the script goroutine.
+	// Labelling it by owning script is what makes the block profile readable:
+	// "requests queued behind thermostat" instead of an anonymous count of
+	// goroutines parked in a channel send. Do restores the connection
+	// goroutine's previous labels on return, so keep-alive reuse is clean.
+	pprof.Do(r.Context(), pprof.Labels("goroutine", "web-request", "script", scriptID),
+		func(context.Context) { rt.serve(w, r, runner) })
+}
+
+// serve forwards a matched request to its script goroutine and writes the
+// reply, giving up after rt.timeout in either direction.
+func (rt *Router) serve(w http.ResponseWriter, r *http.Request, runner *Runner) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
 	if err != nil {
 		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
