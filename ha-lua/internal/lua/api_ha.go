@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -255,7 +256,9 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			L.RaiseError("call_service: %v", err)
 			return 0
 		}
-		go func() {
+		// ctx carries the runner's labels, so this waiter keeps the script
+		// name it was spawned under.
+		go pprof.Do(ctx, pprof.Labels("goroutine", "call-service-async"), func(ctx context.Context) {
 			err := <-verdict
 			if err == nil {
 				return
@@ -267,7 +270,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			}:
 			case <-ctx.Done():
 			}
-		}()
+		})
 		return 0
 	}))
 

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -125,20 +126,25 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 	s.reg.Add(r)
 
 	path := filepath.Join(s.scriptDir, id+".lua")
+	// The script id rides along in the label set, and labels are inherited by
+	// every goroutine the runner spawns (and carried in the context it hands
+	// to the Lua VM), so a CPU profile attributes work to the script that
+	// caused it instead of to one anonymous pile of gopher-lua frames.
+	labels := pprof.Labels("goroutine", "script", "script", id)
 	s.wg.Add(1)
-	go func() {
+	go pprof.Do(sctx, labels, func(ctx context.Context) {
 		defer s.wg.Done()
 		defer close(h.done)
-		r.Start(sctx, path)
-	}()
+		r.Start(ctx, path)
+	})
 	if s.deps.Router != nil || s.deps.OnLoaded != nil {
-		go func() {
+		go pprof.Do(sctx, pprof.Labels("goroutine", "script-load", "script", id), func(ctx context.Context) {
 			select {
 			case <-r.LoadedCh:
 				s.afterLoad(id, h, r)
-			case <-sctx.Done():
+			case <-ctx.Done():
 			}
-		}()
+		})
 	}
 }
 
