@@ -4,6 +4,21 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.3.0 - 2026-07-31
+
+### Added
+- **Profiles now say which script is responsible.** Every goroutine the
+  daemon runs carries a pprof label naming its job (`ha-client`,
+  `event-router`, `state-writer`, `scheduler`, `purge`, `web`,
+  `script-watcher`, …), and each script's goroutine additionally carries
+  its script id. Because labels are inherited by anything a script
+  spawns, a CPU profile taken from the `debug.pprof_addr` server can be
+  grouped by script instead of showing one undifferentiated pile of Lua
+  interpreter frames. UI requests are labelled with the script that owns
+  the route, so the block profile shows which handler is slow enough to
+  queue up its callers. No effect on behaviour, and no measurable effect
+  on event-to-service-call latency.
+
 ## 3.2.2 - 2026-07-25
 
 ### Fixed
