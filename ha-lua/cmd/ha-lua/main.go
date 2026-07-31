@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/pprof"
 	"syscall"
 	"time"
 
@@ -152,7 +153,7 @@ func main() {
 	}
 
 	// Every reconnect delivers a fresh batch; Seed dedups history rows.
-	go func() {
+	go pprof.Do(ctx, pprof.Labels("goroutine", "state-seed"), func(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
@@ -163,7 +164,7 @@ func main() {
 				}
 			}
 		}
-	}()
+	})
 
 	// First run in a fresh add-on install: the scripts dir does not exist yet,
 	// and LoadAll, the watcher, and the fs sandbox all need it present.
@@ -276,7 +277,9 @@ func main() {
 		os.Exit(1)
 	}
 	if watcher != nil {
-		go watcher.Run(ctx, sup)
+		go pprof.Do(ctx, pprof.Labels("goroutine", "script-watcher"), func(ctx context.Context) {
+			watcher.Run(ctx, sup)
+		})
 	}
 
 	// LAN port (dashboard Webpage card + dev) and the HA ingress port
@@ -289,7 +292,7 @@ func main() {
 	}
 
 	// Route HA events to state tracker and all runners.
-	go func() {
+	go pprof.Do(ctx, pprof.Labels("goroutine", "event-router"), func(ctx context.Context) {
 		for ev := range client.Events {
 			if ev.Type == "state_changed" {
 				if err := tracker.HandleStateChanged(ctx, ev.Data); err != nil {
@@ -298,7 +301,7 @@ func main() {
 			}
 			reg.Dispatch(ev)
 		}
-	}()
+	})
 
 	<-ctx.Done()
 	sup.Wait()

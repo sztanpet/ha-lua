@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/pprof"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -166,7 +167,9 @@ func (c *Client) SendCommandAsync(ctx context.Context, id int, data []byte) (<-c
 	}
 
 	out := make(chan error, 1)
-	go func() {
+	// Labelled: a waiter that outlives its command shows up in a goroutine
+	// dump as ha-command, next to the script that issued it.
+	go pprof.Do(ctx, pprof.Labels("goroutine", "ha-command"), func(ctx context.Context) {
 		defer func() {
 			c.mu.Lock()
 			delete(c.pending, id)
@@ -184,7 +187,7 @@ func (c *Client) SendCommandAsync(ctx context.Context, id int, data []byte) (<-c
 		case <-ctx.Done():
 			out <- ctx.Err()
 		}
-	}()
+	})
 	return out, nil
 }
 
@@ -237,7 +240,7 @@ func (c *Client) deliverResult(raw []byte) {
 
 // Start runs the connection loop in a background goroutine.
 func (c *Client) Start(ctx context.Context) {
-	go c.loop(ctx)
+	go pprof.Do(ctx, pprof.Labels("goroutine", "ha-client"), c.loop)
 }
 
 func (c *Client) loop(ctx context.Context) {

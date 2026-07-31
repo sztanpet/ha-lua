@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"runtime/pprof"
 	"sort"
 	"sync"
 	"time"
@@ -66,7 +67,7 @@ func New(writeDB, readDB *sql.DB) *Tracker {
 // Start launches the write-behind goroutine. It exits when ctx is cancelled,
 // after a best-effort drain of whatever is already queued.
 func (t *Tracker) Start(ctx context.Context) {
-	go t.writeLoop(ctx)
+	go pprof.Do(ctx, pprof.Labels("goroutine", "state-writer"), t.writeLoop)
 }
 
 // Flush blocks until every write enqueued before it is committed. Test

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -106,7 +107,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	if err := s.cleanOrphans(ctx); err != nil {
 		return fmt.Errorf("clean orphaned timers: %w", err)
 	}
-	go s.loop(ctx)
+	go pprof.Do(ctx, pprof.Labels("goroutine", "scheduler"), s.loop)
 	return nil
 }
 

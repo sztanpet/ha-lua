@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"runtime/pprof"
 	"time"
 )
 
@@ -28,7 +29,7 @@ func New(db *sql.DB, retentionDays int, interval time.Duration) *Purger {
 // cancelled. One purge runs immediately: with the default 1h interval a
 // frequently restarted daemon would otherwise never reach its first tick.
 func (p *Purger) Start(ctx context.Context) {
-	go func() {
+	go pprof.Do(ctx, pprof.Labels("goroutine", "purge"), func(ctx context.Context) {
 		if err := p.RunOnce(ctx); err != nil {
 			slog.Warn("purge failed", "err", err)
 		}
@@ -44,7 +45,7 @@ func (p *Purger) Start(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // RunOnce deletes all state_history rows older than the retention

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
+	"runtime/pprof"
 	"time"
 )
 
@@ -20,16 +21,17 @@ func Start(ctx context.Context, addr string) {
 	runtime.SetMutexProfileFraction(1)
 
 	srv := &http.Server{Addr: addr}
-	go func() {
+	labels := pprof.Labels("goroutine", "debug-pprof")
+	go pprof.Do(ctx, labels, func(context.Context) {
 		slog.Info("debug: pprof server starting", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("debug: pprof server error", "err", err)
 		}
-	}()
-	go func() {
+	})
+	go pprof.Do(ctx, labels, func(ctx context.Context) {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
-	}()
+	})
 }
