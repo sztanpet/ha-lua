@@ -11,8 +11,8 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-pprof goroutine labels across the daemon (unreleased, commits 6aa3052,
-842c711, 34e2419). Every goroutine now runs inside `pprof.Do` with a
+pprof goroutine labels across the daemon (released v3.3.0, commits
+6aa3052, 842c711, 34e2419). Every goroutine now runs inside `pprof.Do` with a
 `goroutine` label naming its job, and script goroutines additionally carry
 `script=<id>` — the label set is inherited by everything they spawn and
 rides in the context handed to the LState, so async waiters and UI requests
@@ -42,6 +42,9 @@ undifferentiated pile of gopher-lua frames. Measured: no latency cost
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 3.3.0 (2026-07-31): pprof goroutine labels daemon-wide, script id on
+  script goroutines and UI requests. Minor, not patch: nothing was
+  broken, it adds a diagnostic capability. See `state/core-daemon.md`.
 - 3.2.2 (2026-07-25): five review fixes — cyclic-table stack overflow
   (fatal, killed the daemon), StopScript unregistering a newer runner
   outside the lock, ha.after keepIDs leak from callbacks, time

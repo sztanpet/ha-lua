@@ -205,7 +205,7 @@ websocket lib is github.com/coder/websocket.
   fields in options.json; tests in internal/config/config_test.go (677d96d)
 - Tree gofmt'ed — earlier milestones had misaligned fields (d49ca17)
 
-## pprof goroutine labels (2026-07-31, commits 6aa3052, 842c711, 34e2419)
+## pprof goroutine labels (2026-07-31, v3.3.0, commits 6aa3052, 842c711, 34e2419)
 Every goroutine the daemon starts now runs inside `runtime/pprof.Do` with a
 `goroutine` label naming its job, so CPU/block/goroutine profiles from the
 debug server group by subsystem instead of being read stack by stack.
