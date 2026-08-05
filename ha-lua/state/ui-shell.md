@@ -4,8 +4,44 @@ Working state for the front-end track: per-script `/s/<id>/` namespaces, the
 shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
-Status: **spec settled, build starting.** Milestones in spec §11, in order.
-§7.1 is no longer open — the shell hosts pages in an iframe.
+Status: **milestones 1–6 of 11 done** (spec §11, in order). §7.1 is no longer
+open — the shell hosts pages in an iframe.
+
+## Progress
+
+| # | Milestone | Commit |
+|---|-----------|--------|
+| 1 | `lua: mount script routes under /s/<id>/` | `84aac19` |
+| 2 | `lua: add ha.ui for naming a script's UI tab` | `1b8fdd7` |
+| 3 | `web: shell page with the tab bar and iframe` | `1595cba` |
+| 4 | `logbuf: ring-buffer slog handler` | `1933d36` |
+| 5 | `scheduler: expose registered timers` | `006dd90` |
+| 6 | `lua/state/ha: expose runtime counters` | `02814c1` |
+| 7 | `web: debug page` | pending |
+| 8 | `build: stamp the version into the binary` | pending |
+| 9 | `examples: opt the bundled UIs into the tab bar` | pending |
+| 10 | docs (DOCS.md, lua_api.md, README.md, state) | pending |
+| 11 | release v4.0.0 | pending |
+
+Also `df936ad` (style: cut comments back to the non-obvious why) — the user
+asked mid-build for far fewer comments, never narrating code. Applies to
+everything still to be written.
+
+## Decisions made while building
+
+- **`web.Deps.Scripts` is a `func() []web.Script`, not `*lua.Registry`.**
+  `*lua.Runner` cannot be faked from another package's test, and the shell only
+  needs `ScriptID()`/`UITitle()`. main adapts the registry in six lines.
+- **`Deps.Debug` nil ⇒ no Debug tab.** Keeps every milestone bisectable: the
+  tab appears in the same commit as the page it opens.
+- **The 308 writes its own `Location` header** instead of calling
+  `http.Redirect`, which resolves a relative target back to an absolute path
+  and would escape the ingress prefix.
+- **`Router.Register` replaces** a script's routes rather than appending, so a
+  reload cannot accumulate duplicates.
+- **`logbuf` wraps rather than replaces** the text handler: stderr and the log
+  file still get every record. Seq numbers make polling incremental with no
+  overlap and no gap when the ring wraps.
 
 ## Decisions made while writing the spec (2026-08-05)
 
@@ -39,8 +75,8 @@ Status: **spec settled, build starting.** Milestones in spec §11, in order.
   mount root, so `s/<id>/` and `debug/` resolve without it knowing the prefix.
 - The path handed to Lua stays **stripped** — no script or `req.path` consumer
   changes.
-- The existing UI tests (`internal/lua/thermostat_ui_test.go`,
-  `enhanced_climate*_test.go`) navigate `srv.URL+"/?lang=en"`; they must be
-  retargeted to `/s/<id>/` in the same commit as the router change.
+- The existing UI tests were retargeted to `/s/<id>/` in milestone 1; the
+  helpers `doReqID`/`waitRouteID` take the script id, `doReq`/`waitRoute`
+  default to `"ui"`.
 - New introspection accessors must never touch an `*lua.LState`
   (spec §8.1).
