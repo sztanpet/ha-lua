@@ -283,12 +283,23 @@ func main() {
 	}
 
 	// LAN port (dashboard Webpage card + dev) and the HA ingress port
-	// (authenticated sidebar panel) are two entry points onto the same router.
+	// (authenticated sidebar panel) are two entry points onto the same handler.
+	handler := web.Handler(web.Deps{
+		Scripts: func() []web.Script {
+			all := reg.All()
+			out := make([]web.Script, len(all))
+			for i, r := range all {
+				out[i] = r
+			}
+			return out
+		},
+		Router: router,
+	})
 	if cfg.HTTPPort != 0 {
-		web.Start(ctx, fmt.Sprintf(":%d", cfg.HTTPPort), router)
+		web.Start(ctx, fmt.Sprintf(":%d", cfg.HTTPPort), handler)
 	}
 	if cfg.IngressPort != 0 && cfg.IngressPort != cfg.HTTPPort {
-		web.Start(ctx, fmt.Sprintf(":%d", cfg.IngressPort), router)
+		web.Start(ctx, fmt.Sprintf(":%d", cfg.IngressPort), handler)
 	}
 
 	// Route HA events to state tracker and all runners.
