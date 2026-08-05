@@ -24,8 +24,6 @@ func newUIRunner(t *testing.T, scriptID, src string) *Router {
 	return newUIRunners(t, map[string]string{scriptID: src})
 }
 
-// newUIRunners is newUIRunner for several scripts sharing one Registry and
-// Router — what namespacing has to keep apart.
 func newUIRunners(t *testing.T, scripts map[string]string) *Router {
 	t.Helper()
 	return newUIRunnersIn(t, NewRegistry(), scripts)
@@ -65,8 +63,7 @@ func newUIRunnersIn(t *testing.T, reg *Registry, scripts map[string]string) *Rou
 	return router
 }
 
-// doReq issues a request against script "ui"'s namespace; target is the path
-// the script itself registered.
+// doReq targets script "ui"'s namespace.
 func doReq(router *Router, method, target, body string) *httptest.ResponseRecorder {
 	return doReqID(router, "ui", method, target, body)
 }
@@ -149,9 +146,6 @@ func TestServeUnknownRoute404(t *testing.T) {
 	}
 }
 
-// TestServeTwoScriptsBothServeRoot is the whole point of the mount: before
-// v4.0.0 these two scripts shared one flat table and load order decided which
-// of them owned "/".
 func TestServeTwoScriptsBothServeRoot(t *testing.T) {
 	router := newUIRunners(t, map[string]string{
 		"alpha": `
@@ -176,7 +170,6 @@ ha.serve("GET", "/api/x", function(req) return 200, "beta x" end)
 	}
 }
 
-// TestServeStripsMountFromPath: a script must never see /s/<id>.
 func TestServeStripsMountFromPath(t *testing.T) {
 	router := newUIRunner(t, "ui", `ha.serve("GET", "/", function(req) return 200, req.path end)`)
 	if got := doReq(router, "GET", "/api/deep/thing", "").Body.String(); got != "/api/deep/thing" {
@@ -184,9 +177,6 @@ func TestServeStripsMountFromPath(t *testing.T) {
 	}
 }
 
-// TestServeRedirectsMissingTrailingSlash: relative fetches inside a page resolve
-// one segment too high without it. The Location must stay relative so HA
-// ingress's /api/hassio_ingress/<token>/ prefix survives.
 func TestServeRedirectsMissingTrailingSlash(t *testing.T) {
 	router := newUIRunner(t, "ui", `ha.serve("GET", "/", function(req) return 200, "root" end)`)
 
@@ -302,8 +292,6 @@ func TestRouterReloadReRegisters(t *testing.T) {
 	}
 }
 
-// TestUITitle covers ha.ui: the title is cached for the shell's tab list, and a
-// script that never calls it stays out of the tab bar.
 func TestUITitle(t *testing.T) {
 	for _, tc := range []struct {
 		name, src, want string
@@ -325,8 +313,6 @@ ha.serve("GET", "/", function(req) return 200, "x" end)`, "Second"},
 	}
 }
 
-// TestUITitleWithoutRootRouteWarns: the tab would open onto a 404, so the
-// script must not be left to discover that in the browser.
 func TestUITitleWithoutRootRouteWarns(t *testing.T) {
 	var buf bytes.Buffer
 	prev := slog.Default()
@@ -339,5 +325,73 @@ ha.serve("GET", "/api/x", function(req) return 200, "x" end)
 `)
 	if !strings.Contains(buf.String(), "UI tab") {
 		t.Fatalf("no warning logged, got:\n%s", buf.String())
+	}
+}
+
+func TestRunnerStatsReportsLoadTimeShape(t *testing.T) {
+	reg := NewRegistry()
+	newUIRunnersIn(t, reg, map[string]string{"ui": `
+ha.ui("Panel")
+ha.immediate_events()
+ha.serve("GET", "/", function(req) return 200, "x" end)
+ha.serve("POST", "/api/x", function(req) return 200, "x" end)
+ha.on_state_change("light.*", function() end)
+ha.on_state_change("switch.*", function() end)
+ha.on_event("custom_event", function() end)
+`})
+
+	st := reg.Get("ui").Stats()
+	if st.ScriptID != "ui" || st.UITitle != "Panel" {
+		t.Errorf("identity = %+v", st)
+	}
+	if len(st.Routes) != 2 {
+		t.Errorf("routes = %+v, want 2", st.Routes)
+	}
+	if st.StateHandlers != 2 || st.EventHandlers != 1 {
+		t.Errorf("handlers: state=%d event=%d, want 2/1", st.StateHandlers, st.EventHandlers)
+	}
+	if !st.Immediate {
+		t.Error("immediate_events not reported")
+	}
+	if st.QueueCap == 0 {
+		t.Error("queue cap not reported")
+	}
+	if st.Dropped != 0 || st.LastError != nil {
+		t.Errorf("fresh script has dropped=%d lastError=%+v", st.Dropped, st.LastError)
+	}
+}
+
+func TestRunnerStatsRecordsLastError(t *testing.T) {
+	reg := NewRegistry()
+	router := newUIRunnersIn(t, reg, map[string]string{
+		"ui": `ha.serve("GET", "/boom", function(req) error("kaboom") end)`,
+	})
+	doReq(router, "GET", "/boom", "")
+
+	st := reg.Get("ui").Stats()
+	if st.LastError == nil {
+		t.Fatal("no last error recorded")
+	}
+	if !strings.Contains(st.LastError.Error, "kaboom") {
+		t.Errorf("error = %q", st.LastError.Error)
+	}
+	if st.LastError.Callback != "GET /boom" {
+		t.Errorf("callback = %q", st.LastError.Callback)
+	}
+	if st.LastError.Time.IsZero() {
+		t.Error("error has no timestamp")
+	}
+}
+
+func TestRunnerStatsCountsDroppedEvents(t *testing.T) {
+	r := &Runner{scriptID: "ui", ch: make(chan Event, 1)}
+	for i := 0; i < 5; i++ {
+		r.Send(Event{})
+	}
+	if got := r.Stats().Dropped; got != 4 {
+		t.Fatalf("dropped = %d, want 4", got)
+	}
+	if got := r.Stats().QueueLen; got != 1 {
+		t.Fatalf("queue len = %d, want 1", got)
 	}
 }

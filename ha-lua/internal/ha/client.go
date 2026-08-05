@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"runtime/pprof"
 	"slices"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -56,6 +57,12 @@ type Client struct {
 	conn       *websocket.Conn     // authed connection; nil while down
 	eventTypes []string            // extra types beyond state_changed
 	subscribed map[string]struct{} // types subscribed on the current conn
+
+	// Link health for the debug page, guarded by mu.
+	connectedSince time.Time
+	reconnects     int
+	lastErr        string
+	lastErrAt      time.Time
 
 	// pending correlates a command id with the goroutine awaiting HA's
 	// result frame. Guarded by mu and drained on disconnect, so a waiter
@@ -252,6 +259,11 @@ func (c *Client) loop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
+			c.mu.Lock()
+			c.reconnects++
+			c.lastErr = err.Error()
+			c.lastErrAt = time.Now()
+			c.mu.Unlock()
 			slog.Warn("ha: connection lost, reconnecting", "err", err, "backoff", backoff)
 		}
 		// A connection that lived for a while means the trouble is over;
@@ -291,6 +303,7 @@ func (c *Client) connect(ctx context.Context) error {
 	c.mu.Lock()
 	c.conn = conn
 	c.subscribed = make(map[string]struct{})
+	c.connectedSince = time.Now()
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
@@ -455,4 +468,43 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 func readRaw(ctx context.Context, conn *websocket.Conn) ([]byte, error) {
 	_, data, err := conn.Read(ctx)
 	return data, err
+}
+
+// Stats is a snapshot of the HA link's health for the debug page.
+type Stats struct {
+	URL            string    `json:"url"`
+	Connected      bool      `json:"connected"`
+	ConnectedSince time.Time `json:"connected_since,omitzero"`
+	Reconnects     int       `json:"reconnects"`
+	LastError      string    `json:"last_error,omitempty"`
+	LastErrorAt    time.Time `json:"last_error_at,omitzero"`
+	EventTypes     []string  `json:"event_types"`
+	Subscribed     []string  `json:"subscribed"`
+}
+
+// Stats reports the link's health. Safe to call while the client is down.
+func (c *Client) Stats() Stats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	st := Stats{
+		URL:        c.url,
+		Connected:  c.conn != nil,
+		Reconnects: c.reconnects,
+		LastError:  c.lastErr,
+		EventTypes: append([]string{}, c.eventTypes...),
+		Subscribed: make([]string, 0, len(c.subscribed)),
+	}
+	if st.Connected {
+		st.ConnectedSince = c.connectedSince
+	}
+	if !c.lastErrAt.IsZero() {
+		st.LastErrorAt = c.lastErrAt
+	}
+	for t := range c.subscribed {
+		st.Subscribed = append(st.Subscribed, t)
+	}
+	sort.Strings(st.Subscribed)
+	sort.Strings(st.EventTypes)
+	return st
 }

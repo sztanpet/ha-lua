@@ -395,3 +395,25 @@ func BenchmarkStateInsert(b *testing.B) {
 	// Include the persistence drain so the number stays honest end-to-end.
 	tr.Flush()
 }
+
+func TestTrackerStats(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	if st := tr.Stats(); st.Entities != 0 || st.WriteQueueLen != 0 {
+		t.Fatalf("fresh tracker = %+v", st)
+	}
+	if c := tr.Stats().WriteQueueCap; c == 0 {
+		t.Fatal("write queue cap not reported")
+	}
+
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "light.a", State: "on"},
+		{EntityID: "light.b", State: "off"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if st := tr.Stats(); st.Entities != 2 {
+		t.Fatalf("entities = %d, want 2", st.Entities)
+	}
+}

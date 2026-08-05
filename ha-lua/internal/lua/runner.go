@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-json-experiment/json"
@@ -97,6 +98,13 @@ type Runner struct {
 	// cachedUITitle is the ha.ui title, set after load; safe to read once
 	// LoadedCh is closed.
 	cachedUITitle string
+	// Set with the other cached fields, before LoadedCh closes.
+	cachedStateHandlers int
+	cachedImmediate     bool
+
+	// Read from other goroutines, so never behind the LState.
+	dropped   atomic.Uint64
+	lastError atomic.Pointer[ScriptError]
 
 	tracker   *state.Tracker
 	scheduler *scheduler.Scheduler
@@ -181,6 +189,7 @@ func (r *Runner) Send(ev Event) {
 	select {
 	case r.ch <- ev:
 	default:
+		r.dropped.Add(1)
 		slog.Warn("lua: event channel full, dropping", "script", r.scriptID)
 	}
 }
@@ -213,6 +222,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		setState:         r.setState,
 		removeState:      r.removeState,
 		timerFns:         make(map[string]*lua.LFunction),
+		recordError:      r.recordError,
 	}
 	r.registerHaAPI(L, api)
 	registerStoreAPI(L, r.kv, r.global)
@@ -240,6 +250,8 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	r.cachedEventHandlers = api.eventHandlers
 	r.cachedRoutes = api.routeSpecs()
 	r.cachedUITitle = api.uiTitle
+	r.cachedStateHandlers = len(api.stateChangeHandlers)
+	r.cachedImmediate = api.immediateEvents
 	if r.cachedUITitle != "" && api.matchRoute("GET", "/") == nil {
 		slog.Warn("script asked for a UI tab but serves no GET \"/\" — its tab would open onto a 404",
 			"script", r.scriptID, "title", r.cachedUITitle)
@@ -312,6 +324,54 @@ func (r *Runner) Routes() []RouteSpec { return r.cachedRoutes }
 // UITitle returns the tab name set by ha.ui, or "" if the script did not opt
 // into the web shell. Only valid once LoadedCh is closed.
 func (r *Runner) UITitle() string { return r.cachedUITitle }
+
+// ScriptError is the most recent exception a script raised.
+type ScriptError struct {
+	Time      time.Time `json:"time"`
+	Callback  string    `json:"callback"`
+	Error     string    `json:"error"`
+	Traceback string    `json:"traceback,omitempty"`
+}
+
+// RunnerStats is a snapshot of one script's runtime counters.
+type RunnerStats struct {
+	ScriptID      string       `json:"script_id"`
+	UITitle       string       `json:"ui_title,omitempty"`
+	Routes        []RouteSpec  `json:"routes"`
+	EventHandlers int          `json:"event_handlers"`
+	StateHandlers int          `json:"state_handlers"`
+	Immediate     bool         `json:"immediate_events"`
+	QueueLen      int          `json:"queue_len"`
+	QueueCap      int          `json:"queue_cap"`
+	Dropped       uint64       `json:"dropped_events"`
+	LastError     *ScriptError `json:"last_error,omitempty"`
+}
+
+// Stats is valid once LoadedCh is closed. Never touches the LState: the cached
+// fields are immutable after load and the counters are atomic.
+func (r *Runner) Stats() RunnerStats {
+	return RunnerStats{
+		ScriptID:      r.scriptID,
+		UITitle:       r.cachedUITitle,
+		Routes:        r.cachedRoutes,
+		EventHandlers: len(r.cachedEventHandlers),
+		StateHandlers: r.cachedStateHandlers,
+		Immediate:     r.cachedImmediate,
+		QueueLen:      len(r.ch),
+		QueueCap:      cap(r.ch),
+		Dropped:       r.dropped.Load(),
+		LastError:     r.lastError.Load(),
+	}
+}
+
+func (r *Runner) recordError(callback, errMsg, traceback string) {
+	r.lastError.Store(&ScriptError{
+		Time:      time.Now(),
+		Callback:  callback,
+		Error:     errMsg,
+		Traceback: traceback,
+	})
+}
 
 func (r *Runner) deliverInitialStates(ctx context.Context, L *lua.LState, api *haAPI) {
 	for _, h := range api.stateChangeHandlers {

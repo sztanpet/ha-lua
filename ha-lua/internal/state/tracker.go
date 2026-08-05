@@ -377,3 +377,24 @@ func attrStr(v jsontext.Value) string {
 	}
 	return string(v)
 }
+
+// TrackerStats is a snapshot of the mirror and the write-behind queue.
+type TrackerStats struct {
+	Entities      int `json:"entities"`
+	WriteQueueLen int `json:"write_queue_len"`
+	WriteQueueCap int `json:"write_queue_cap"`
+}
+
+// Stats reports mirror size and write-behind depth. A queue near its cap means
+// the disk cannot keep up.
+func (t *Tracker) Stats() TrackerStats {
+	t.mu.RLock()
+	entities := len(t.mem)
+	t.mu.RUnlock()
+
+	return TrackerStats{
+		Entities:      entities,
+		WriteQueueLen: len(t.queue),
+		WriteQueueCap: cap(t.queue),
+	}
+}

@@ -67,6 +67,8 @@ type haAPI struct {
 	// uiTitle is the tab name set by ha.ui; empty means the script is not a
 	// tab in the web shell.
 	uiTitle string
+	// Nil in tests that build a bare haAPI.
+	recordError func(callback, errMsg, traceback string)
 }
 
 type stateChangeHandler struct {
@@ -488,9 +490,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		return 0
 	}))
 
-	// ha.ui opts a script into the web shell's tab bar. Explicit on purpose:
-	// scripts that ha.serve a machine-facing API must not turn into tabs
-	// just because they answer HTTP.
+	// Explicit opt-in: a script serving a machine-facing API is not a tab.
 	L.SetField(haTable, "ui", L.NewFunction(func(L *lua.LState) int {
 		api.uiTitle = L.CheckString(1)
 		return 0
@@ -532,6 +532,9 @@ func eventToLua(L *lua.LState, ev ha.Event) *lua.LTable {
 
 // dispatchException calls the registered on_exception handler (if any) or logs.
 func dispatchException(L *lua.LState, api *haAPI, errMsg, traceback, callbackName string, eventTbl lua.LValue) {
+	if api.recordError != nil {
+		api.recordError(callbackName, errMsg, traceback)
+	}
 	info := L.NewTable()
 	info.RawSetString("script_id", lua.LString(api.scriptID))
 	info.RawSetString("error", lua.LString(errMsg))
