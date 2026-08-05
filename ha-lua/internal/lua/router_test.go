@@ -19,39 +19,54 @@ import (
 // on a fresh Router, returning the router ready to serve.
 func newUIRunner(t *testing.T, scriptID, src string) *Router {
 	t.Helper()
+	return newUIRunners(t, map[string]string{scriptID: src})
+}
+
+// newUIRunners is newUIRunner for several scripts sharing one Registry and
+// Router — what namespacing has to keep apart.
+func newUIRunners(t *testing.T, scripts map[string]string) *Router {
+	t.Helper()
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
 		t.Fatal(err)
 	}
 	tracker := state.New(writeDB, readDB)
-	kv := store.New(writeDB, readDB, scriptID)
 	global := store.NewGlobal(writeDB, readDB)
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, scriptID+".lua")
-	writeScript(t, dir, scriptID+".lua", src)
-
 	reg := NewRegistry()
 	router := NewRouter(reg)
-
-	r := NewRunner(scriptID, dir, nil, nil, tracker, nil, kv, global)
-	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); r.Start(ctx, path) }()
-	t.Cleanup(func() { cancel(); <-done })
 
-	select {
-	case <-r.LoadedCh:
-	case <-time.After(2 * time.Second):
-		t.Fatal("script did not finish loading")
+	for scriptID, src := range scripts {
+		path := filepath.Join(dir, scriptID+".lua")
+		writeScript(t, dir, scriptID+".lua", src)
+
+		r := NewRunner(scriptID, dir, nil, nil, tracker, nil, store.New(writeDB, readDB, scriptID), global)
+		reg.Add(r)
+		done := make(chan struct{})
+		go func() { defer close(done); r.Start(ctx, path) }()
+		t.Cleanup(func() { <-done })
+
+		select {
+		case <-r.LoadedCh:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("script %s did not finish loading", scriptID)
+		}
+		router.Register(scriptID, r.Routes())
 	}
-	router.Register(scriptID, r.Routes())
+	t.Cleanup(cancel)
 	return router
 }
 
+// doReq issues a request against script "ui"'s namespace; target is the path
+// the script itself registered.
 func doReq(router *Router, method, target, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequestWithContext(context.Background(), method, target, strings.NewReader(body))
+	return doReqID(router, "ui", method, target, body)
+}
+
+func doReqID(router *Router, scriptID, method, target, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequestWithContext(context.Background(), method, Mount+scriptID+target, strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec
@@ -59,13 +74,18 @@ func doReq(router *Router, method, target, body string) *httptest.ResponseRecord
 
 func waitRoute(t *testing.T, router *Router, method, path string) {
 	t.Helper()
+	waitRouteID(t, router, "ui", method, path)
+}
+
+func waitRouteID(t *testing.T, router *Router, scriptID, method, path string) {
+	t.Helper()
 	for i := 0; i < 400; i++ {
-		if _, ok := router.match(method, path); ok {
+		if router.match(scriptID, method, path) {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("route %s %s never registered", method, path)
+	t.Fatalf("route %s %s never registered for %s", method, path, scriptID)
 }
 
 func TestServeRoundTrip(t *testing.T) {
@@ -120,6 +140,72 @@ func TestServeUnknownRoute404(t *testing.T) {
 	// Wrong method is also a miss.
 	if rec := doReq(router, "POST", "/known", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("wrong-method status = %d, want 404", rec.Code)
+	}
+}
+
+// TestServeTwoScriptsBothServeRoot is the whole point of the mount: before
+// v4.0.0 these two scripts shared one flat table and load order decided which
+// of them owned "/".
+func TestServeTwoScriptsBothServeRoot(t *testing.T) {
+	router := newUIRunners(t, map[string]string{
+		"alpha": `
+ha.serve("GET", "/", function(req) return 200, "alpha root" end)
+ha.serve("GET", "/api/x", function(req) return 200, "alpha x" end)
+`,
+		"beta": `
+ha.serve("GET", "/", function(req) return 200, "beta root" end)
+ha.serve("GET", "/api/x", function(req) return 200, "beta x" end)
+`,
+	})
+
+	for _, tc := range []struct{ id, path, want string }{
+		{"alpha", "/", "alpha root"},
+		{"beta", "/", "beta root"},
+		{"alpha", "/api/x", "alpha x"},
+		{"beta", "/api/x", "beta x"},
+	} {
+		if got := doReqID(router, tc.id, "GET", tc.path, "").Body.String(); got != tc.want {
+			t.Errorf("GET /s/%s%s = %q, want %q", tc.id, tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestServeStripsMountFromPath: a script must never see /s/<id>.
+func TestServeStripsMountFromPath(t *testing.T) {
+	router := newUIRunner(t, "ui", `ha.serve("GET", "/", function(req) return 200, req.path end)`)
+	if got := doReq(router, "GET", "/api/deep/thing", "").Body.String(); got != "/api/deep/thing" {
+		t.Fatalf("req.path = %q", got)
+	}
+}
+
+// TestServeRedirectsMissingTrailingSlash: relative fetches inside a page resolve
+// one segment too high without it. The Location must stay relative so HA
+// ingress's /api/hassio_ingress/<token>/ prefix survives.
+func TestServeRedirectsMissingTrailingSlash(t *testing.T) {
+	router := newUIRunner(t, "ui", `ha.serve("GET", "/", function(req) return 200, "root" end)`)
+
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/s/ui?lang=en", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusPermanentRedirect {
+		t.Fatalf("status = %d, want 308", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "ui/?lang=en" {
+		t.Fatalf("Location = %q, want relative %q", loc, "ui/?lang=en")
+	}
+}
+
+func TestServeUnknownScript404(t *testing.T) {
+	router := newUIRunner(t, "ui", `ha.serve("GET", "/", function(req) return 200, "root" end)`)
+
+	for _, target := range []string{"/s/nosuch/", "/s/", "/", "/debug/", "/api/tabs"} {
+		req := httptest.NewRequestWithContext(context.Background(), "GET", target, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s status = %d, want 404", target, rec.Code)
+		}
 	}
 }
 

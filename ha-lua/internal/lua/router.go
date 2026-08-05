@@ -46,13 +46,15 @@ type RouteSpec struct {
 	Prefix string
 }
 
-type routeBinding struct {
-	prefix   string
-	scriptID string
-}
+// Mount is the path every script's routes live under: script <id>'s routes are
+// served at /s/<id>/... and the daemon owns everything else.
+const Mount = "/s/"
 
-// Router is the http.Handler for the script-driven UI. The
-// (method,prefix)->scriptID table is only a routing hint: the authoritative
+// Router is the http.Handler for the script-driven UI, mounted at /s/. Each
+// script gets its own path namespace, so two scripts may both serve "/" — before
+// v4.0.0 they shared one flat table and load order silently decided the winner.
+//
+// The scriptID->method->prefix table is only a routing hint: the authoritative
 // handler lookup happens in the script's run loop against its own routes, so a
 // stale entry (e.g. mid-reload) self-heals to a 404 rather than serving a dead
 // goroutine. The owning runner is resolved through the Registry at request
@@ -62,7 +64,7 @@ type Router struct {
 	timeout time.Duration
 
 	mu     sync.RWMutex
-	routes map[string][]routeBinding // method -> bindings, longest prefix first
+	routes map[string]map[string][]string // scriptID -> method -> prefixes, longest first
 }
 
 // NewRouter creates a Router that resolves scripts through reg.
@@ -70,56 +72,83 @@ func NewRouter(reg *Registry) *Router {
 	return &Router{
 		reg:     reg,
 		timeout: defaultRequestTimeout,
-		routes:  make(map[string][]routeBinding),
+		routes:  make(map[string]map[string][]string),
 	}
 }
 
-// Register adds a script's routes. Safe to call while serving.
+// Register replaces a script's routes. Safe to call while serving.
 func (rt *Router) Register(scriptID string, specs []RouteSpec) {
+	byMethod := make(map[string][]string, len(specs))
+	for _, sp := range specs {
+		byMethod[sp.Method] = append(byMethod[sp.Method], sp.Prefix)
+	}
+	for _, prefixes := range byMethod {
+		sort.SliceStable(prefixes, func(i, j int) bool { return len(prefixes[i]) > len(prefixes[j]) })
+	}
+
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	for _, sp := range specs {
-		m := append(rt.routes[sp.Method], routeBinding{prefix: sp.Prefix, scriptID: scriptID})
-		sort.SliceStable(m, func(i, j int) bool { return len(m[i].prefix) > len(m[j].prefix) })
-		rt.routes[sp.Method] = m
+	if len(byMethod) == 0 {
+		delete(rt.routes, scriptID)
+		return
 	}
+	rt.routes[scriptID] = byMethod
 }
 
 // Unregister drops every route owned by scriptID.
 func (rt *Router) Unregister(scriptID string) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	for method, bindings := range rt.routes {
-		kept := bindings[:0]
-		for _, b := range bindings {
-			if b.scriptID != scriptID {
-				kept = append(kept, b)
-			}
-		}
-		if len(kept) == 0 {
-			delete(rt.routes, method)
-		} else {
-			rt.routes[method] = kept
-		}
-	}
+	delete(rt.routes, scriptID)
 }
 
-// match returns the owning scriptID for the longest registered prefix of path
-// under method.
-func (rt *Router) match(method, path string) (string, bool) {
+// match reports whether scriptID registered a prefix of path under method.
+func (rt *Router) match(scriptID, method, path string) bool {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	for _, b := range rt.routes[method] {
-		if strings.HasPrefix(path, b.prefix) {
-			return b.scriptID, true
+	for _, prefix := range rt.routes[scriptID][method] {
+		if strings.HasPrefix(path, prefix) {
+			return true
 		}
 	}
-	return "", false
+	return false
+}
+
+// splitMount splits /s/<id>/<rest> into the script id and the path the script
+// sees. hasSlash is false for a bare /s/<id>, which needs the 308.
+func splitMount(path string) (scriptID, stripped string, hasSlash bool) {
+	rest, ok := strings.CutPrefix(path, Mount)
+	if !ok {
+		return "", "", false
+	}
+	if i := strings.IndexByte(rest, '/'); i >= 0 {
+		return rest[:i], rest[i:], true
+	}
+	return rest, "/", false
 }
 
 func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	scriptID, ok := rt.match(r.Method, r.URL.Path)
-	if !ok {
+	scriptID, path, hasSlash := splitMount(r.URL.Path)
+	if scriptID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !hasSlash {
+		// Pages fetch with relative URLs ("./api/state"), which resolve one
+		// segment too high without the trailing slash. The Location is
+		// relative on purpose: under HA ingress an absolute path would escape
+		// the /api/hassio_ingress/<token>/ prefix — which is also why this
+		// sets the header itself instead of calling http.Redirect, which
+		// resolves a relative target back to an absolute one.
+		target := scriptID + "/"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusPermanentRedirect)
+		return
+	}
+	if !rt.match(scriptID, r.Method, path) {
 		http.NotFound(w, r)
 		return
 	}
@@ -136,12 +165,13 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// goroutines parked in a channel send. Do restores the connection
 	// goroutine's previous labels on return, so keep-alive reuse is clean.
 	pprof.Do(r.Context(), pprof.Labels("goroutine", "web-request", "script", scriptID),
-		func(context.Context) { rt.serve(w, r, runner) })
+		func(context.Context) { rt.serve(w, r, runner, path) })
 }
 
 // serve forwards a matched request to its script goroutine and writes the
-// reply, giving up after rt.timeout in either direction.
-func (rt *Router) serve(w http.ResponseWriter, r *http.Request, runner *Runner) {
+// reply, giving up after rt.timeout in either direction. path is the mount-
+// stripped path: a script sees "/api/state", never "/s/<id>/api/state".
+func (rt *Router) serve(w http.ResponseWriter, r *http.Request, runner *Runner, path string) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
 	if err != nil {
 		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
@@ -150,7 +180,7 @@ func (rt *Router) serve(w http.ResponseWriter, r *http.Request, runner *Runner) 
 
 	req := &request{
 		method:  r.Method,
-		path:    r.URL.Path,
+		path:    path,
 		query:   flattenValues(r.URL.Query()),
 		headers: flattenValues(http.Header(r.Header)),
 		body:    string(body),

@@ -377,7 +377,7 @@ func TestThermostatAPI(t *testing.T) {
 	}
 
 	// GET /api/state: bedroom present with its default override temp.
-	rec := doReq(router, "GET", "/api/state", "")
+	rec := doReqID(router, "thermostat", "GET", "/api/state", "")
 	if rec.Code != 200 {
 		t.Fatalf("GET /api/state status %d", rec.Code)
 	}
@@ -394,7 +394,7 @@ func TestThermostatAPI(t *testing.T) {
 	}
 
 	// POST /api/override: the override is reflected in the returned state.
-	rec = doReq(router, "POST", "/api/override", `{"zone":"bedroom","minutes":30}`)
+	rec = doReqID(router, "thermostat", "POST", "/api/override", `{"zone":"bedroom","minutes":30}`)
 	if rec.Code != 200 {
 		t.Fatalf("POST /api/override status %d body %q", rec.Code, rec.Body.String())
 	}
@@ -409,7 +409,7 @@ func TestThermostatAPI(t *testing.T) {
 	}
 
 	// Bad zone -> 400.
-	rec = doReq(router, "POST", "/api/override", `{"zone":"nope","minutes":30}`)
+	rec = doReqID(router, "thermostat", "POST", "/api/override", `{"zone":"nope","minutes":30}`)
 	if rec.Code != 400 {
 		t.Fatalf("bad zone status = %d, want 400", rec.Code)
 	}
@@ -424,11 +424,11 @@ func TestThermostatAPI(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","override_temp":31.3}`)
+	rec = doReqID(router, "thermostat", "PUT", "/api/settings", `{"zone":"bedroom","override_temp":31.3}`)
 	if rec.Code != 400 {
 		t.Errorf("override_temp above max_temp: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
 	}
-	rec = doReq(router, "PUT", "/api/settings", `{"zone":"bedroom","override_temp":29}`)
+	rec = doReqID(router, "thermostat", "PUT", "/api/settings", `{"zone":"bedroom","override_temp":29}`)
 	if rec.Code != 200 {
 		t.Fatalf("override_temp within range: status = %d body %q", rec.Code, rec.Body.String())
 	}
@@ -443,17 +443,17 @@ func TestThermostatAPI(t *testing.T) {
 
 	// The schedule editor is bounded by the same device range: a transition
 	// above max_temp is rejected, one inside it is accepted.
-	rec = doReq(router, "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":33}]}}`)
+	rec = doReqID(router, "thermostat", "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":33}]}}`)
 	if rec.Code != 400 {
 		t.Errorf("schedule temp above max_temp: status = %d, want 400 (body %q)", rec.Code, rec.Body.String())
 	}
-	rec = doReq(router, "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":22}]}}`)
+	rec = doReqID(router, "thermostat", "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":22}]}}`)
 	if rec.Code != 200 {
 		t.Fatalf("schedule temp within range: status = %d body %q", rec.Code, rec.Body.String())
 	}
 
 	// GET / serves the self-contained UI page.
-	rec = doReq(router, "GET", "/", "")
+	rec = doReqID(router, "thermostat", "GET", "/", "")
 	if rec.Code != 200 {
 		t.Fatalf("GET / status = %d", rec.Code)
 	}
@@ -475,7 +475,7 @@ func TestThermostatOrderAPI(t *testing.T) {
 
 	getOrder := func() []string {
 		t.Helper()
-		req, err := http.NewRequestWithContext(context.Background(), "GET", srv.URL+"/api/state", nil)
+		req, err := http.NewRequestWithContext(context.Background(), "GET", srv.URL+"/s/thermostat/api/state", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -494,7 +494,7 @@ func TestThermostatOrderAPI(t *testing.T) {
 	}
 	putOrder := func(payload string) *http.Response {
 		t.Helper()
-		req, err := http.NewRequestWithContext(context.Background(), "PUT", srv.URL+"/api/order", strings.NewReader(payload))
+		req, err := http.NewRequestWithContext(context.Background(), "PUT", srv.URL+"/s/thermostat/api/order", strings.NewReader(payload))
 		if err != nil {
 			t.Fatal(err)
 		}

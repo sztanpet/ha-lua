@@ -149,7 +149,7 @@ func TestThermostatUIRendersZones(t *testing.T) {
 
 	var zoneNames []string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .zone", chromedp.ByQuery),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll(".card .zone")).map(node => node.textContent)`, &zoneNames),
 	); err != nil {
@@ -192,7 +192,7 @@ func TestThermostatUINotControlledCard(t *testing.T) {
 		ControlledCards  int    `json:"controlledCards"`
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .muted", chromedp.ByQuery),
 		chromedp.Evaluate(script, &res),
 	); err != nil {
@@ -227,7 +227,7 @@ func TestThermostatUIStatusLabel(t *testing.T) {
 	const script = `Array.from(document.querySelectorAll(".card .status b")).map(el => el.textContent)`
 	var labels []string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .status b", chromedp.ByQuery),
 		chromedp.Evaluate(script, &labels),
 	); err != nil {
@@ -270,7 +270,7 @@ func TestThermostatUIEditorToggle(t *testing.T) {
 
 	var openedEditor, closedEditor bool
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .edit-btn", chromedp.ByQuery),
 		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
 		chromedp.WaitVisible(".card .editor", chromedp.ByQuery),
@@ -302,7 +302,7 @@ func TestThermostatUIOverrideFlow(t *testing.T) {
 	var countdown string
 	var rowBack bool
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .override-row button", chromedp.ByQuery),
 		// First preset is "10m"; clicking it overrides bedroom.
 		chromedp.Click(".card .override-row button", chromedp.ByQuery),
@@ -337,7 +337,7 @@ func TestThermostatUILocalizesHungarian(t *testing.T) {
 	var heading, legend string
 	var zoneNames []string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=hu"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=hu"),
 		chromedp.WaitVisible(".card .override legend", chromedp.ByQuery),
 		chromedp.Text("h1", &heading, chromedp.ByQuery),
 		// textContent, not Text: the legend is CSS text-transform:uppercase, so
@@ -374,7 +374,7 @@ func TestThermostatUILanguagePicker(t *testing.T) {
 	var langBefore, langAfter, heading string
 	var zoneNames []string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .zone", chromedp.ByQuery),
 		chromedp.Value("#lang", &langBefore, chromedp.ByQuery),
 		// Select Magyar exactly as a user would: set the value and fire change,
@@ -419,7 +419,7 @@ func TestThermostatUIScheduleSaveRoundTrip(t *testing.T) {
 	var initialRows, savedRows int
 	var group, hhmm, temp string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .edit-btn", chromedp.ByQuery),
 		// Open the editor; with no stored schedule it has no rows.
 		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
@@ -466,7 +466,7 @@ func TestThermostatUIScheduleTempTenths(t *testing.T) {
 	const tempSel = ".card .editor .row input[type=number]"
 	var step, savedTemp string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .edit-btn", chromedp.ByQuery),
 		chromedp.Click(".card .edit-btn", chromedp.ByQuery),
 		chromedp.WaitVisible(".card .editor", chromedp.ByQuery),
@@ -513,7 +513,7 @@ func TestThermostatUIOverrideTempStepper(t *testing.T) {
 			nil, chromedp.WithPollingTimeout(5*time.Second))
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card .stepper .val-input", chromedp.ByQuery),
 		chromedp.Evaluate(firstCardOverrideTemp, &start),
 		// + raises the seeded 21.0 to 21.1; the re-render must reflect it.
@@ -567,7 +567,7 @@ func TestThermostatUIReorderPersists(t *testing.T) {
 	var before []string
 	var coords struct{ Gx, Gy, TargetY float64 }
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card[data-zone] .grip", chromedp.ByQuery),
 		chromedp.Evaluate(cardOrderJS, &before),
 		chromedp.Evaluate(coordJS, &coords),
@@ -602,7 +602,7 @@ func TestThermostatUIReorderPersists(t *testing.T) {
 		chromedp.Evaluate(cardOrderJS, &after),
 		// A fresh navigation is a stand-in for another browser: the order must
 		// come back from the backend, not reset to alphabetical.
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card[data-zone]", chromedp.ByQuery),
 		chromedp.Evaluate(cardOrderJS, &reloaded),
 	); err != nil {
@@ -641,7 +641,7 @@ func TestThermostatUIScheduleGrouping(t *testing.T) {
 		ExpandedDays int    `json:"expandedDays"`
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/?lang=en"),
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
 		chromedp.WaitVisible(".card", chromedp.ByQuery),
 		chromedp.Evaluate(script, &res),
 	); err != nil {

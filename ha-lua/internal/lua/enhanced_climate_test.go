@@ -515,14 +515,14 @@ func TestEnhancedClimateCompanion(t *testing.T) {
 // deprovisions a climate (removing its companion) while a bad body is rejected.
 func TestEnhancedClimateRemovalPage(t *testing.T) {
 	f := newEnhancedFixture(t)
-	waitRoute(t, f.router, "GET", "/api/list")
+	waitRouteID(t, f.router, "enhanced_climate", "GET", "/api/list")
 
 	f.seedClimate("climate.lr", `{"friendly_name":"Living Room"}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"]}`)
 	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
 
 	// /api/list reports the climate with its friendly name.
-	rec := doReq(f.router, "GET", "/api/list", "")
+	rec := doReqID(f.router, "enhanced_climate", "GET", "/api/list", "")
 	if rec.Code != 200 {
 		t.Fatalf("GET /api/list status %d", rec.Code)
 	}
@@ -544,7 +544,7 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 	}
 
 	// GET / serves the self-contained HTML page.
-	rec = doReq(f.router, "GET", "/", "")
+	rec = doReqID(f.router, "enhanced_climate", "GET", "/", "")
 	if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("GET / status %d type %q", rec.Code, rec.Header().Get("Content-Type"))
 	}
@@ -554,7 +554,7 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 
 	// POST /api/remove deprovisions it (synchronous handler) and removes the
 	// companion.
-	rec = doReq(f.router, "POST", "/api/remove", `{"climate_entity":"climate.lr"}`)
+	rec = doReqID(f.router, "enhanced_climate", "POST", "/api/remove", `{"climate_entity":"climate.lr"}`)
 	if rec.Code != 200 {
 		t.Fatalf("POST /api/remove status %d body %q", rec.Code, rec.Body.String())
 	}
@@ -566,7 +566,7 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 	}
 
 	// A malformed body is rejected.
-	rec = doReq(f.router, "POST", "/api/remove", `not json`)
+	rec = doReqID(f.router, "enhanced_climate", "POST", "/api/remove", `not json`)
 	if rec.Code != 400 {
 		t.Errorf("bad body status = %d, want 400", rec.Code)
 	}
