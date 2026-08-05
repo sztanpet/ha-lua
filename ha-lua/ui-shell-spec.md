@@ -2,8 +2,8 @@
 
 > **Working state:** [`state/ui-shell.md`](state/ui-shell.md) — implementation progress, decisions.
 
-Status: **ready to build, one decision to confirm** — §7.1 (how the tab bar
-gets into a script's page). Everything else is settled.
+Status: **ready to build.** §7.1 was resolved on 2026-08-05 in favour of an
+iframe shell; nothing is open.
 
 ## 1. Goal
 
@@ -30,7 +30,7 @@ pprof.
 |----------|--------|
 | Namespace | Scripts mount under **`/s/<script_id>/`**; the daemon owns `/`. Breaking → **v4.0.0** |
 | Tab opt-in | **Explicit**: a script appears only if it calls the new **`ha.ui(title)`**. Machine-only API scripts never show up by accident |
-| Composition | **No iframes.** The tab bar lives inside each page; switching tabs is an ordinary link → full page load. Only one page's CSS/JS is ever live, so scripts cannot collide |
+| Composition | **Iframe shell.** The daemon serves the tab bar at `/`; the active page loads in an `<iframe>`. Script HTML is never rewritten and the browser isolates each page's CSS/JS/element IDs |
 | Debug content | Scripts table + daemon runtime + live log tail. **No** entity browser |
 | Path seen by Lua | **Stripped** (`/api/state`, not `/s/thermostat/api/state`) — handler code and `req.path` are unchanged |
 | Transport | Plain polling JSON. No SSE (see `sse-spec.md` §0) |
@@ -38,20 +38,21 @@ pprof.
 ## 4. URL layout
 
 ```
-/                       redirect to the first tab (→ /debug/ if no script opted in)
+/                       shell: tab bar + iframe. #<id> in the hash picks the tab
 /api/tabs               JSON: [{id, title, path}] — the tab bar is built from this
-/ui/tabs.js             tab-bar asset, embedded in the binary
-/s/<id>/                script <id>'s  GET "/"  handler, tab bar injected
+/ui/shell.js            shell asset, embedded in the binary
+/s/<id>/                script <id>'s  GET "/"  handler (also usable standalone)
 /s/<id>/api/...         script <id>'s other routes
-/debug/                 debug page (embedded asset, same tab bar)
+/debug/                 debug page (embedded asset)
 /debug/api/info         JSON snapshot: runtime, HA link, scripts, storage
 /debug/api/logs?since=N&level=L   ring-buffer log lines newer than seq N
 ```
 
-Everything the chrome emits must be **relative**. Under HA ingress the app is
+Every URL the shell emits must be **relative**. Under HA ingress the app is
 served beneath `/api/hassio_ingress/<token>/`; absolute paths break there. The
-injector knows the request's depth below the mount and emits the matching
-number of `../` (see §7.2).
+shell is the only document the daemon generates and it always sits at the mount
+root, so `s/<id>/` and `debug/` resolve correctly under any prefix without the
+shell knowing what that prefix is.
 
 ## 5. Router namespacing (`internal/lua/router.go`)
 
@@ -86,57 +87,47 @@ ha.ui("Heating")                    -- this script is a tab named "Heating"
 ha.serve("GET", "/", function() ... end)
 ```
 
-## 7. The tab bar
+## 7. The shell
 
-### 7.1 DECISION TO CONFIRM: how the bar gets into the page
+### 7.1 RESOLVED: the shell is an iframe host
 
-A browser cannot compose two independent HTML documents without an iframe, and
-iframes are out. So the bar has to be part of each page. Two variants:
+The daemon serves **one** document, at `/`: a tab bar plus an `<iframe>` that
+holds the active page. Script pages are served exactly as the script wrote
+them — the daemon never rewrites a script's HTML — and the browser gives each
+page its own JS global scope, CSS scope and element-ID space, so two script
+UIs can never collide no matter what they contain.
 
-- **(A) Auto-injected — recommended.** The daemon injects one `<script>` tag
-  into HTML responses of opted-in scripts. No script edits, nothing to forget;
-  the cost is that the daemon rewrites a script's HTML output (bounded, single
-  insertion, skipped when the page already has the tag).
-- **(B) Manually included.** Each UI page adds the one line itself. Explicit
-  and inspectable; a page that forgets it silently loses the tabs, and every
-  existing UI page must be edited.
+Two alternatives were considered and dropped: **auto-injecting** a tab-bar
+`<script>` tag into every script's HTML reply (the daemon rewriting user output
+is magic, and needs content-type/`</head>` sniffing), and a **single-document
+SPA** that fetches each page and splices its markup in (shared global scope,
+element-ID collisions, both bundled example pages would need rewriting into
+fragments). A script page still answers standalone at `/s/<id>/`, without the
+bar, for anyone who wants to bookmark just that page.
 
-Both share everything below except who inserts the line. Build (A) unless the
-rewrite is judged too magic at implementation time.
+### 7.2 Shell page (`internal/web/assets/shell.html`, `shell.js`)
 
-A third option — a single-document SPA that fetches each page and injects its
-markup — was **rejected**: shared global JS scope, element-ID collisions
-between pages, and both bundled example pages would need rewriting into
-fragments.
+Static embedded assets — no templating, no per-request work. Layout is a flex
+column at `100dvh`: `<nav>` on top, `<iframe>` filling the rest with
+`border:0; width:100%; flex:1`.
 
-### 7.2 Injection rules (`internal/web/chrome.go`)
+`shell.js` on load and on every `hashchange`:
 
-Middleware over the `*lua.Router`, mounted at `/s/`. It buffers the reply (the
-body is already a Go string on the Lua side, so nothing is lost) and injects
-only when **all** hold:
+1. fetch `api/tabs` (relative — see §4), build one `<a href="#<id>">` per tab
+   plus the trailing Debug tab,
+2. read `location.hash`; empty → the first tab, or `#debug` when no script
+   opted in,
+3. point the iframe at `s/<id>/` (or `debug/` for the debug tab) and mark the
+   active link.
 
-- the request maps to a script whose `UITitle() != ""`,
-- status is 2xx and `Content-Type` is `text/html`,
-- the body contains `</head>` (else insert after `<body …>`; if neither, skip
-  and warn once per script),
-- the body does not already reference `ui/tabs.js`.
+Hash routing rather than a real path means back/forward and reload keep the
+selected tab, and switching tabs never reloads the shell itself. Deep links go
+to the tab, not to a sub-path inside it — a script's own internal navigation is
+the script's business.
 
-The inserted line, with `../` depth computed from the request path:
-
-```html
-<script src="../../ui/tabs.js" data-base="../../" data-active="thermostat" defer></script>
-```
-
-JSON and other non-HTML replies are never touched.
-
-### 7.3 `tabs.js` contract (`internal/web/assets/tabs.js`)
-
-Reads `document.currentScript.dataset` (`base`, `active`), fetches
-`<base>api/tabs`, prepends a `<nav>` with one `<a href="<base>s/<id>/">` per
-tab plus the Debug tab, and marks the active one. It ships its own
-class-prefixed `<style>` so it neither depends on nor leaks into the host
-page's styling: `color-scheme: light dark`, neutrals from one `oklch()` hue
-ramp, derived shades via `oklch(from …)` (project CSS rule).
+Styling ships in the shell only: `color-scheme: light dark`, neutrals from one
+`oklch()` hue ramp, derived shades via `oklch(from …)` (project CSS rule).
+Nothing the shell does can leak into a script's page.
 
 `/api/tabs` is built from `Registry.All()` filtered on `UITitle() != ""`,
 sorted by title, plus the trailing Debug entry.
@@ -157,7 +148,8 @@ sorted by title, plus the trailing Debug entry.
 
 `/debug/api/logs` serves `logbuf.Snapshot(since, level)`. The page polls info
 every 3 s and logs incrementally, with a level filter. Same styling rules as
-§7.3; carries the tab bar line with `data-active="debug"`.
+§7.2. It is an ordinary page inside the shell's iframe — it carries no tab bar
+of its own.
 
 ### 8.1 New accessors this needs
 
@@ -191,9 +183,9 @@ process.
    existing UI tests (`internal/lua/thermostat_ui_test.go`,
    `enhanced_climate*_test.go`) from `/` to `/s/<id>/`.
 2. `lua: add ha.ui for naming a script's UI tab` — §6.
-3. `web: tab bar chrome for script pages` — §7, the mux (`/s/`, `/api/tabs`,
-   `/ui/`, `/debug/`, `/`), `web.Deps` (mirrors the `lua.Deps` pattern in
-   `supervisor.go`), main wiring for both `web.Start` calls.
+3. `web: shell page with the tab bar and iframe` — §7, the mux (`/s/`,
+   `/api/tabs`, `/ui/`, `/debug/`, `/`), `web.Deps` (mirrors the `lua.Deps`
+   pattern in `supervisor.go`), main wiring for both `web.Start` calls.
 4. `logbuf: ring-buffer slog handler` — §9.
 5. `scheduler: expose registered timers` — §8.1.
 6. `lua/state/ha: expose runtime counters` — §8.1 (rest).
@@ -212,16 +204,17 @@ process.
 - `internal/lua/router_test.go` — namespaced round trip, the 308, longest
   prefix within one script, two scripts both serving `/` and `/api/x` staying
   isolated, unknown id → 404.
-- `internal/web/*_test.go` (`httptest`) — injection happens / does not happen
-  per §7.2 rule, correct `../` depth for a nested path, tab JSON, `/` redirect,
-  debug JSON shape.
+- `internal/web/*_test.go` (`httptest`) — shell served at `/`, tab JSON
+  (opted-in scripts only, sorted, Debug last), assets served under `/ui/`,
+  script replies passed through byte-for-byte, debug JSON shape.
 - `internal/logbuf` — wrap-around, seq monotonicity, level filter, group/attr
   flattening.
 - chromedp (same skip-when-no-browser harness as
-  `internal/lua/thermostat_ui_test.go:96-145`) — the bar renders on a script
-  page, its links point at the other tabs, the debug page renders.
+  `internal/lua/thermostat_ui_test.go:96-145`) — the shell renders its tabs,
+  the iframe loads the first script's page, changing the hash swaps the iframe,
+  the debug page renders.
 - Manual: `go run ./cmd/ha-lua --config config.dev.yaml` with both examples in
-  `./scripts`, open `http://localhost:8100/` — tabs on both pages, thermostat
+  `./scripts`, open `http://localhost:8100/` — a tab per example, thermostat
   controls still work (proves stripped-path forwarding), debug tab lists both
   scripts, their timers, and live log lines while events flow.
 

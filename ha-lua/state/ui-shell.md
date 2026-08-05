@@ -4,7 +4,8 @@ Working state for the front-end track: per-script `/s/<id>/` namespaces, the
 shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
-Status: **spec written, nothing built.** Milestones in spec §11, in order.
+Status: **spec settled, build starting.** Milestones in spec §11, in order.
+§7.1 is no longer open — the shell hosts pages in an iframe.
 
 ## Decisions made while writing the spec (2026-08-05)
 
@@ -13,16 +14,19 @@ Status: **spec written, nothing built.** Milestones in spec §11, in order.
   load order — two web UIs cannot coexist. Breaking, so v4.0.0.
 - **Explicit opt-in `ha.ui(title)`** rather than auto-detecting a `GET "/"`
   route: scripts serving machine APIs must not show up as tabs by accident.
-- **No iframes** (user rejected them). A browser cannot compose two independent
-  HTML documents any other way, so the tab bar lives inside each page and tab
-  switching is a plain link → full page load. Upside: only one page's CSS/JS is
-  ever live, so scripts cannot collide.
+- **Iframe shell (spec §7.1, decided 2026-08-05).** The draft had ruled iframes
+  out and offered auto-injection vs. a manual include; asked to confirm, the
+  user picked iframes instead. The daemon serves one document at `/` — tab bar
+  plus an `<iframe>` — and never rewrites a script's HTML. That deletes the
+  whole injection middleware (content-type/`</head>` sniffing, `../` depth
+  computation, per-script warnings) and gives real isolation: separate JS
+  global scope, CSS scope and element-ID space per page, for free.
 - **Rejected: single-document SPA** that fetches each page and injects its
   markup — shared global JS scope, element-ID collisions, and both bundled
   example pages would need rewriting into fragments.
-- **Open (spec §7.1):** auto-injecting the tab-bar `<script>` tag into a
-  script's HTML reply (recommended, no script edits) vs. each page including
-  the line itself. Confirm before building milestone 3.
+- **Hash routing in the shell** (`#<id>`): reload and back/forward keep the
+  selected tab, and switching tabs never reloads the shell. Deep links address
+  a tab, not a sub-path inside it.
 - **Debug tab scope:** scripts table + daemon runtime + live log tail. The
   entity/state browser was offered and dropped.
 - **Polling, not SSE** — `sse-spec.md` §0 already argues SSE is not worth its
@@ -30,9 +34,9 @@ Status: **spec written, nothing built.** Milestones in spec §11, in order.
 
 ## Gotchas to remember at build time
 
-- Every URL the chrome emits must be **relative**: under HA ingress everything
-  is served beneath `/api/hassio_ingress/<token>/`. The injected tag carries a
-  `data-base` computed from the request's depth below `/s/<id>/`.
+- Every URL the shell emits must be **relative**: under HA ingress everything
+  is served beneath `/api/hassio_ingress/<token>/`. The shell always sits at the
+  mount root, so `s/<id>/` and `debug/` resolve without it knowing the prefix.
 - The path handed to Lua stays **stripped** — no script or `req.path` consumer
   changes.
 - The existing UI tests (`internal/lua/thermostat_ui_test.go`,
