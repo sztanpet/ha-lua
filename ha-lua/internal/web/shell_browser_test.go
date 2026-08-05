@@ -221,9 +221,14 @@ func TestShellHonoursDeepLink(t *testing.T) {
 
 func TestDebugTabRendersInShell(t *testing.T) {
 	ctx := newBrowserCtx(t)
-	srv := serveShell(t, map[string]string{"alpha": uiScript("Alpha", "alpha page")})
+	srv := serveShell(t, map[string]string{
+		"alpha": uiScript("Alpha", "alpha page"),
+		// Serves a page but never called ha.ui: unreachable from the tab bar,
+		// which is the confusing case the debug page has to call out.
+		"orphan": `ha.serve("GET", "/", function(req) return 200, "<html></html>" end)`,
+	})
 
-	var lastTab, scriptCell, dumped string
+	var lastTab, scriptCell, orphanTab, dumped string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/#debug"),
 		chromedp.WaitVisible(`nav a.active`, chromedp.ByQuery),
@@ -233,6 +238,12 @@ func TestDebugTabRendersInShell(t *testing.T) {
 			const cell = doc && doc.querySelector("#scripts tbody td");
 			return cell ? cell.textContent : null;
 		})()`, &scriptCell, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const rows = Array.from(doc.querySelectorAll("#scripts tbody tr"));
+			const row = rows.find(tr => tr.children[0].textContent === "orphan");
+			return row ? row.children[1].textContent : "";
+		})()`, &orphanTab),
 		chromedp.Evaluate(`document.getElementById("page").contentDocument.getElementById("dump").click()`, nil),
 		chromedp.Poll(`(() => {
 			const doc = document.getElementById("page").contentDocument;
@@ -248,6 +259,9 @@ func TestDebugTabRendersInShell(t *testing.T) {
 	}
 	if scriptCell != "alpha" {
 		t.Errorf("scripts table lists %q, want alpha", scriptCell)
+	}
+	if !strings.Contains(orphanTab, "ha.ui") {
+		t.Errorf("orphan script's tab cell = %q, want the ha.ui hint", orphanTab)
 	}
 	if !strings.Contains(dumped, "goroutine ") {
 		t.Errorf("stack dump = %q", dumped)
