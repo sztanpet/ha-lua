@@ -11,7 +11,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build \
-    -trimpath -ldflags="-s -w" \
+    -trimpath -ldflags="-s -w -X main.version=$(sed -n 's/^version: "\(.*\)"/\1/p' config.yaml)" \
     -o /usr/local/bin/ha-lua ./cmd/ha-lua
 
 FROM ${BUILD_FROM}

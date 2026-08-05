@@ -1,5 +1,8 @@
 BIN     := ha-lua
-GOFLAGS := -trimpath -ldflags="-s -w"
+# config.yaml is the single source of truth for the version (see the release
+# process); the binary must not carry a second copy that can drift.
+VERSION := $(shell sed -n 's/^version: "\(.*\)"/\1/p' config.yaml)
+GOFLAGS := -trimpath -ldflags="-s -w -X main.version=$(VERSION)"
 
 BENCH_BASELINE := benchmarks/baseline.txt
 BENCH_CURRENT  := benchmarks/current.txt

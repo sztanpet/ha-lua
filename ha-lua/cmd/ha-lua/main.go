@@ -37,7 +37,13 @@ var version = "dev"
 func main() {
 	started := time.Now()
 	configPath := flag.String("config", "", "Path to YAML config file (dev mode)")
+	showVersion := flag.Bool("version", false, "Print the version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -75,6 +81,7 @@ func main() {
 	if logFileErr != nil {
 		slog.Warn("file logging disabled", "dir", cfg.LogDir, "err", logFileErr)
 	}
+	slog.Info("ha-lua starting", "version", version)
 
 	// Resolve the wall-clock zone and align the process with it before ANY
 	// goroutine exists: time.Local is a package variable, and every slog record
