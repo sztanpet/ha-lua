@@ -4,6 +4,45 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.0.0 - 2026-08-05
+
+### Changed
+- **BREAKING: a script's web UI moved from `/` to `/s/<script_id>/`.** Every
+  `ha.serve` route used to land in one flat path space shared by every script.
+  Both bundled examples register `GET "/"`, so which one a browser actually
+  reached was decided by script load order — two scripts with a web UI could
+  not coexist. Each script now owns its own namespace.
+
+  **What you must change:** dashboard **Webpage** cards and bookmarks pointing
+  at `http://<host>:8100/` now reach the daemon's tab bar, not your script.
+  Point them at `http://<host>:8100/s/<script_id>/` for one script's page.
+  Pages that fetch with **relative** URLs (`./api/state`) keep working
+  unchanged; a page using absolute paths (`/api/state`) must be fixed.
+
+  No Lua API was removed: `ha.serve` keeps its signature, and `req.path` still
+  reads the path the script registered — the mount is stripped before the
+  handler sees it.
+
+### Added
+- **A tab bar for script UIs.** The daemon owns `/` and serves one tab per
+  script that opts in, plus a Debug tab. The active page loads in an iframe,
+  so two scripts' pages cannot collide — each keeps its own JS globals, CSS
+  and element IDs — and the daemon never rewrites a script's HTML. The
+  selected tab lives in the URL hash, so reload and back/forward keep it.
+- **`ha.ui(title)`** names a script's tab. Load-time only, and opt-in: a
+  script serving a machine-facing API never becomes a tab by accident. A title
+  without a `GET "/"` route warns at load, since the tab would open on a 404.
+- **A Debug tab.** Version, uptime, goroutine and heap numbers; the HA
+  connection with its reconnect count and last error; database size, mirrored
+  entity count and write-queue depth; and a row per script with its routes,
+  timers, queue depth, dropped events and last exception. It tails the log
+  live with a level filter, and captures a **goroutine stack dump on demand** —
+  no `pprof_addr` and no restart, which is the point.
+- The bundled `thermostat` and `enhanced_climate` examples are now tabs
+  ("Heating" and "Climate"), which is the pairing that could never work before.
+- `--version`, and the version in the startup log line. It is stamped into the
+  binary at build time from `config.yaml`, still the single source of truth.
+
 ## 3.3.0 - 2026-07-31
 
 ### Added
