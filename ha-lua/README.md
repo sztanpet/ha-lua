@@ -5,6 +5,10 @@ entity state into SQLite, and runs your automations as Lua scripts — one
 isolated Lua VM per script, with persistent storage, full state history,
 and hot reload on file save.
 
+Scripts can serve their own web pages; the daemon presents them as tabs
+alongside a debug tab that shows scripts, timers, runtime numbers and a live
+log tail.
+
 Designed to run as a Home Assistant add-on: a single static binary, no CGO,
 no external dependencies at runtime.
 
@@ -56,7 +60,8 @@ ha.on_state_change("binary_sensor.*_motion", function(data)
 end)
 
 ha.every("5m", function() ... end)                 -- persisted timer
-ha.serve("GET", "/", function(req) return 200, html end)  -- a web UI
+ha.ui("Lights")                                    -- adds a tab at /
+ha.serve("GET", "/", function(req) return 200, html end)  -- served at /s/lights/
 
 ha.on_exception(ha.exceptions.log_file("lights.log"))
 ```

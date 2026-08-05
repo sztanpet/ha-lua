@@ -18,6 +18,7 @@ without its extension (`lights.lua` → `lights`).
   - [Callbacks (load-time registration)](#callbacks-load-time-registration)
   - [Timers](#timers)
   - [HTTP serving — `ha.serve`](#http-serving--haserve)
+  - [UI tab — `ha.ui`](#hauititle)
   - [Logging](#logging)
   - [Exception handling](#exception-handling)
 - [`store` — per-script storage](#store--per-script-storage)
@@ -61,6 +62,7 @@ consuming side.
 
 **Load time vs. run time.** A script's top-level code runs once at load. The
 registration functions — `ha.on_state_change`, `ha.on_event`, `ha.serve`,
+`ha.ui`,
 `ha.on_exception` — are meant to be called there. Callbacks and timer functions
 then fire later, on the same goroutine, so any `ha.*` / `store.*` call inside
 them is safe without locking. Timers (`ha.every` / `ha.at` / `ha.after`) may be
@@ -287,9 +289,36 @@ own goroutine, so `ha.*` / `store.*` are safe inside it — but it must be fast
 get a `503`; the handler itself is not aborted. An error in the handler is
 routed to `on_exception` and the client gets a `500`.
 
+**Where the routes live.** A script's routes are mounted under `/s/<script_id>/`
+and the mount is stripped before the handler sees the request: a handler
+registered for `"/api/state"` answers at `/s/<script_id>/api/state` and reads
+`req.path == "/api/state"`. Two scripts may therefore both serve `"/"`. (Before
+v4.0.0 every script shared one flat path space and load order decided who owned
+a colliding prefix.)
+
+Use **relative** fetch URLs (`./api/state`) in your page. Absolute ones
+(`/api/state`) escape both the mount and, under ingress, the
+`/api/hassio_ingress/<token>/` prefix.
+
 A served UI is reachable two ways, both hitting the same routes: the
 authenticated **ingress** sidebar panel, and the **LAN port** (`http_port`).
-Use **relative** fetch URLs (`./api/state`) so a page works under both.
+
+#### `ha.ui(title)`
+
+Load-time only. Gives the script a tab named `title` in the daemon's web UI at
+`/`; the tab opens the script's `GET "/"` route.
+
+```lua
+ha.ui("Heating")
+ha.serve("GET", "/", function(req) return 200, PAGE end)
+```
+
+Opt-in by design: a script serving only a machine-facing API never appears as a
+tab by accident. Setting a title without registering `GET "/"` logs a warning —
+the tab would open onto a 404. Calling it twice keeps the last title.
+
+The tab bar hosts each page in an iframe, so a script's page keeps its own JS
+globals, CSS and element IDs, and the daemon never rewrites its HTML.
 
 ### Logging
 

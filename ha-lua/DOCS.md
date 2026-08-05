@@ -102,8 +102,8 @@ UTC regardless of this setting.
 ### Option: `http_port`
 
 LAN port for the script-driven web UI (`ha.serve`). A Lovelace **Webpage**
-card can point at `http://<ha-host>:8100/` to embed a script's UI in a
-dashboard. **This port is unauthenticated** — anyone who can reach it can use
+card can point at `http://<ha-host>:8100/s/<script>/` to embed one script's UI
+in a dashboard, or at `http://<ha-host>:8100/` for the tab bar. **This port is unauthenticated** — anyone who can reach it can use
 whatever the script exposes. Keep it on the LAN, off the WAN. Set to `0` to
 disable the LAN listener (the authenticated ingress panel still works).
 Default `8100`.
@@ -140,6 +140,7 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.on_command(handler)` | Receive `ha_lua_command` events addressed to this script as `handler(action, data)` — the transport the cards use |
 | `ha.every(spec, fn)` / `ha.at(time, fn)` / `ha.after(delay, fn)` | Recurring, daily, and one-shot timers (persisted, with startup catch-up) |
 | `ha.serve(method, prefix, fn)` | Serve an HTTP route from a script — see *Web UIs* below |
+| `ha.ui(title)` | Give this script a tab named `title` in the web UI |
 | `ha.log(level, msg)` | Log through the daemon's logger |
 | `ha.on_exception(handler)` | Per-script error handler |
 | `ha.exceptions.email(cfg)` / `ha.exceptions.log_file(path)` | Built-in error sinks |
@@ -156,9 +157,12 @@ error behaviour — see [`lua_api.md`](./lua_api.md). For the design rationale, 
 
 ## Web UIs
 
-A script can serve its own web page and API with `ha.serve`:
+A script can serve its own web page and API with `ha.serve`, and become a tab
+in the daemon's UI with `ha.ui`:
 
 ```lua
+ha.ui("My Panel")                           -- this script gets a tab
+
 ha.serve("GET", "/api/state", function(req)
   return 200, json.encode({ ok = true }), { ["Content-Type"] = "application/json" }
 end)
@@ -174,14 +178,46 @@ match; unmatched requests get a 404. Handlers run on the script's own goroutine
 (so any `ha.*` / `store.*` call is safe) and must be fast — keep them to SQLite
 reads and service calls.
 
+### Where a script's routes live
+
+Every script gets its own path namespace: script `myui`'s routes are served
+under **`/s/myui/`**. A script that registers `"/api/state"` answers at
+`/s/myui/api/state`, and `req.path` still reads `/api/state` — the mount is
+stripped before the handler sees it. Two scripts can therefore both serve
+`"/"`, which before v4.0.0 they could not: they shared one flat path space and
+load order silently decided the winner.
+
+The daemon itself owns `/`. Opening it gives the **tab bar**: one tab per
+script that called `ha.ui(title)`, plus a **Debug** tab. The active page loads
+in an iframe, so pages cannot collide — each gets its own JS, CSS and
+element-ID space — and the daemon never touches a script's HTML. The selected
+tab lives in the URL hash (`/#myui`), so reload and back/forward keep it.
+
+`ha.ui` is opt-in: a script that only serves a machine-facing API stays out of
+the tab bar. A script that sets a title but registers no `GET "/"` gets a
+warning at load, because its tab would open onto a 404.
+
+### The Debug tab
+
+`/debug/` reports what the daemon is doing right now: version and uptime,
+goroutine and heap numbers, the HA connection with its reconnect count and last
+error, database size, mirrored entity count and write-queue depth, and a row
+per script with its routes, timers, queue depth, dropped events and last
+exception. It also tails the log live, with a level filter, and can capture a
+goroutine stack dump on demand — no `pprof_addr` or restart needed.
+
+### Reaching a UI
+
 A served UI is reachable two ways, both hitting the same routes:
 
 - **Ingress sidebar panel** — authenticated by Home Assistant, shown in the
   left sidebar. Always available; needs no port configuration.
 - **Stable LAN port** (`http_port`, default 8100) — for embedding in a
-  dashboard with a **Webpage** card (`http://<ha-host>:8100/`). Unauthenticated;
-  see the `http_port` option above. Use **relative** fetch URLs (`./api/state`)
-  in your page so it works under both entry points.
+  dashboard with a **Webpage** card. Point it at
+  `http://<ha-host>:8100/s/<script>/` for one script's page, or at
+  `http://<ha-host>:8100/` for the tab bar. Unauthenticated; see the
+  `http_port` option above. Use **relative** fetch URLs (`./api/state`) in your
+  page so it works under both entry points.
 
 ## Reading and writing files
 
