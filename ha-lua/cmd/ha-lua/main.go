@@ -31,7 +31,11 @@ import (
 	"github.com/sztanpet/ha-lua/internal/web"
 )
 
+// version is stamped at build time from config.yaml.
+var version = "dev"
+
 func main() {
+	started := time.Now()
 	configPath := flag.String("config", "", "Path to YAML config file (dev mode)")
 	flag.Parse()
 
@@ -300,6 +304,19 @@ func main() {
 			return out
 		},
 		Router: router,
+		Debug: web.DebugHandler(web.DebugDeps{
+			Version:       version,
+			Started:       started,
+			PprofAddr:     cfg.Debug.PprofAddr,
+			DBPath:        cfg.Database,
+			Runners:       reg.All,
+			Scheduler:     sched,
+			Tracker:       tracker,
+			Client:        client,
+			Logs:          logRing,
+			RetentionDays: cfg.StateHistory.RetentionDays,
+			PurgeInterval: purgeInterval,
+		}),
 	})
 	if cfg.HTTPPort != 0 {
 		web.Start(ctx, fmt.Sprintf(":%d", cfg.HTTPPort), handler)

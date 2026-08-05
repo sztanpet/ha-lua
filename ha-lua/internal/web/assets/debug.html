@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ha-lua debug</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: oklch(97% 0.004 260);
+  --fg: oklch(28% 0.012 260);
+  --muted: oklch(from var(--fg) calc(l + 0.28) c h);
+  --line: oklch(from var(--bg) calc(l - 0.10) c h);
+  --raised: oklch(from var(--bg) calc(l + 0.03) c h);
+  --accent: oklch(58% 0.15 255);
+  --ok: oklch(60% 0.14 150);
+  --warn: oklch(70% 0.15 75);
+  --bad: oklch(58% 0.19 25);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(21% 0.010 260);
+    --fg: oklch(92% 0.006 260);
+    --muted: oklch(from var(--fg) calc(l - 0.30) c h);
+    --line: oklch(from var(--bg) calc(l + 0.10) c h);
+    --raised: oklch(from var(--bg) calc(l + 0.04) c h);
+    --accent: oklch(72% 0.13 255);
+    --ok: oklch(72% 0.14 150);
+    --warn: oklch(80% 0.14 75);
+    --bad: oklch(70% 0.17 25);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 24px 0 8px;
+}
+h2:first-of-type { margin-top: 0; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.cell {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.cell dt { font-size: 11px; color: var(--muted); }
+.cell dd {
+  margin: 2px 0 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  white-space: nowrap;
+}
+th { font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td.wrapcell { white-space: normal; min-width: 220px; }
+.ok { color: var(--ok); }
+.warn { color: var(--warn); }
+.bad { color: var(--bad); }
+.muted { color: var(--muted); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.controls { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+select, button {
+  font: inherit;
+  color: inherit;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+#log {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  height: 340px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#log div { padding: 1px 0; }
+#stacks {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-height: 340px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre;
+}
+.lvl { display: inline-block; min-width: 44px; }
+</style>
+</head>
+<body>
+<h2>Runtime</h2>
+<div class="grid" id="runtime"></div>
+
+<h2>Home Assistant</h2>
+<div class="grid" id="ha"></div>
+
+<h2>Storage</h2>
+<div class="grid" id="storage"></div>
+
+<h2>Scripts</h2>
+<div class="wrap"><table id="scripts">
+  <thead><tr>
+    <th>Script</th><th>Tab</th><th>Routes</th><th>Handlers</th>
+    <th>Timers</th><th>Queue</th><th>Dropped</th><th>Last error</th>
+  </tr></thead>
+  <tbody></tbody>
+</table></div>
+
+<h2>Goroutines</h2>
+<div class="controls">
+  <button id="dump">capture stack dump</button>
+  <span class="muted" id="dumpstatus"></span>
+</div>
+<div id="stacks" hidden></div>
+
+<h2>Log</h2>
+<div class="controls">
+  <label>Level
+    <select id="level">
+      <option value="DEBUG">debug</option>
+      <option value="INFO" selected>info</option>
+      <option value="WARN">warn</option>
+      <option value="ERROR">error</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="follow" checked> follow</label>
+  <button id="clear">clear</button>
+  <span class="muted" id="status"></span>
+</div>
+<div id="log"></div>
+
+<script src="../ui/debug.js"></script>
+</body>
+</html>

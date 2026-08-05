@@ -7,11 +7,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chromedp/chromedp"
 
+	"github.com/sztanpet/ha-lua/internal/logbuf"
 	"github.com/sztanpet/ha-lua/internal/lua"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
@@ -107,6 +109,13 @@ func serveShell(t *testing.T, scripts map[string]string) *httptest.Server {
 			return out
 		},
 		Router: router,
+		Debug: DebugHandler(DebugDeps{
+			Version: "test",
+			Started: time.Now(),
+			Runners: reg.All,
+			Tracker: tracker,
+			Logs:    logbuf.New(16),
+		}),
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -146,8 +155,8 @@ func TestShellRendersTabsAndFramesPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(tabTitles) != 2 || tabTitles[0] != "Alpha" || tabTitles[1] != "Beta" {
-		t.Fatalf("tabs = %v, want [Alpha Beta]", tabTitles)
+	if len(tabTitles) != 3 || tabTitles[0] != "Alpha" || tabTitles[1] != "Beta" || tabTitles[2] != "Debug" {
+		t.Fatalf("tabs = %v, want [Alpha Beta Debug]", tabTitles)
 	}
 	for _, href := range tabHrefs {
 		if href == "" || href[0] != '#' {
@@ -207,5 +216,40 @@ func TestShellHonoursDeepLink(t *testing.T) {
 	}
 	if src != "s/beta/" {
 		t.Fatalf("iframe src = %q, want s/beta/", src)
+	}
+}
+
+func TestDebugTabRendersInShell(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveShell(t, map[string]string{"alpha": uiScript("Alpha", "alpha page")})
+
+	var lastTab, scriptCell, dumped string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/#debug"),
+		chromedp.WaitVisible(`nav a.active`, chromedp.ByQuery),
+		chromedp.Text(`nav a.active`, &lastTab, chromedp.ByQuery),
+		chromedp.Poll(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const cell = doc && doc.querySelector("#scripts tbody td");
+			return cell ? cell.textContent : null;
+		})()`, &scriptCell, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`document.getElementById("page").contentDocument.getElementById("dump").click()`, nil),
+		chromedp.Poll(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const stacks = doc.getElementById("stacks");
+			return stacks.hidden ? null : stacks.textContent;
+		})()`, &dumped, chromedp.WithPollingTimeout(10*time.Second)),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if lastTab != "Debug" {
+		t.Errorf("active tab = %q, want Debug", lastTab)
+	}
+	if scriptCell != "alpha" {
+		t.Errorf("scripts table lists %q, want alpha", scriptCell)
+	}
+	if !strings.Contains(dumped, "goroutine ") {
+		t.Errorf("stack dump = %q", dumped)
 	}
 }
