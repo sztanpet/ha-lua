@@ -16,8 +16,8 @@ startup: services
 boot: auto
 ingress: true                  # authenticated sidebar panel
 ingress_port: 8099             # internal port the Supervisor proxies; MUST match config.IngressPort default
-panel_icon: mdi:thermostat
-panel_title: "Heating"
+panel_icon: mdi:language-lua
+panel_title: "HA Lua"
 ports:
   "8100/tcp": 8100             # stable LAN port for dashboard Webpage cards (unauthenticated, LAN-trust)
 ports_description:

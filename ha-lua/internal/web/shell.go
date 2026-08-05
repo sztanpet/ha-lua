@@ -90,8 +90,8 @@ func serveTabs(w http.ResponseWriter, r *http.Request, deps Deps) {
 			out = append(out, tab{ID: id, Title: title, Path: lua.Mount[1:] + id + "/"})
 		}
 	}
-	// A reload re-enters the registry in a different order; the bar must not move.
-	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
+	// Stable on top of Scripts()'s id order, so equal titles cannot swap either.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	if deps.Debug != nil {
 		out = append(out, tab{ID: "debug", Title: "Debug", Path: debugPrefix[1:]})
 	}

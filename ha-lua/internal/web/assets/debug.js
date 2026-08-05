@@ -90,10 +90,15 @@
         return timer.type + " " + timer.spec + " → " + clock(timer.next_run);
       }).join("\n");
       var err = script.last_error;
+      // A page nobody can reach: serves the root but never called ha.ui.
+      var servesRoot = (script.routes || []).some(function (route) {
+        return route.Method === "GET" && route.Prefix === "/";
+      });
+      var tab = script.ui_title || (servesRoot ? "no tab — add ha.ui(\"…\")" : "—");
 
       [
         [script.script_id, "mono"],
-        [script.ui_title || "—", ""],
+        [tab, script.ui_title ? "" : (servesRoot ? "warn" : "muted")],
         [routes || "—", "mono wrapcell"],
         [script.state_handlers + " state / " + script.event_handlers + " event", ""],
         [timers || "—", "wrapcell"],

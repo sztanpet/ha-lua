@@ -144,3 +144,20 @@ func TestScriptRoutesMountedUnderS(t *testing.T) {
 		t.Fatalf("unknown path status = %d, want 404", rec.Code)
 	}
 }
+
+func TestTabsTieBreakIsStable(t *testing.T) {
+	// Two scripts sharing a title must not swap between polls; Scripts()
+	// already arrives id-ordered, so the title sort has to be stable.
+	scripts := fakeScripts{
+		{id: "alpha", title: "Panel"},
+		{id: "bravo", title: "Panel"},
+	}
+	h := Handler(Deps{Scripts: scripts.list})
+
+	for i := 0; i < 20; i++ {
+		tabs := decodeTabs(t, get(t, h, "/api/tabs"))
+		if len(tabs) != 2 || tabs[0].ID != "alpha" || tabs[1].ID != "bravo" {
+			t.Fatalf("tabs = %+v, want alpha then bravo", tabs)
+		}
+	}
+}

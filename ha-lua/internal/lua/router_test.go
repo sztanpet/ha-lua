@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -393,5 +394,25 @@ func TestRunnerStatsCountsDroppedEvents(t *testing.T) {
 	}
 	if got := r.Stats().QueueLen; got != 1 {
 		t.Fatalf("queue len = %d, want 1", got)
+	}
+}
+
+func TestRegistryAllIsOrderedByScriptID(t *testing.T) {
+	reg := NewRegistry()
+	for _, id := range []string{"zulu", "alpha", "mike", "bravo"} {
+		reg.Add(&Runner{scriptID: id})
+	}
+
+	want := []string{"alpha", "bravo", "mike", "zulu"}
+	// Repeated because the bug it guards against is map iteration order: a
+	// single pass can match by luck.
+	for i := 0; i < 20; i++ {
+		var got []string
+		for _, r := range reg.All() {
+			got = append(got, r.ScriptID())
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("All() = %v, want %v", got, want)
+		}
 	}
 }
