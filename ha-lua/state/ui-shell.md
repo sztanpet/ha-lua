@@ -4,8 +4,8 @@ Working state for the front-end track: per-script `/s/<id>/` namespaces, the
 shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
-Status: **milestones 1–6 of 11 done** (spec §11, in order). §7.1 is no longer
-open — the shell hosts pages in an iframe.
+Status: **COMPLETE — released v4.0.0 (2026-08-05), not yet pushed.** All 11
+milestones of spec §11 are done.
 
 ## Progress
 
@@ -17,11 +17,11 @@ open — the shell hosts pages in an iframe.
 | 4 | `logbuf: ring-buffer slog handler` | `1933d36` |
 | 5 | `scheduler: expose registered timers` | `006dd90` |
 | 6 | `lua/state/ha: expose runtime counters` | `02814c1` |
-| 7 | `web: debug page` | pending |
-| 8 | `build: stamp the version into the binary` | pending |
-| 9 | `examples: opt the bundled UIs into the tab bar` | pending |
-| 10 | docs (DOCS.md, lua_api.md, README.md, state) | pending |
-| 11 | release v4.0.0 | pending |
+| 7 | `web: debug page` | `c69d16f` |
+| 8 | `build: stamp the version into the binary` | `4a675bf` |
+| 9 | `examples: opt the bundled UIs into the tab bar` | `6c26d5a` |
+| 10 | docs (DOCS.md, lua_api.md, README.md) | `6bfb973` |
+| 11 | release v4.0.0 | `9398b2f`, `2865d0c`, tag `v4.0.0` |
 
 Also `df936ad` (style: cut comments back to the non-obvious why) — the user
 asked mid-build for far fewer comments, never narrating code. Applies to
@@ -42,6 +42,27 @@ everything still to be written.
 - **`logbuf` wraps rather than replaces** the text handler: stderr and the log
   file still get every record. Seq numbers make polling incremental with no
   overlap and no gap when the ring wraps.
+- **On-demand goroutine stack dump** (`/debug/api/goroutines`, button on the
+  page) — user asked for it mid-build. Uses `pprof.Lookup("goroutine")` with
+  `debug=2`, so it works whether or not `debug.pprof_addr` is set; enabling
+  that needs an options edit and a restart, exactly when you least want one.
+  Note debug=2 output has no "goroutine profile" header — it is raw stacks.
+- **Version stamped from `config.yaml`** via `-X main.version` in both the
+  Makefile and the Dockerfile. No second copy to drift.
+
+## Not verified
+
+The spec §12 **manual run** was not performed: the daemon blocks on the first
+HA state seed at startup (`main.go`, pre-existing), so it cannot serve anything
+without a reachable HA. The composition is covered instead by chromedp tests in
+`internal/web/shell_browser_test.go` driving real scripts through the real
+handler — tab bar, iframe contents, hash switching, the debug tab and the stack
+dump button.
+
+## Still to do
+
+`git push origin main && git push github main`, then the tag to both remotes.
+Pushing the tag to `github` triggers the GHCR image build.
 
 ## Decisions made while writing the spec (2026-08-05)
 
