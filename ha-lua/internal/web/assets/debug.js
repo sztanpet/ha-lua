@@ -85,7 +85,7 @@
       var row = document.createElement("tr");
       var routes = (script.routes || []).map(function (route) {
         return route.Method + " " + route.Prefix;
-      }).join(", ");
+      }).join("\n");
       var timers = (script.timers || []).map(function (timer) {
         return timer.type + " " + timer.spec + " → " + clock(timer.next_run);
       }).join("\n");
@@ -99,9 +99,9 @@
       [
         [script.script_id, "mono"],
         [tab, script.ui_title ? "" : (servesRoot ? "warn" : "muted")],
-        [routes || "—", "mono wrapcell"],
+        [routes || "—", "mono lines"],
         [script.state_handlers + " state / " + script.event_handlers + " event", ""],
-        [timers || "—", "wrapcell"],
+        [timers || "—", "lines"],
         [script.queue_len + " / " + script.queue_cap + (script.immediate_events ? " (immediate)" : ""), ""],
         [script.dropped_events, script.dropped_events ? "bad" : "muted"],
         [err ? clock(err.time) + " " + err.callback + ": " + err.error : "—", err ? "bad wrapcell" : "muted"],

@@ -75,6 +75,8 @@ th, td {
 }
 th { font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 td.wrapcell { white-space: normal; min-width: 220px; }
+/* One entry per line: the joins use \n, which white-space:normal would eat. */
+td.lines { white-space: pre-line; }
 .ok { color: var(--ok); }
 .warn { color: var(--warn); }
 .bad { color: var(--bad); }

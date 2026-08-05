@@ -225,10 +225,13 @@ func TestDebugTabRendersInShell(t *testing.T) {
 		"alpha": uiScript("Alpha", "alpha page"),
 		// Serves a page but never called ha.ui: unreachable from the tab bar,
 		// which is the confusing case the debug page has to call out.
-		"orphan": `ha.serve("GET", "/", function(req) return 200, "<html></html>" end)`,
+		"orphan": `
+ha.serve("GET", "/", function(req) return 200, "<html></html>" end)
+ha.serve("POST", "/api/thing", function(req) return 200, "ok" end)
+`,
 	})
 
-	var lastTab, scriptCell, orphanTab, dumped string
+	var lastTab, scriptCell, orphanTab, orphanRoutes, dumped string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/#debug"),
 		chromedp.WaitVisible(`nav a.active`, chromedp.ByQuery),
@@ -244,6 +247,17 @@ func TestDebugTabRendersInShell(t *testing.T) {
 			const row = rows.find(tr => tr.children[0].textContent === "orphan");
 			return row ? row.children[1].textContent : "";
 		})()`, &orphanTab),
+		chromedp.Evaluate(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const rows = Array.from(doc.querySelectorAll("#scripts tbody tr"));
+			const row = rows.find(tr => tr.children[0].textContent === "orphan");
+			if (!row) return "";
+			const cell = row.children[2];
+			// Rendered line count, not the raw text: white-space must not eat
+			// the newlines the cell is built with.
+			const style = getComputedStyle(cell);
+			return cell.textContent + "|" + style.whiteSpace;
+		})()`, &orphanRoutes),
 		chromedp.Evaluate(`document.getElementById("page").contentDocument.getElementById("dump").click()`, nil),
 		chromedp.Poll(`(() => {
 			const doc = document.getElementById("page").contentDocument;
@@ -262,6 +276,9 @@ func TestDebugTabRendersInShell(t *testing.T) {
 	}
 	if !strings.Contains(orphanTab, "ha.ui") {
 		t.Errorf("orphan script's tab cell = %q, want the ha.ui hint", orphanTab)
+	}
+	if !strings.Contains(orphanRoutes, "GET /\nPOST /api/thing|pre-line") {
+		t.Errorf("routes cell = %q, want one route per rendered line", orphanRoutes)
 	}
 	if !strings.Contains(dumped, "goroutine ") {
 		t.Errorf("stack dump = %q", dumped)
