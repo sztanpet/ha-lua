@@ -567,6 +567,7 @@ end)
 local PAGE = assert(fs.read("enhanced_climate.html"),
   "enhanced_climate.html missing next to enhanced_climate.lua")
 
+ha.ui("Climate")
 ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)

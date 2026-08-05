@@ -432,6 +432,7 @@ end)
 local PAGE = assert(fs.read("thermostat.html"),
   "thermostat.html missing next to thermostat.lua")
 
+ha.ui("Heating")
 ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
