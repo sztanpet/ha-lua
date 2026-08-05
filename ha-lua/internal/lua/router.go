@@ -46,19 +46,17 @@ type RouteSpec struct {
 	Prefix string
 }
 
-// Mount is the path every script's routes live under: script <id>'s routes are
-// served at /s/<id>/... and the daemon owns everything else.
+// Mount is the path every script's routes live under; the daemon owns the rest.
 const Mount = "/s/"
 
 // Router is the http.Handler for the script-driven UI, mounted at /s/. Each
-// script gets its own path namespace, so two scripts may both serve "/" — before
-// v4.0.0 they shared one flat table and load order silently decided the winner.
+// script owns its own path namespace, so two scripts may both serve "/".
 //
-// The scriptID->method->prefix table is only a routing hint: the authoritative
-// handler lookup happens in the script's run loop against its own routes, so a
-// stale entry (e.g. mid-reload) self-heals to a 404 rather than serving a dead
-// goroutine. The owning runner is resolved through the Registry at request
-// time, so a stopped script yields an immediate 404 instead of a timeout.
+// The route table is only a routing hint: the authoritative handler lookup
+// happens in the script's run loop against its own routes, so a stale entry
+// (e.g. mid-reload) self-heals to a 404 rather than serving a dead goroutine.
+// The owning runner is resolved through the Registry at request time, so a
+// stopped script yields an immediate 404 instead of a timeout.
 type Router struct {
 	reg     *Registry
 	timeout time.Duration
@@ -114,8 +112,7 @@ func (rt *Router) match(scriptID, method, path string) bool {
 	return false
 }
 
-// splitMount splits /s/<id>/<rest> into the script id and the path the script
-// sees. hasSlash is false for a bare /s/<id>, which needs the 308.
+// splitMount splits /s/<id>/<rest>; hasSlash is false for a bare /s/<id>.
 func splitMount(path string) (scriptID, stripped string, hasSlash bool) {
 	rest, ok := strings.CutPrefix(path, Mount)
 	if !ok {
@@ -134,12 +131,10 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !hasSlash {
-		// Pages fetch with relative URLs ("./api/state"), which resolve one
-		// segment too high without the trailing slash. The Location is
-		// relative on purpose: under HA ingress an absolute path would escape
-		// the /api/hassio_ingress/<token>/ prefix — which is also why this
-		// sets the header itself instead of calling http.Redirect, which
-		// resolves a relative target back to an absolute one.
+		// A page's relative fetches resolve one segment too high without the
+		// trailing slash. The Location must stay relative or it escapes HA
+		// ingress's /api/hassio_ingress/<token>/ prefix — hence the hand-written
+		// header: http.Redirect would resolve it back to absolute.
 		target := scriptID + "/"
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
@@ -169,8 +164,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // serve forwards a matched request to its script goroutine and writes the
-// reply, giving up after rt.timeout in either direction. path is the mount-
-// stripped path: a script sees "/api/state", never "/s/<id>/api/state".
+// reply, giving up after rt.timeout in either direction. path is mount-stripped.
 func (rt *Router) serve(w http.ResponseWriter, r *http.Request, runner *Runner, path string) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
 	if err != nil {

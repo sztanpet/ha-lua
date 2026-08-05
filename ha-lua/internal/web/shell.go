@@ -14,9 +14,8 @@ import (
 //go:embed assets
 var assets embed.FS
 
-// Script is everything the tab bar needs to know about a running script.
-// *lua.Runner satisfies it; keeping it an interface is what lets the shell be
-// tested without standing up Lua VMs and a database.
+// Script is what the tab bar needs from a running script. An interface so the
+// shell can be tested without standing up Lua VMs.
 type Script interface {
 	ScriptID() string
 	UITitle() string
@@ -25,18 +24,14 @@ type Script interface {
 // Deps are the subsystems the web shell reads. It mirrors lua.Deps: one struct
 // so adding a source later does not churn every call site.
 type Deps struct {
-	// Scripts lists the currently running scripts, newest registry state per
-	// call — scripts come and go with hot reload.
+	// Called per request: scripts come and go with hot reload.
 	Scripts func() []Script
-	// Router serves the scripts' own routes under /s/.
-	Router *lua.Router
-	// Debug serves the debug page and its API under /debug/. Nil leaves the
-	// Debug tab out of the tab bar entirely.
+	Router  *lua.Router
+	// Nil leaves the Debug tab out of the tab bar entirely.
 	Debug http.Handler
 }
 
-// tab is one entry in the tab bar. path is relative to the shell, which is the
-// mount root — anything absolute would break under HA ingress.
+// Path is relative to the shell; anything absolute breaks under HA ingress.
 type tab struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -89,14 +84,13 @@ func serveTabs(w http.ResponseWriter, r *http.Request, deps Deps) {
 		for _, script := range deps.Scripts() {
 			title := script.UITitle()
 			if title == "" {
-				continue // not opted in via ha.ui
+				continue // no ha.ui
 			}
 			id := script.ScriptID()
 			out = append(out, tab{ID: id, Title: title, Path: lua.Mount[1:] + id + "/"})
 		}
 	}
-	// Sorted by title so the bar does not reshuffle when a script reloads and
-	// re-enters the registry in a different order.
+	// A reload re-enters the registry in a different order; the bar must not move.
 	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	if deps.Debug != nil {
 		out = append(out, tab{ID: "debug", Title: "Debug", Path: debugPrefix[1:]})
@@ -104,7 +98,5 @@ func serveTabs(w http.ResponseWriter, r *http.Request, deps Deps) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
-	if err := json.MarshalWrite(w, out, json.Deterministic(true)); err != nil {
-		return // client hung up; nothing useful left to say
-	}
+	_ = json.MarshalWrite(w, out, json.Deterministic(true))
 }

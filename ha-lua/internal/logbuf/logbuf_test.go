@@ -9,8 +9,6 @@ import (
 	"testing"
 )
 
-// newTestLogger returns a logger writing to both a buffer and a discard text
-// handler, mirroring how main wraps the real handler.
 func newTestLogger(capacity int) (*slog.Logger, *Buffer, *bytes.Buffer) {
 	var sink bytes.Buffer
 	next := slog.NewTextHandler(&sink, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -52,7 +50,6 @@ func TestRingWrapsAndKeepsNewest(t *testing.T) {
 	if newest != 5 {
 		t.Fatalf("newest seq = %d, want 5", newest)
 	}
-	// Sequence numbers keep counting across the wrap.
 	if recs[0].Seq != 3 || recs[2].Seq != 5 {
 		t.Fatalf("seqs = %d..%d, want 3..5", recs[0].Seq, recs[2].Seq)
 	}
@@ -70,7 +67,6 @@ func TestSnapshotSinceSeqIsIncremental(t *testing.T) {
 	if got := msgs(recs); len(got) != 1 || got[0] != "three" {
 		t.Fatalf("incremental snapshot = %v, want [three]", got)
 	}
-	// Polling again with nothing new yields nothing, not a repeat.
 	if recs, _ := buf.Snapshot(3, slog.LevelDebug); len(recs) != 0 {
 		t.Fatalf("idle poll returned %v", msgs(recs))
 	}
@@ -111,8 +107,6 @@ func TestAttrsFromWithAndGroups(t *testing.T) {
 	}
 }
 
-// TestConcurrentWriters: every goroutine in the daemon logs through this one
-// buffer, so the ring has to survive the race detector.
 func TestConcurrentWriters(t *testing.T) {
 	log, buf, _ := newTestLogger(64)
 

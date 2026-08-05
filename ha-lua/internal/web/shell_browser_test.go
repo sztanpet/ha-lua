@@ -63,9 +63,6 @@ func newBrowserCtx(t *testing.T) context.Context {
 	return boundedCtx
 }
 
-// serveShell runs real scripts behind the real shell handler, which is the only
-// way to prove the iframe composition works: the tab list, the script pages and
-// the browser all have to agree.
 func serveShell(t *testing.T, scripts map[string]string) *httptest.Server {
 	t.Helper()
 	writeDB, readDB := testutil.NewTestDB(t, nil)
@@ -125,9 +122,6 @@ end)
 `
 }
 
-// TestShellRendersTabsAndFramesPage is the whole design in one test: the bar
-// lists both scripts, the iframe shows the first one, and changing the hash
-// swaps the framed page without the shell itself reloading.
 func TestShellRendersTabsAndFramesPage(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveShell(t, map[string]string{
@@ -142,8 +136,7 @@ func TestShellRendersTabsAndFramesPage(t *testing.T) {
 		chromedp.WaitVisible(`nav a`, chromedp.ByQuery),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll("nav a")).map(a => a.textContent)`, &tabTitles),
 		chromedp.Evaluate(`Array.from(document.querySelectorAll("nav a")).map(a => a.getAttribute("href"))`, &tabHrefs),
-		// The framed document is what proves composition: the script's own page
-		// really loaded inside the shell, with its own DOM.
+		// The framed document, not the shell's, proves composition.
 		chromedp.Poll(`(() => {
 			const doc = document.getElementById("page").contentDocument;
 			const who = doc && doc.getElementById("who");
@@ -166,8 +159,6 @@ func TestShellRendersTabsAndFramesPage(t *testing.T) {
 	}
 }
 
-// TestShellSwitchesTabOnHash: tab switching is a hash change, so back/forward
-// and reload keep the selected tab.
 func TestShellSwitchesTabOnHash(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveShell(t, map[string]string{
@@ -199,8 +190,6 @@ func TestShellSwitchesTabOnHash(t *testing.T) {
 	}
 }
 
-// TestShellHonoursDeepLink: opening #beta directly selects that tab, which is
-// what makes a bookmarked tab work.
 func TestShellHonoursDeepLink(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveShell(t, map[string]string{

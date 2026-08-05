@@ -1,6 +1,6 @@
 // Package logbuf keeps the most recent log records in memory so the debug page
 // can tail them. It wraps a slog.Handler rather than replacing one: stderr and
-// the log file still receive every record, unchanged.
+// the log file still receive every record.
 package logbuf
 
 import (
@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-// DefaultCapacity is how many records the ring keeps. Enough to see what led up
-// to a problem, small enough that nobody has to think about the memory.
 const DefaultCapacity = 500
 
 // Record is one buffered log line, flattened for JSON.
@@ -24,8 +22,7 @@ type Record struct {
 	Attrs map[string]string `json:"attrs,omitempty"`
 }
 
-// Buffer is a fixed-size ring of the most recent records. Safe for concurrent
-// use: every handler in the tree shares one.
+// Buffer is a fixed-size ring of the most recent records. Safe for concurrent use.
 type Buffer struct {
 	mu   sync.Mutex
 	ring []Record
@@ -54,9 +51,8 @@ func (b *Buffer) append(rec Record) {
 	}
 }
 
-// Snapshot returns the buffered records newer than sinceSeq at or above
-// minLevel, oldest first, plus the newest sequence number in the buffer. A
-// caller polls with the seq it last saw; 0 asks for everything still held.
+// Snapshot returns records newer than sinceSeq at or above minLevel, oldest
+// first, plus the newest seq. A poller passes back the seq it last saw.
 func (b *Buffer) Snapshot(sinceSeq uint64, minLevel slog.Level) ([]Record, uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -74,7 +70,7 @@ func (b *Buffer) Snapshot(sinceSeq uint64, minLevel slog.Level) ([]Record, uint6
 	return out, b.seq
 }
 
-// ordered returns the live records oldest first. Caller holds b.mu.
+// Caller holds b.mu.
 func (b *Buffer) ordered() []Record {
 	if !b.full {
 		return b.ring[:b.next]
@@ -93,10 +89,9 @@ type Handler struct {
 	buf   *Buffer
 	next  slog.Handler
 	attrs []slog.Attr
-	group string // dotted prefix from WithGroup, applied to attr keys
+	group string // dotted prefix from WithGroup
 }
 
-// NewHandler wraps next so records also land in buf.
 func NewHandler(next slog.Handler, buf *Buffer) *Handler {
 	return &Handler{buf: buf, next: next}
 }
@@ -147,14 +142,12 @@ func (h *Handler) WithGroup(name string) slog.Handler {
 	return &clone
 }
 
-// flatten writes attr into out as dotted key -> string. Groups recurse; the
-// debug page wants flat lines, not a nested structure it has to render.
+// flatten writes attr as a dotted key -> string; the page renders lines, not trees.
 func flatten(out map[string]string, prefix string, attr slog.Attr) {
 	value := attr.Value.Resolve()
 	if value.Kind() == slog.KindGroup {
 		group := value.Group()
-		if attr.Key == "" {
-			// An inline group: its members keep the current prefix.
+		if attr.Key == "" { // inline group keeps the current prefix
 			for _, member := range group {
 				flatten(out, prefix, member)
 			}

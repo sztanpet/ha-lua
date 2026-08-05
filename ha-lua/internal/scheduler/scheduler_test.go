@@ -449,9 +449,6 @@ func BenchmarkSchedulerConcurrencyStress(b *testing.B) {
 	})
 }
 
-// TestTimersSnapshot: the debug page reads this, so it has to list every
-// registered timer, soonest first, with the fields a human needs to tell two
-// timers of the same script apart.
 func TestTimersSnapshot(t *testing.T) {
 	s, _, _ := newTestSched(t, time.UTC)
 	ctx := context.Background()
@@ -480,7 +477,6 @@ func TestTimersSnapshot(t *testing.T) {
 			t.Fatalf("not sorted by next_run: %+v", got)
 		}
 	}
-	// after 30s comes before every 5m comes before every 1h.
 	if got[0].Type != "after" || got[0].ScriptID != "alpha" {
 		t.Errorf("first = %+v, want alpha's after timer", got[0])
 	}
@@ -491,7 +487,6 @@ func TestTimersSnapshot(t *testing.T) {
 		t.Errorf("third = %+v, want %s", got[2], hourly)
 	}
 
-	// A stopped script's timers leave the snapshot with the heap.
 	s.RemoveScript("alpha")
 	got = s.Timers()
 	if len(got) != 1 || got[0].ScriptID != "beta" {

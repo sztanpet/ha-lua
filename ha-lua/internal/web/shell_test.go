@@ -46,8 +46,6 @@ func TestShellServedAtRoot(t *testing.T) {
 		t.Fatalf("content-type = %q", ct)
 	}
 	body := rec.Body.String()
-	// The shell must reach its own asset relatively: an absolute /ui/shell.js
-	// escapes HA ingress's /api/hassio_ingress/<token>/ prefix.
 	if !strings.Contains(body, `src="ui/shell.js"`) {
 		t.Errorf("shell does not load ui/shell.js relatively:\n%s", body)
 	}
@@ -84,7 +82,7 @@ func decodeTabs(t *testing.T, rec *httptest.ResponseRecorder) []tab {
 }
 
 func TestTabsEmptyWithoutRegistry(t *testing.T) {
-	// An empty list, never a JSON null: shell.js branches on tabs.length.
+	// Never a JSON null: shell.js branches on tabs.length.
 	rec := get(t, Handler(Deps{}), "/api/tabs")
 	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
 		t.Fatalf("body = %q, want []", body)
@@ -138,11 +136,10 @@ func TestScriptRoutesMountedUnderS(t *testing.T) {
 	router := lua.NewRouter(lua.NewRegistry())
 	h := Handler(Deps{Router: router})
 
-	// Unknown script: the router answers, not the shell's catch-all.
 	if rec := get(t, h, "/s/nosuch/"); rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
-	// The shell only owns the bare root; it must not swallow other paths.
+	// The shell owns only the bare root.
 	if rec := get(t, h, "/nosuch"); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown path status = %d, want 404", rec.Code)
 	}

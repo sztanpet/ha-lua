@@ -368,9 +368,7 @@ type TimerInfo struct {
 	NextRun  time.Time `json:"next_run"`
 }
 
-// Timers returns every registered timer, soonest first. It is a snapshot: the
-// heap keeps moving, and a caller rendering a page must not hold the lock while
-// it does.
+// Timers snapshots every registered timer, soonest first.
 func (s *Scheduler) Timers() []TimerInfo {
 	s.mu.Lock()
 	out := make([]TimerInfo, 0, len(s.heap))
@@ -385,8 +383,8 @@ func (s *Scheduler) Timers() []TimerInfo {
 	}
 	s.mu.Unlock()
 
-	// Heap order is only "smallest first"; the rest is arbitrary, and a debug
-	// list that reshuffles between polls is unreadable.
+	// Heap order past the root is arbitrary; a list that reshuffles between
+	// polls is unreadable.
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].NextRun.Equal(out[j].NextRun) {
 			return out[i].ID < out[j].ID

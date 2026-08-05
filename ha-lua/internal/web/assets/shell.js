@@ -1,7 +1,5 @@
-// Tab shell. Every URL here is relative on purpose: under HA ingress the whole
-// app lives beneath /api/hassio_ingress/<token>/, and the shell has no way to
-// know that prefix. It always sits at the mount root, so "s/<id>/" resolves
-// correctly wherever it is served from.
+// Every URL here is relative: under HA ingress the app lives beneath
+// /api/hassio_ingress/<token>/ and the shell cannot know that prefix.
 (function () {
   "use strict";
 
@@ -30,8 +28,7 @@
     });
 
     var tab = tabs.find(function (candidate) { return candidate.id === active; });
-    // Assigning the same src would reload the page on every hashchange and
-    // throw away whatever the user was doing in it.
+    // Re-assigning the same src would reload the page and lose its state.
     var src = tab ? tab.path : "about:blank";
     if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
     document.title = tab ? "ha-lua — " + tab.title : "ha-lua";
