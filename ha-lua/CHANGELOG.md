@@ -4,6 +4,22 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.0.1 - 2026-08-05
+
+### Fixed
+- **The debug page's script list no longer reshuffles.** It was rendered
+  straight from a map, so every 3-second poll came back in a different order —
+  unreadable for the one screen whose whole job is to be watched. The registry
+  now returns scripts ordered by id, and the tab bar's title sort is stable on
+  top of it, so two scripts sharing a title cannot swap places either.
+
+### Changed
+- The sidebar panel is now **"HA Lua"** with a Lua icon, instead of "Heating"
+  with a thermostat icon — leftovers from when the thermostat page was the only
+  UI. It is a tab shell hosting every script's page now.
+- The Debug tab flags a script that serves `GET "/"` but never called `ha.ui`:
+  its page cannot be reached from the tab bar, and nothing used to say so.
+
 ## 4.0.0 - 2026-08-05
 
 ### Changed
