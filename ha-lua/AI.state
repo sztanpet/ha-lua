@@ -11,14 +11,17 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-pprof goroutine labels across the daemon (released v3.3.0, commits
-6aa3052, 842c711, 34e2419). Every goroutine now runs inside `pprof.Do` with a
-`goroutine` label naming its job, and script goroutines additionally carry
-`script=<id>` — the label set is inherited by everything they spawn and
-rides in the context handed to the LState, so async waiters and UI requests
-keep the script's name. Without it a CPU profile of the daemon is one
-undifferentiated pile of gopher-lua frames. Measured: no latency cost
-(e2e pre/post, p>0.2). Detail in `state/core-daemon.md`.
+Tabbed UI shell + debug tab — SPEC WRITTEN, nothing built
+(`ui-shell-spec.md`, 2026-08-05). Scripts move under `/s/<script_id>/` and the
+daemon owns `/`, because today every `ha.serve` route shares one flat path
+space and both bundled UI examples register `GET "/"` — the winner is decided
+by load order, so two web UIs cannot coexist. A script becomes a tab by calling
+the new `ha.ui(title)`. No iframes (user rejected them): the tab bar lives
+inside each page and switching tabs is a plain link. A Debug tab adds the
+runtime introspection the daemon has never had — scripts/routes/timers/last
+error, HA link + runtime stats, and a live log tail from a new ring-buffer slog
+handler. Breaking → v4.0.0. One open decision (spec §7.1: auto-inject the tab
+bar vs. each page including it). Detail in `state/ui-shell.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -37,6 +40,8 @@ undifferentiated pile of gopher-lua frames. Measured: no latency cost
 - `state/event-latency.md` — event-to-action latency: async call_service +
   memory mirror + background writer (event-latency-spec.md). Spec written,
   build pending review.
+- `state/ui-shell.md` — `/s/<id>/` namespaces, shared tab bar, debug page
+  (ui-shell-spec.md). Spec written, nothing built.
 - (sse-spec.md has no implementation yet — no state file.)
 
 ## Release log
