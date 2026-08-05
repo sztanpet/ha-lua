@@ -22,7 +22,8 @@ whole HTML-injection middleware and gave real per-page isolation for free. The
 Debug tab adds the runtime introspection the daemon never had: scripts /
 routes / timers / queue depth / dropped events / last error, HA link and
 runtime stats, a live log tail from the new `internal/logbuf` ring-buffer slog
-handler, and an on-demand goroutine stack dump. Detail in `state/ui-shell.md`.
+handler, and an on-demand goroutine stack dump. Detail in `state/ui-shell.md`. Followed by v4.0.1 (ordering fix, panel
+rename, untabbed-page hint).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -48,6 +49,11 @@ handler, and an on-demand goroutine stack dump. Detail in `state/ui-shell.md`.
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 4.0.1 (2026-08-05): debug page script list stopped reshuffling
+  (Registry.All ranged over a map; now id-ordered, tab sort stable on
+  top); sidebar panel renamed Heating -> HA Lua with a Lua icon; debug
+  page flags a script serving GET "/" without ha.ui. See
+  `state/ui-shell.md`.
 - 4.0.0 (2026-08-05): BREAKING — script UIs moved from `/` to
   `/s/<script_id>/`; the daemon owns `/` and serves a tab bar (one tab
   per `ha.ui(title)` script, plus Debug) hosting pages in an iframe.

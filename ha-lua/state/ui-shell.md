@@ -4,8 +4,25 @@ Working state for the front-end track: per-script `/s/<id>/` namespaces, the
 shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
-Status: **COMPLETE — released v4.0.0 (2026-08-05), not yet pushed.** All 11
+Status: **COMPLETE — released v4.0.0, then v4.0.1 (both 2026-08-05).** All 11
 milestones of spec §11 are done.
+
+## Post-release fixes (v4.0.1)
+
+- **`Registry.All()` now sorts by script id.** It ranged over a map, so the
+  debug page's script table reshuffled on every 3s poll. Fixed in `All()`, not
+  at the call site — that is where the guarantee belongs. `/api/tabs` uses
+  `sort.SliceStable` on top so equal titles cannot swap either. Both regression
+  tests loop 20× because one pass can match map order by luck.
+- **Sidebar panel renamed** `Heating`/`mdi:thermostat` → `HA Lua`/
+  `mdi:language-lua` in config.yaml.
+- **Debug page flags a script that serves `GET "/"` but never called `ha.ui`.**
+  Its page is unreachable from the tab bar and nothing said so.
+- **Not a bug: a user's own script does not get `ha.ui` from the examples.**
+  `examples/` materializes read-only to `/config/ha-lua/examples` and is never
+  loaded; only `/config/ha-lua/scripts/*.lua` runs. Adding `ha.ui` to an
+  example does nothing for the user's own edited copy of it — they must add the
+  line themselves. Expect this question again for every future example change.
 
 ## Progress
 
