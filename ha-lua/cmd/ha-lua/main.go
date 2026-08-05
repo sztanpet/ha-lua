@@ -21,6 +21,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/config"
 	"github.com/sztanpet/ha-lua/internal/debug"
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/logbuf"
 	"github.com/sztanpet/ha-lua/internal/logwriter"
 	luapkg "github.com/sztanpet/ha-lua/internal/lua"
 	"github.com/sztanpet/ha-lua/internal/purge"
@@ -58,7 +59,12 @@ func main() {
 			logWriter = io.MultiWriter(os.Stderr, f)
 		}
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: level})))
+	// The ring buffer sits in front of the text handler, not instead of it:
+	// stderr and the log file still get every record. It exists so the debug
+	// page can tail the log without reading files it may not have.
+	logRing := logbuf.New(logbuf.DefaultCapacity)
+	slog.SetDefault(slog.New(logbuf.NewHandler(
+		slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: level}), logRing)))
 	if levelErr != nil {
 		slog.Warn("bad log_level, using info", "value", cfg.LogLevel, "err", levelErr)
 	}
