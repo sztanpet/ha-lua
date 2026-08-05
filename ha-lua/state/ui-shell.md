@@ -4,8 +4,8 @@ Working state for the front-end track: per-script `/s/<id>/` namespaces, the
 shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
-Status: **COMPLETE — released v4.0.0, then v4.0.1 (both 2026-08-05).** All 11
-milestones of spec §11 are done.
+Status: **COMPLETE — released v4.0.0, v4.0.1, v4.0.2 (all 2026-08-05).** All
+11 milestones of spec §11 are done.
 
 ## Post-release fixes (v4.0.1)
 
@@ -18,6 +18,13 @@ milestones of spec §11 are done.
   `mdi:language-lua` in config.yaml.
 - **Debug page flags a script that serves `GET "/"` but never called `ha.ui`.**
   Its page is unreachable from the tab bar and nothing said so.
+- **v4.0.2: routes and timers get one line each on the debug page.** Routes
+  were comma-joined; timers already used `\n` but the cell's
+  `white-space: normal` ate it. Both now use a `td.lines`
+  (`white-space: pre-line`) class. The browser test asserts the *computed*
+  white-space, not just the text — the newlines were always in the DOM and
+  only styling decided visibility, so a text-only assertion passes against the
+  broken version.
 - **Not a bug: a user's own script does not get `ha.ui` from the examples.**
   `examples/` materializes read-only to `/config/ha-lua/examples` and is never
   loaded; only `/config/ha-lua/scripts/*.lua` runs. Adding `ha.ui` to an

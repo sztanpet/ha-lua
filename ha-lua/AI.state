@@ -23,7 +23,7 @@ Debug tab adds the runtime introspection the daemon never had: scripts /
 routes / timers / queue depth / dropped events / last error, HA link and
 runtime stats, a live log tail from the new `internal/logbuf` ring-buffer slog
 handler, and an on-demand goroutine stack dump. Detail in `state/ui-shell.md`. Followed by v4.0.1 (ordering fix, panel
-rename, untabbed-page hint).
+rename, untabbed-page hint) and v4.0.2 (debug page line formatting).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
@@ -49,6 +49,9 @@ rename, untabbed-page hint).
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 4.0.2 (2026-08-05): debug page renders routes and timers one per
+  line (comma-joined routes; timers' newlines were collapsed by
+  white-space:normal). See `state/ui-shell.md`.
 - 4.0.1 (2026-08-05): debug page script list stopped reshuffling
   (Registry.All ranged over a map; now id-ordered, tab sort stable on
   top); sidebar panel renamed Heating -> HA Lua with a Lua icon; debug
