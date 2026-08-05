@@ -94,6 +94,9 @@ type Runner struct {
 	cachedEventHandlers []eventHandler
 	// cachedRoutes is set after load; safe to read once LoadedCh is closed.
 	cachedRoutes []RouteSpec
+	// cachedUITitle is the ha.ui title, set after load; safe to read once
+	// LoadedCh is closed.
+	cachedUITitle string
 
 	tracker   *state.Tracker
 	scheduler *scheduler.Scheduler
@@ -236,6 +239,11 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	// loaded. Both are safe to read once LoadedCh is closed.
 	r.cachedEventHandlers = api.eventHandlers
 	r.cachedRoutes = api.routeSpecs()
+	r.cachedUITitle = api.uiTitle
+	if r.cachedUITitle != "" && api.matchRoute("GET", "/") == nil {
+		slog.Warn("script asked for a UI tab but serves no GET \"/\" — its tab would open onto a 404",
+			"script", r.scriptID, "title", r.cachedUITitle)
+	}
 	close(r.LoadedCh)
 
 	// Deliver initial states for on_state_change with initial=true
@@ -300,6 +308,10 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 // Routes returns the routes this script registered via ha.serve. Only valid
 // once LoadedCh is closed.
 func (r *Runner) Routes() []RouteSpec { return r.cachedRoutes }
+
+// UITitle returns the tab name set by ha.ui, or "" if the script did not opt
+// into the web shell. Only valid once LoadedCh is closed.
+func (r *Runner) UITitle() string { return r.cachedUITitle }
 
 func (r *Runner) deliverInitialStates(ctx context.Context, L *lua.LState, api *haAPI) {
 	for _, h := range api.stateChangeHandlers {

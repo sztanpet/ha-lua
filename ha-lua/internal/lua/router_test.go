@@ -1,7 +1,9 @@
 package lua
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -26,6 +28,11 @@ func newUIRunner(t *testing.T, scriptID, src string) *Router {
 // Router — what namespacing has to keep apart.
 func newUIRunners(t *testing.T, scripts map[string]string) *Router {
 	t.Helper()
+	return newUIRunnersIn(t, NewRegistry(), scripts)
+}
+
+func newUIRunnersIn(t *testing.T, reg *Registry, scripts map[string]string) *Router {
+	t.Helper()
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
 		t.Fatal(err)
@@ -34,7 +41,6 @@ func newUIRunners(t *testing.T, scripts map[string]string) *Router {
 	global := store.NewGlobal(writeDB, readDB)
 
 	dir := t.TempDir()
-	reg := NewRegistry()
 	router := NewRouter(reg)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -293,5 +299,45 @@ func TestRouterReloadReRegisters(t *testing.T) {
 	// After stop the route is unregistered.
 	if rec := doReq(router, "GET", "/b", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("route served after stop: status=%d", rec.Code)
+	}
+}
+
+// TestUITitle covers ha.ui: the title is cached for the shell's tab list, and a
+// script that never calls it stays out of the tab bar.
+func TestUITitle(t *testing.T) {
+	for _, tc := range []struct {
+		name, src, want string
+	}{
+		{"opted in", `ha.ui("Heating")
+ha.serve("GET", "/", function(req) return 200, "x" end)`, "Heating"},
+		{"not opted in", `ha.serve("GET", "/", function(req) return 200, "x" end)`, ""},
+		{"last call wins", `ha.ui("First")
+ha.ui("Second")
+ha.serve("GET", "/", function(req) return 200, "x" end)`, "Second"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := NewRegistry()
+			newUIRunnersIn(t, reg, map[string]string{"ui": tc.src})
+			if got := reg.Get("ui").UITitle(); got != tc.want {
+				t.Fatalf("UITitle() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUITitleWithoutRootRouteWarns: the tab would open onto a 404, so the
+// script must not be left to discover that in the browser.
+func TestUITitleWithoutRootRouteWarns(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	newUIRunner(t, "ui", `
+ha.ui("Heating")
+ha.serve("GET", "/api/x", function(req) return 200, "x" end)
+`)
+	if !strings.Contains(buf.String(), "UI tab") {
+		t.Fatalf("no warning logged, got:\n%s", buf.String())
 	}
 }

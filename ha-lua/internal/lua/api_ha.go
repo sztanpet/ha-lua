@@ -64,6 +64,9 @@ type haAPI struct {
 	timerSeq int
 	// routes registered via ha.serve during load time.
 	routes []routeEntry
+	// uiTitle is the tab name set by ha.ui; empty means the script is not a
+	// tab in the web shell.
+	uiTitle string
 }
 
 type stateChangeHandler struct {
@@ -482,6 +485,14 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			return 0
 		}
 		api.routes = append(api.routes, routeEntry{method: method, prefix: prefix, fn: fn})
+		return 0
+	}))
+
+	// ha.ui opts a script into the web shell's tab bar. Explicit on purpose:
+	// scripts that ha.serve a machine-facing API must not turn into tabs
+	// just because they answer HTTP.
+	L.SetField(haTable, "ui", L.NewFunction(func(L *lua.LState) int {
+		api.uiTitle = L.CheckString(1)
 		return 0
 	}))
 
