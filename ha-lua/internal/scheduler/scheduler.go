@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime/pprof"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -356,4 +357,41 @@ func nextAt(spec string, now time.Time, loc *time.Location) (time.Time, error) {
 		next = next.AddDate(0, 0, 1)
 	}
 	return next.UTC(), nil
+}
+
+// TimerInfo is one registered timer, as the debug page sees it.
+type TimerInfo struct {
+	ID       string    `json:"id"`
+	ScriptID string    `json:"script_id"`
+	Type     string    `json:"type"` // "every" | "at" | "after"
+	Spec     string    `json:"spec"`
+	NextRun  time.Time `json:"next_run"`
+}
+
+// Timers returns every registered timer, soonest first. It is a snapshot: the
+// heap keeps moving, and a caller rendering a page must not hold the lock while
+// it does.
+func (s *Scheduler) Timers() []TimerInfo {
+	s.mu.Lock()
+	out := make([]TimerInfo, 0, len(s.heap))
+	for _, t := range s.heap {
+		out = append(out, TimerInfo{
+			ID:       t.id,
+			ScriptID: t.scriptID,
+			Type:     t.typ,
+			Spec:     t.spec,
+			NextRun:  t.nextRun,
+		})
+	}
+	s.mu.Unlock()
+
+	// Heap order is only "smallest first"; the rest is arbitrary, and a debug
+	// list that reshuffles between polls is unreadable.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].NextRun.Equal(out[j].NextRun) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].NextRun.Before(out[j].NextRun)
+	})
+	return out
 }
