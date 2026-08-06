@@ -4,6 +4,27 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.2.0 - 2026-08-06
+
+### Added
+- **The Debug tab's log panel can be narrowed to one script.** A new **Source**
+  filter next to **Level** switches the panel between everything the daemon
+  logs, all scripts at once, or a single script. Script messages were always in
+  there — `ha.log` tags every line with the script it came from — but the tag
+  sat at the end of the attributes where nothing picked it out, and one chatty
+  script buried the rest. The script id now renders as a `[tag]` right after the
+  timestamp.
+- `GET /debug/api/logs?script=<id>` (or `script=*` for any script) exposes the
+  same filter, so a single script's log tail is `curl`-able from a headless box.
+
+### Changed
+- **`print()` from a script now logs instead of writing to stdout.** It emits
+  one info-level line tagged with the script id, so debugging output shows up in
+  the log file and in the Debug tab's log panel — where anyone sprinkling
+  `print()` calls goes looking for it — rather than only in the Supervisor log.
+  Arguments are still tab-separated with `__tostring` honoured, exactly as
+  before; only the destination changed.
+
 ## 4.1.0 - 2026-08-06
 
 ### Added
