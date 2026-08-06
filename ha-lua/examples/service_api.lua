@@ -34,6 +34,10 @@
 -- a shell script that gets a 200 knows the service actually ran; pass
 -- `wait=false` for fire-and-forget.
 --
+-- The script also serves a **Service API** tab: a form that assembles a call
+-- from your real entity ids and hands back the finished URL and curl command,
+-- with copy buttons. It builds commands; it never fires one.
+--
 -- SECURITY. The LAN port serves this without any Home Assistant login, so the
 -- endpoint is guarded by a shared token — without one, anyone on your network
 -- could unlock your doors. The token is generated on first load and written to
@@ -235,4 +239,25 @@ ha.serve("GET", "/ping", function(req)
     return fail(401, "missing or wrong token")
   end
   return reply(200, { ok = true })
+end)
+
+-- Entity ids for the builder page's pickers. Token-guarded like everything
+-- else: knowing what exists is halfway to controlling it.
+ha.serve("GET", "/entities", function(req)
+  if not authorized(req) then
+    return fail(401, "missing or wrong token")
+  end
+  return reply(200, { ok = true, entity_ids = ha.get_entity_ids("*") })
+end)
+
+-- The builder page: a form that assembles one of these calls and hands you the
+-- URL and the curl command. It is served without a token -- there is no way to
+-- authenticate a page load on the LAN port, and the page holds no secret; it
+-- asks you for the token, which every request above still checks.
+local PAGE = assert(fs.read("service_api.html"),
+  "service_api.html missing next to service_api.lua")
+
+ha.ui("Service API")
+ha.serve("GET", "/", function()
+  return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)

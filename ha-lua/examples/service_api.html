@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Service API</title>
+<style>
+  /* Same palette as the other bundled pages: neutrals share hue 262 and the
+     ramp is pure lightness. --accent / --ok / --bad are the standalone
+     anchors; every tint and border is derived from one with oklch(from …). */
+  :root { color-scheme: light dark;
+          --bg:oklch(0.970 0.003 262); --card:oklch(1 0 0);
+          --ink:oklch(0.234 0.007 262); --muted:oklch(0.573 0.008 262);
+          --line:oklch(0.921 0.005 262); --surface:oklch(0.958 0.003 262);
+          --accent:oklch(0.546 0.180 265); --ok:oklch(0.646 0.146 148);
+          --bad:oklch(0.586 0.203 27);
+          --accent-soft:oklch(from var(--accent) 0.945 0.040 h);
+          --ok-soft:oklch(from var(--ok) 0.945 0.045 h);
+          --bad-soft:oklch(from var(--bad) 0.945 0.045 h);
+          --code-bg:oklch(from var(--ink) 0.965 0.006 h); }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:oklch(0.204 0.007 262); --card:oklch(0.259 0.010 262);
+            --ink:oklch(0.928 0.003 262); --muted:oklch(0.695 0.009 262);
+            --line:oklch(0.336 0.011 262); --surface:oklch(0.305 0.012 262);
+            --accent:oklch(0.715 0.140 262); --ok:oklch(0.723 0.152 148);
+            --bad:oklch(0.674 0.191 25);
+            --accent-soft:oklch(from var(--accent) 0.320 0.055 h);
+            --ok-soft:oklch(from var(--ok) 0.310 0.050 h);
+            --bad-soft:oklch(from var(--bad) 0.310 0.055 h);
+            --code-bg:oklch(from var(--ink) 0.225 0.008 h); }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0 auto; background:var(--bg); color:var(--ink); padding:12px;
+         max-width:860px;
+         font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  h1 { font-size:1.3rem; margin:8px 4px 2px; }
+  .lede { color:var(--muted); font-size:.9rem; margin:0 4px 14px; }
+  .card { background:var(--card); border-radius:12px; padding:14px;
+          margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .card h2 { font-size:.78rem; font-weight:600; text-transform:uppercase;
+             letter-spacing:.04em; color:var(--muted); margin:0 0 10px; }
+  label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:4px; }
+  input[type=text] { width:100%; padding:8px 10px; border:1px solid var(--line);
+         border-radius:8px; background:var(--surface); color:var(--ink);
+         font:inherit; font-size:.95rem; }
+  input[type=text]:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  input.mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+               font-size:.9rem; }
+  .field { margin-bottom:10px; }
+  .field:last-child { margin-bottom:0; }
+  .hint { font-size:.78rem; color:var(--muted); margin-top:4px; }
+  .hint code { background:var(--code-bg); padding:1px 4px; border-radius:4px; }
+  .two { display:grid; gap:10px; grid-template-columns:1fr 1fr; }
+  .token-row { display:flex; gap:8px; align-items:flex-start; }
+  .token-row input { flex:1; }
+  .status { font-size:.8rem; padding:2px 9px; border-radius:999px;
+            white-space:nowrap; background:var(--surface); color:var(--muted); }
+  .status.ok  { background:var(--ok-soft);  color:var(--ok); }
+  .status.bad { background:var(--bad-soft); color:var(--bad); }
+  input[type=checkbox] { accent-color:var(--accent); width:16px; height:16px; }
+  button { font:inherit; font-size:.85rem; padding:7px 12px; cursor:pointer;
+           border:1px solid var(--line); border-radius:8px;
+           background:var(--surface); color:var(--ink); }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent-soft); color:var(--accent);
+                   border-color:transparent; font-weight:600; }
+  .rows { display:flex; flex-direction:column; gap:8px; }
+  .row { display:grid; gap:8px; align-items:center;
+         grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) 74px 34px; }
+  .row .type { font-size:.72rem; text-align:center; padding:3px 0;
+               border-radius:999px; background:var(--surface); color:var(--muted); }
+  .row .type.typed { background:var(--accent-soft); color:var(--accent); }
+  .row button.drop { padding:6px 0; width:34px; color:var(--muted); }
+  .row button.drop:hover { color:var(--bad); border-color:var(--bad); }
+  .opts { display:flex; flex-wrap:wrap; gap:16px 22px; align-items:center; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px;
+         overflow:hidden; }
+  .seg button { border:0; border-radius:0; background:transparent; }
+  .seg button[aria-pressed=true] { background:var(--accent-soft);
+                                   color:var(--accent); font-weight:600; }
+  .check { display:flex; align-items:center; gap:7px; font-size:.9rem;
+           color:var(--ink); margin:0; }
+  .out h2 { display:flex; justify-content:space-between; align-items:center; }
+  .out pre { margin:0 0 14px; padding:11px 12px; background:var(--code-bg);
+             border-radius:8px; overflow-x:auto; white-space:pre-wrap;
+             overflow-wrap:anywhere;
+             font:0.85rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .out pre:last-of-type { margin-bottom:0; }
+  .out .label { display:flex; justify-content:space-between; align-items:baseline;
+                gap:10px; margin:0 0 6px; font-size:.78rem; font-weight:600;
+                text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .warn { color:var(--bad); font-size:.82rem; margin-top:8px; }
+  @media (max-width:620px) {
+    .two { grid-template-columns:1fr; }
+    .row { grid-template-columns:minmax(0,1fr) 74px 34px;
+           grid-template-areas:"key type drop" "value value value"; }
+    .row .key { grid-area:key; } .row .value { grid-area:value; }
+    .row .type { grid-area:type; } .row .drop { grid-area:drop; }
+  }
+</style>
+</head>
+<body>
+<h1>Service API</h1>
+<p class="lede">Assemble a Home Assistant service call, copy the command into
+your shell script.</p>
+
+<section class="card">
+  <h2>Connection</h2>
+  <div class="field">
+    <label for="base">Base URL</label>
+    <input type="text" id="base" class="mono" spellcheck="false">
+    <div class="hint">Where a script reaches this endpoint. The LAN port
+      (<code>http_port</code>, 8100 by default) is not behind a Home Assistant
+      login — that is what the token is for.</div>
+  </div>
+  <div class="field">
+    <label for="token">API token</label>
+    <div class="token-row">
+      <input type="text" id="token" class="mono" spellcheck="false"
+             autocomplete="off" placeholder="paste the token from the add-on log">
+      <span class="status" id="token-status">no token</span>
+      <button type="button" id="forget">Forget</button>
+    </div>
+    <div class="hint">Written to the add-on log once, the first time
+      <code>service_api.lua</code> loaded. Kept in this browser only.</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Service</h2>
+  <div class="two">
+    <div>
+      <label for="domain">Domain</label>
+      <input type="text" id="domain" class="mono" list="domains" spellcheck="false"
+             placeholder="light">
+    </div>
+    <div>
+      <label for="service">Service</label>
+      <input type="text" id="service" class="mono" list="services" spellcheck="false"
+             placeholder="turn_on">
+    </div>
+  </div>
+  <datalist id="domains"></datalist>
+  <datalist id="services"></datalist>
+  <datalist id="entities"></datalist>
+</section>
+
+<section class="card">
+  <h2>Service data</h2>
+  <div class="rows" id="rows"></div>
+  <div style="margin-top:10px"><button type="button" id="add">Add field</button></div>
+  <div class="hint">Everything here is passed to Home Assistant untouched.
+    Values are typed the way the endpoint will read them —
+    <code>0123</code> stays text, <code>[255,0,0]</code> is parsed as JSON.
+    <code>entity_id</code> may be a comma-separated list.</div>
+</section>
+
+<section class="card">
+  <h2>Options</h2>
+  <div class="opts">
+    <div class="seg" id="style">
+      <button type="button" data-style="get" aria-pressed="true">GET · query</button>
+      <button type="button" data-style="json" aria-pressed="false">POST · JSON</button>
+    </div>
+    <label class="check"><input type="checkbox" id="wait" checked>
+      Wait for Home Assistant's verdict</label>
+    <label class="check"><input type="checkbox" id="flags" checked>
+      Script-friendly curl flags</label>
+  </div>
+  <div class="hint" id="opt-hint"></div>
+</section>
+
+<section class="card out">
+  <div class="label"><span>URL</span>
+    <button type="button" class="primary" data-copy="url">Copy URL</button></div>
+  <pre id="url"></pre>
+  <div class="label"><span>curl</span>
+    <button type="button" class="primary" data-copy="curl">Copy curl</button></div>
+  <pre id="curl"></pre>
+  <div class="warn" id="warn"></div>
+</section>
+
+<script>
+"use strict";
+
+// The LAN port cannot be read from here — the daemon does not hand its config
+// to scripts — so the ingress case falls back to the documented default and
+// the field stays editable.
+const DEFAULT_LAN_PORT = 8100;
+const STORAGE_PREFIX = "ha-lua-service-api:";
+
+// Services cannot be enumerated: the daemon has no binding for Home
+// Assistant's service registry. These are suggestions, not a whitelist — any
+// service name typed here is sent as-is.
+const COMMON_SERVICES = {
+  light: ["turn_on", "turn_off", "toggle"],
+  switch: ["turn_on", "turn_off", "toggle"],
+  fan: ["turn_on", "turn_off", "toggle", "set_percentage"],
+  cover: ["open_cover", "close_cover", "stop_cover", "set_cover_position"],
+  lock: ["lock", "unlock", "open"],
+  climate: ["set_temperature", "set_hvac_mode", "set_preset_mode", "turn_off"],
+  media_player: ["media_play", "media_pause", "volume_set", "turn_off"],
+  vacuum: ["start", "pause", "return_to_base", "stop"],
+  notify: ["persistent_notification"],
+  scene: ["turn_on"],
+  script: ["turn_on", "reload"],
+  automation: ["trigger", "turn_on", "turn_off"],
+  input_boolean: ["turn_on", "turn_off", "toggle"],
+  homeassistant: ["turn_on", "turn_off", "toggle", "update_entity", "restart"],
+  persistent_notification: ["create", "dismiss"],
+};
+// Domains worth offering even when nothing in the state mirror carries them.
+const EXTRA_DOMAINS = ["homeassistant", "notify", "persistent_notification", "script", "scene"];
+
+const $ = id => document.getElementById(id);
+const state = { style: "get", entityIDs: [] };
+
+function remembered(key, fallback) {
+  try { return localStorage.getItem(STORAGE_PREFIX + key) ?? fallback; }
+  catch (err) { return fallback; }
+}
+
+function remember(key, value) {
+  try {
+    if (value) localStorage.setItem(STORAGE_PREFIX + key, value);
+    else localStorage.removeItem(STORAGE_PREFIX + key);
+  } catch (err) { /* private mode: the field still works, it just won't stick */ }
+}
+
+// The base URL a shell script should use. Served on the LAN port that is
+// already the right answer; under ingress the page's own URL carries a Home
+// Assistant session that curl does not have, so point at the LAN port instead.
+function defaultBase() {
+  const path = location.pathname.replace(/\/+$/, "");
+  const mount = path.lastIndexOf("/s/");
+  if (mount === -1) return location.origin + path;
+  const scriptPath = path.slice(mount);
+  if (!path.includes("/api/hassio_ingress/")) return location.origin + scriptPath;
+  return location.protocol + "//" + location.hostname + ":" + DEFAULT_LAN_PORT + scriptPath;
+}
+
+// Mirrors the endpoint's own coercion rules, so what the page shows is what
+// Home Assistant will receive. A number only when the text round-trips
+// exactly — an alarm code of 0123 is not the number 123.
+function typeOf(text) {
+  if (text === "") return "empty";
+  if (text === "true" || text === "false") return "boolean";
+  if (text[0] === "[" || text[0] === "{") {
+    try { JSON.parse(text); return "json"; } catch (err) { return "text"; }
+  }
+  if (text.trim() !== "" && String(Number(text)) === text) return "number";
+  return "text";
+}
+
+function typedValue(text) {
+  switch (typeOf(text)) {
+    case "boolean": return text === "true";
+    case "number": return Number(text);
+    case "json": return JSON.parse(text);
+    default: return text;
+  }
+}
+
+function fieldRow(key, value) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML =
+    '<input type="text" class="mono key" spellcheck="false" placeholder="entity_id">' +
+    '<input type="text" class="mono value" spellcheck="false" placeholder="light.kitchen">' +
+    '<span class="type"></span>' +
+    '<button type="button" class="drop" title="Remove">&times;</button>';
+  row.querySelector(".key").value = key || "";
+  row.querySelector(".value").value = value || "";
+  row.querySelector(".drop").onclick = () => { row.remove(); render(); };
+  row.querySelector(".key").oninput = render;
+  row.querySelector(".value").oninput = render;
+  return row;
+}
+
+function fields() {
+  const out = [];
+  for (const row of $("rows").children) {
+    const key = row.querySelector(".key").value.trim();
+    const value = row.querySelector(".value").value;
+    if (key) out.push({ key, value, row });
+  }
+  return out;
+}
+
+function shellQuote(text) {
+  return "'" + String(text).replace(/'/g, "'\\''") + "'";
+}
+
+function buildURL(includeToken) {
+  const base = $("base").value.trim().replace(/\/+$/, "");
+  const domain = $("domain").value.trim();
+  const service = $("service").value.trim();
+  const path = base + "/call" + (domain && service ? "/" + domain + "/" + service : "");
+
+  const params = new URLSearchParams();
+  if (includeToken) params.set("token", $("token").value.trim() || "TOKEN");
+  if (state.style === "get") {
+    for (const field of fields()) params.set(field.key, field.value);
+    if (!$("wait").checked) params.set("wait", "false");
+  }
+  const query = params.toString();
+  return query ? path + "?" + query : path;
+}
+
+function buildBody() {
+  const body = {};
+  for (const field of fields()) body[field.key] = typedValue(field.value);
+  if (!$("wait").checked) body.wait = false;
+  return JSON.stringify(body);
+}
+
+function buildCurl() {
+  const token = $("token").value.trim();
+  const parts = ["curl"];
+  if ($("flags").checked) parts.push("-sS", "--fail-with-body");
+  parts.push("-H", shellQuote("X-Auth-Token: " + (token || "$TOKEN")));
+  if (state.style === "json") {
+    parts.push("-H", shellQuote("Content-Type: application/json"));
+    parts.push("-d", shellQuote(buildBody()));
+  }
+  parts.push(shellQuote(buildURL(false)));
+
+  // Wrap before the URL so a long call stays readable when pasted.
+  const head = parts.slice(0, -1).join(" ");
+  return head + " \\\n  " + parts[parts.length - 1];
+}
+
+function refreshServiceSuggestions() {
+  const domain = $("domain").value.trim();
+  const names = COMMON_SERVICES[domain] || ["turn_on", "turn_off", "toggle"];
+  $("services").innerHTML = "";
+  for (const name of names) {
+    $("services").append(new Option(name));
+  }
+}
+
+function refreshEntitySuggestions() {
+  const domain = $("domain").value.trim();
+  const matching = domain
+    ? state.entityIDs.filter(id => id.startsWith(domain + "."))
+    : state.entityIDs;
+  $("entities").innerHTML = "";
+  // A datalist of several thousand ids makes the browser crawl; the domain
+  // filter is what keeps this list short in practice.
+  for (const id of matching.slice(0, 400)) $("entities").append(new Option(id));
+}
+
+function render() {
+  for (const row of $("rows").children) {
+    const key = row.querySelector(".key").value.trim();
+    const valueInput = row.querySelector(".value");
+    // Only entity_id gets the picker; every other field is free-form.
+    if (key === "entity_id") valueInput.setAttribute("list", "entities");
+    else valueInput.removeAttribute("list");
+    // entity_id is the one field the endpoint splits on commas.
+    const kind = key === "entity_id" && valueInput.value.includes(",")
+      ? "list" : typeOf(valueInput.value);
+    const badge = row.querySelector(".type");
+    badge.textContent = kind === "empty" ? "" : kind;
+    badge.classList.toggle("typed", kind !== "text" && kind !== "empty");
+  }
+  refreshServiceSuggestions();
+  refreshEntitySuggestions();
+
+  $("url").textContent = buildURL(true);
+  $("curl").textContent = buildCurl();
+
+  const warnings = [];
+  if (!$("domain").value.trim() || !$("service").value.trim()) {
+    warnings.push("Name a domain and a service — the URL is incomplete without them.");
+  }
+  if (!$("token").value.trim()) {
+    warnings.push("No token yet: the commands carry a placeholder.");
+  }
+  if (state.style === "get" && fields().some(f => typeOf(f.value) === "json")) {
+    warnings.push("JSON values survive the query string, but POST · JSON is easier to read.");
+  }
+  $("warn").textContent = warnings.join(" ");
+  $("opt-hint").textContent = state.style === "get"
+    ? "A GET calls the service too — handy from a shell, so mind what you paste into a browser."
+    : "Values keep the types shown above, whatever they look like as text.";
+}
+
+// The token is checked against this page's own origin, not the base URL: the
+// base is for curl's benefit and may not even resolve from here.
+async function checkToken() {
+  const token = $("token").value.trim();
+  const status = $("token-status");
+  remember("token", token);
+  if (!token) {
+    status.className = "status";
+    status.textContent = "no token";
+    state.entityIDs = [];
+    render();
+    return;
+  }
+  status.className = "status";
+  status.textContent = "checking…";
+  try {
+    const resp = await fetch("./ping", { headers: { "X-Auth-Token": token } });
+    if (resp.status === 401) {
+      status.className = "status bad";
+      status.textContent = "rejected";
+      state.entityIDs = [];
+      render();
+      return;
+    }
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    status.className = "status ok";
+    status.textContent = "accepted";
+    await loadEntities(token);
+  } catch (err) {
+    status.className = "status bad";
+    status.textContent = "unreachable";
+  }
+  render();
+}
+
+async function loadEntities(token) {
+  try {
+    const resp = await fetch("./entities", { headers: { "X-Auth-Token": token } });
+    if (!resp.ok) return;
+    const payload = await resp.json();
+    state.entityIDs = Array.isArray(payload.entity_ids) ? payload.entity_ids : [];
+    const domains = new Set(EXTRA_DOMAINS);
+    for (const id of state.entityIDs) {
+      const dot = id.indexOf(".");
+      if (dot > 0) domains.add(id.slice(0, dot));
+    }
+    $("domains").innerHTML = "";
+    for (const domain of [...domains].sort()) $("domains").append(new Option(domain));
+  } catch (err) { /* suggestions are a nicety; the fields work without them */ }
+}
+
+async function copyText(text, button) {
+  const original = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    // Clipboard API refused (older browser, or a frame without permission):
+    // fall back to the selection trick rather than failing silently.
+    const scratch = document.createElement("textarea");
+    scratch.value = text;
+    scratch.style.position = "fixed";
+    scratch.style.opacity = "0";
+    document.body.append(scratch);
+    scratch.select();
+    try { document.execCommand("copy"); } catch (err2) { /* nothing left to try */ }
+    scratch.remove();
+  }
+  button.textContent = "Copied";
+  setTimeout(() => { button.textContent = original; }, 1200);
+}
+
+$("base").value = remembered("base", "") || defaultBase();
+$("token").value = remembered("token", "");
+$("domain").value = remembered("domain", "");
+$("service").value = remembered("service", "");
+$("rows").append(fieldRow("entity_id", ""));
+
+$("add").onclick = () => { $("rows").append(fieldRow("", "")); render(); };
+$("base").oninput = () => { remember("base", $("base").value.trim()); render(); };
+$("domain").oninput = () => { remember("domain", $("domain").value.trim()); render(); };
+$("service").oninput = () => { remember("service", $("service").value.trim()); render(); };
+$("wait").onchange = render;
+$("flags").onchange = render;
+$("forget").onclick = () => { $("token").value = ""; checkToken(); };
+
+let tokenTimer = null;
+$("token").oninput = () => {
+  clearTimeout(tokenTimer);
+  tokenTimer = setTimeout(checkToken, 400);
+  render();
+};
+
+for (const button of $("style").querySelectorAll("button")) {
+  button.onclick = () => {
+    state.style = button.dataset.style;
+    for (const other of $("style").querySelectorAll("button")) {
+      other.setAttribute("aria-pressed", String(other === button));
+    }
+    render();
+  };
+}
+
+for (const button of document.querySelectorAll("[data-copy]")) {
+  button.onclick = () => copyText($(button.dataset.copy).textContent, button);
+}
+
+render();
+checkToken();
+</script>
+</body>
+</html>

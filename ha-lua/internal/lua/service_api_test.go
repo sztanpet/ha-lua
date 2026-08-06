@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/go-json-experiment/json/jsontext"
 
+	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
@@ -36,6 +39,7 @@ func serveServiceAPI(t *testing.T, callErr error) (*Router, string, *[]serviceCa
 	t.Helper()
 	dir := t.TempDir()
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "service_api.lua"), filepath.Join(dir, "service_api.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "service_api.html"), filepath.Join(dir, "service_api.html"))
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -47,6 +51,14 @@ func serveServiceAPI(t *testing.T, callErr error) (*Router, string, *[]serviceCa
 	reg := NewRegistry()
 	router := NewRouter(reg)
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
+
+	// The builder page picks its entity ids out of the state mirror.
+	if err := tracker.Seed(context.Background(), []ha.StateData{
+		{EntityID: "light.kitchen", State: "off"},
+		{EntityID: "switch.pump", State: "on"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	calls := &[]serviceCall{}
 	record := func(domain, service string, data jsontext.Value, waited bool) {
@@ -99,6 +111,7 @@ type apiReply struct {
 	Service string         `json:"service"`
 	Data    map[string]any `json:"data"`
 	Waited  bool           `json:"waited"`
+	Entity  []string       `json:"entity_ids"`
 }
 
 // doAPI sends a request with the token in the X-Auth-Token header.
@@ -344,5 +357,116 @@ func TestServiceAPIWaitFalse(t *testing.T) {
 	}
 	if len(*calls) != 1 || (*calls)[0].waited {
 		t.Fatalf("want one call on the async path, got %+v", *calls)
+	}
+}
+
+// The builder page must be served without a token (nothing can authenticate a
+// page load on the LAN port), while the entity list it feeds on must not be.
+func TestServiceAPIPageAndEntities(t *testing.T) {
+	router, token, _ := serveServiceAPI(t, nil)
+
+	rec := doReqID(router, "service_api", "GET", "/", "")
+	if rec.Code != 200 {
+		t.Fatalf("GET / status %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<title>Service API</title>") {
+		t.Errorf("GET / did not serve the builder page: %.120q", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), token) {
+		t.Error("the page hands out the API token; anyone on the LAN can read it")
+	}
+
+	if rec := doReqID(router, "service_api", "GET", "/entities", ""); rec.Code != 401 {
+		t.Fatalf("GET /entities without a token: status %d, want 401", rec.Code)
+	}
+
+	_, reply := doAPI(t, router, token, "GET", "/entities", "")
+	if len(reply.Entity) != 2 || reply.Entity[0] != "light.kitchen" {
+		t.Errorf("entity_ids = %v, want the two seeded ids sorted", reply.Entity)
+	}
+}
+
+// TestServiceAPIBuilderPage drives the builder in a browser: the token has to
+// verify against the live endpoint, the entity pickers have to fill from the
+// state mirror, and both outputs have to match what the endpoint parses --
+// this page is worthless if it hands out a command that does not work.
+func TestServiceAPIBuilderPage(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	router, token, calls := serveServiceAPI(t, nil)
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+
+	var url, curl, badge string
+	var entityOptions int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/s/service_api/"),
+		chromedp.WaitVisible("#url", chromedp.ByQuery),
+		chromedp.SendKeys("#token", token, chromedp.ByQuery),
+		chromedp.WaitVisible("#token-status.ok", chromedp.ByQuery),
+		chromedp.SendKeys("#domain", "light", chromedp.ByQuery),
+		chromedp.SendKeys("#service", "turn_on", chromedp.ByQuery),
+		chromedp.SendKeys(".row .value", "light.kitchen", chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelectorAll("#entities option").length`, &entityOptions),
+		chromedp.Text("#url", &url, chromedp.ByQuery),
+		chromedp.Text("#curl", &curl, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// The light.* filter is what keeps the picker usable in a real house.
+	if entityOptions != 1 {
+		t.Errorf("entity picker offered %d options, want only the seeded light", entityOptions)
+	}
+	wantURL := srv.URL + "/s/service_api/call/light/turn_on?token=" + token + "&entity_id=light.kitchen"
+	if url != wantURL {
+		t.Errorf("URL = %q, want %q", url, wantURL)
+	}
+	if !strings.Contains(curl, "X-Auth-Token: "+token) {
+		t.Errorf("curl carries no token header: %q", curl)
+	}
+	// The header is the point of the curl form; repeating it in the query
+	// would put the token in every shell history and access log twice over.
+	if strings.Contains(curl, "token="+token) {
+		t.Errorf("curl repeats the token in the query: %q", curl)
+	}
+
+	// The generated GET must actually reach the service it claims to.
+	generated, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := srv.Client().Do(generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("generated URL returned %d", resp.StatusCode)
+	}
+	if len(*calls) != 1 || (*calls)[0].domain != "light" || (*calls)[0].service != "turn_on" {
+		t.Fatalf("generated URL did not call light.turn_on: %+v", *calls)
+	}
+
+	// Switching to POST · JSON moves the data out of the query and into a
+	// typed body -- and the type badge must warn that 0123 is not a number.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#style button[data-style="json"]`, chromedp.ByQuery),
+		chromedp.Click("#add", chromedp.ByQuery),
+		chromedp.SendKeys(".row:last-child .key", "code", chromedp.ByQuery),
+		chromedp.SendKeys(".row:last-child .value", "0123", chromedp.ByQuery),
+		chromedp.Text(".row:last-child .type", &badge, chromedp.ByQuery),
+		chromedp.Text("#url", &url, chromedp.ByQuery),
+		chromedp.Text("#curl", &curl, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if badge != "text" {
+		t.Errorf("0123 shown as %q, want text", badge)
+	}
+	if strings.Contains(url, "entity_id") {
+		t.Errorf("POST URL still carries the data: %q", url)
+	}
+	if !strings.Contains(curl, `{"entity_id":"light.kitchen","code":"0123"}`) {
+		t.Errorf("curl body = %q, want a JSON body keeping 0123 a string", curl)
 	}
 }
