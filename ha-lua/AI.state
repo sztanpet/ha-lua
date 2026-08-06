@@ -12,17 +12,20 @@ for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
 Service API example — BUILT, **not pushed, not released** (2026-08-06, commits
-26f0acd script/tests, ea7f320 DOCS.md). New bundled example `service_api.lua`:
-one endpoint (`POST|GET /s/service_api/call[/<domain>/<service>]`) that calls
-ANY Home Assistant service, for shell scripts — the service can come from the
-path, a dotted `service` field, or `domain`+`service`, and every other field is
+26f0acd script/tests, ea7f320 DOCS.md, a75d11c builder page). New bundled
+example `service_api.lua` + `service_api.html`: one endpoint
+(`POST|GET /s/service_api/call[/<domain>/<service>]`) that calls ANY Home
+Assistant service, for shell scripts — the service can come from the path, a
+dotted `service` field, or `domain`+`service`, and every other field is
 forwarded as service data verbatim, so it never needs updating for a new HA
 service. Accepts query params, a form body (`curl -d k=v`) or a JSON body;
 text values get types back, with the round-trip rule that keeps an alarm
 `code=0123` a string. Guarded by a shared token (`crypto.equal`, generated on
 first load and logged once) because `http_port` has no HA login in front of it.
-Detail in `state/bundled-examples.md`. Pending: push, plus a minor release if
-the user wants it shipped (bundled examples are user-visible).
+A **Service API** tab assembles a call from your real entity ids and hands back
+the URL and curl command with copy buttons; it builds commands, never fires
+one. Detail in `state/bundled-examples.md`. Pending: push, plus a minor release
+if the user wants it shipped (bundled examples are user-visible).
 
 Previously: the battery rundown example (2026-08-06, 7eb5584/be24e8c/6a7b777,
 pushed, not released) — also `state/bundled-examples.md`; and the tabbed UI

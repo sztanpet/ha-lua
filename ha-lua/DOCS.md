@@ -402,13 +402,21 @@ service, for driving Home Assistant from shell scripts, cron jobs, or anything
 else that has `curl`.
 
 ```sh
-cp /config/ha-lua/examples/service_api.lua /config/ha-lua/scripts/
+cp /config/ha-lua/examples/service_api.lua  /config/ha-lua/scripts/
+cp /config/ha-lua/examples/service_api.html /config/ha-lua/scripts/
 ```
 
 On its first load the script generates an API token and writes it to the add-on
 log once (*Settings → Add-ons → HA Lua → Log*, or
 `/config/ha-lua/logs/ha-lua.log`) — copy it from there. If you lose it, put your
 own in the script's `TOKEN` constant instead.
+
+**The Service API tab** builds the commands for you: paste the token once, pick
+a domain, service and entity from your own entities, add whatever fields the
+service takes, and copy the finished URL or `curl` line. Each value shows how
+the endpoint will read it — `200` as a number, `0123` as text — so a call is
+right before you run it, not after. The page only assembles commands; it never
+fires one.
 
 ```sh
 TOKEN=…
@@ -444,7 +452,8 @@ want exact control; on a collision the body wins over the query.
 (Home Assistant refused the call). The call waits for Home Assistant's verdict
 by default, so a 200 means the service actually ran; add `wait=false` for
 fire-and-forget. `GET /s/service_api/ping` checks the token without switching
-anything on.
+anything on, and `GET /s/service_api/entities` lists your entity ids (both need
+the token too).
 
 The port above (`http_port`, 8100 by default) is the LAN port, which has **no
 Home Assistant login in front of it** — that is what the token is for. It is

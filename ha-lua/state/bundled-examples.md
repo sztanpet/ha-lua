@@ -102,10 +102,11 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA
   service, aimed at shell scripts. Commit 26f0acd (script + tests), ea7f320
   (DOCS.md). NOT released yet.
-- Routes: `POST|GET /call` (prefix, so it also owns `/call/<domain>/<service>`)
-  and `GET /ping`. No `ha.ui` and deliberately no `GET "/"` — a machine-facing
-  API must not become a tab, and the debug page flags a `/` route without
-  `ha.ui`.
+- Routes: `POST|GET /call` (prefix, so it also owns `/call/<domain>/<service>`),
+  `GET /ping`, `GET /entities`, and `GET "/"` for the builder page. The first
+  cut had no `GET "/"` on purpose (a machine-facing API should not become a
+  tab); the page reversed that, and `ha.ui` came with it — the debug page flags
+  a `/` route WITHOUT `ha.ui`, so the two must travel together.
 - Service naming, three ways: path segments, a dotted `service` field, or
   separate `domain` + `service`. Everything not in RESERVED (token/wait/
   domain/service) is forwarded as service data verbatim — that is the whole
@@ -130,8 +131,28 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   stripped from the message first (it means nothing to a curl user).
 - GET performing an action is intentional (curl without JSON quoting), noted in
   the script and the commit.
+- Builder page (`service_api.html`, `ha.ui("Service API")` + `GET "/"`, commit
+  a75d11c): a form that assembles a call and hands back the URL and the curl
+  command with copy buttons. New token-guarded `GET /entities` feeds the
+  domain/entity pickers from the state mirror; service names CANNOT be
+  enumerated (no binding for HA's service registry), so those are a static
+  suggestion list over a free-text field — do not mistake it for a whitelist.
+- The page is served WITHOUT a token, deliberately: nothing can authenticate a
+  page load on the LAN port, and the page carries no secret. It asks for the
+  token, verifies it against `./ping` (its own origin, not the typed base URL,
+  which may not even resolve from the browser), and keeps it in localStorage.
+- Base URL default: page origin + `/s/service_api`, EXCEPT under ingress
+  (path contains `/api/hassio_ingress/`), where it falls back to
+  `<host>:8100` — the ingress URL carries an HA session curl does not have,
+  and the real `http_port` is unknowable from a script.
+- The JS `typeOf` mirrors the Lua `coerce` rules (incl. the number round-trip
+  check) so the badge next to each value is the truth; if one side changes the
+  other must follow.
 - Tests: `internal/lua/service_api_test.go` boots the real example with both a
   recording sync and async call_service — every request shape, the coercion
   rules incl. `0123`, token rejection (incl. one-char-short vs the constant
   time compare), the 400/502 error contract, and `wait=false` taking the async
-  path.
+  path. Plus a chromedp test driving the builder: the token verifying live, the
+  entity picker filtered to the chosen domain, exact URL/curl output for both
+  request styles, and the generated URL fired back at the endpoint to prove it
+  actually reaches light.turn_on.
