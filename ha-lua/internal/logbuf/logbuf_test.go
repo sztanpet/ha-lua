@@ -31,7 +31,7 @@ func TestHandlerStillWritesThrough(t *testing.T) {
 	if !strings.Contains(sink.String(), "hello") || !strings.Contains(sink.String(), "k=v") {
 		t.Fatalf("wrapped handler lost the record: %q", sink.String())
 	}
-	recs, _ := buf.Snapshot(0, slog.LevelDebug)
+	recs, _ := buf.Snapshot(Query{Level: slog.LevelDebug})
 	if len(recs) != 1 || recs[0].Msg != "hello" || recs[0].Attrs["k"] != "v" {
 		t.Fatalf("buffered = %+v", recs)
 	}
@@ -43,7 +43,7 @@ func TestRingWrapsAndKeepsNewest(t *testing.T) {
 		log.Info(m)
 	}
 
-	recs, newest := buf.Snapshot(0, slog.LevelDebug)
+	recs, newest := buf.Snapshot(Query{Level: slog.LevelDebug})
 	if got := msgs(recs); len(got) != 3 || got[0] != "three" || got[2] != "five" {
 		t.Fatalf("snapshot = %v, want the last three oldest-first", got)
 	}
@@ -60,14 +60,14 @@ func TestSnapshotSinceSeqIsIncremental(t *testing.T) {
 	log.Info("one")
 	log.Info("two")
 
-	_, seen := buf.Snapshot(0, slog.LevelDebug)
+	_, seen := buf.Snapshot(Query{Level: slog.LevelDebug})
 	log.Info("three")
 
-	recs, _ := buf.Snapshot(seen, slog.LevelDebug)
+	recs, _ := buf.Snapshot(Query{Since: seen, Level: slog.LevelDebug})
 	if got := msgs(recs); len(got) != 1 || got[0] != "three" {
 		t.Fatalf("incremental snapshot = %v, want [three]", got)
 	}
-	if recs, _ := buf.Snapshot(3, slog.LevelDebug); len(recs) != 0 {
+	if recs, _ := buf.Snapshot(Query{Since: 3, Level: slog.LevelDebug}); len(recs) != 0 {
 		t.Fatalf("idle poll returned %v", msgs(recs))
 	}
 }
@@ -79,10 +79,41 @@ func TestSnapshotFiltersByLevel(t *testing.T) {
 	log.Warn("careful")
 	log.Error("broken")
 
-	recs, _ := buf.Snapshot(0, slog.LevelWarn)
+	recs, _ := buf.Snapshot(Query{Level: slog.LevelWarn})
 	if got := msgs(recs); len(got) != 2 || got[0] != "careful" || got[1] != "broken" {
 		t.Fatalf("warn+ snapshot = %v", got)
 	}
+}
+
+func TestSnapshotFiltersByScript(t *testing.T) {
+	log, buf, _ := newTestLogger(10)
+	log.Info("daemon start")
+	log.Info("hello", "script", "alpha")
+	log.Warn("careful", "script", "beta")
+
+	if got := msgs(mustSnap(buf, Query{Script: AnyScript})); len(got) != 2 || got[0] != "hello" || got[1] != "careful" {
+		t.Fatalf("any-script snapshot = %v", got)
+	}
+	if got := msgs(mustSnap(buf, Query{Script: "alpha"})); len(got) != 1 || got[0] != "hello" {
+		t.Fatalf("alpha snapshot = %v", got)
+	}
+	if got := msgs(mustSnap(buf, Query{Script: "gamma"})); len(got) != 0 {
+		t.Fatalf("unknown script snapshot = %v", got)
+	}
+	// The filters compose, and a filtered snapshot still reports the global seq
+	// so the poller does not re-fetch what it filtered out.
+	recs, newest := buf.Snapshot(Query{Level: slog.LevelWarn, Script: AnyScript})
+	if got := msgs(recs); len(got) != 1 || got[0] != "careful" {
+		t.Fatalf("warn+ any-script snapshot = %v", got)
+	}
+	if newest != 3 {
+		t.Fatalf("newest seq = %d, want 3", newest)
+	}
+}
+
+func mustSnap(buf *Buffer, q Query) []Record {
+	recs, _ := buf.Snapshot(q)
+	return recs
 }
 
 func TestAttrsFromWithAndGroups(t *testing.T) {
@@ -92,7 +123,7 @@ func TestAttrsFromWithAndGroups(t *testing.T) {
 	log.WithGroup("ha").With("url", "ws://x").Info("connected", "retries", 2)
 	log.Info("grouped", slog.Group("db", "path", "/data/x.db", "size", 12))
 
-	recs, _ := buf.Snapshot(0, slog.LevelDebug)
+	recs, _ := buf.Snapshot(Query{Level: slog.LevelDebug})
 	if len(recs) != 3 {
 		t.Fatalf("got %d records", len(recs))
 	}
@@ -122,12 +153,12 @@ func TestConcurrentWriters(t *testing.T) {
 	}
 	go func() {
 		for i := 0; i < 100; i++ {
-			buf.Snapshot(0, slog.LevelDebug)
+			buf.Snapshot(Query{Level: slog.LevelDebug})
 		}
 	}()
 	wg.Wait()
 
-	if _, newest := buf.Snapshot(0, slog.LevelDebug); newest != 400 {
+	if _, newest := buf.Snapshot(Query{Level: slog.LevelDebug}); newest != 400 {
 		t.Fatalf("newest seq = %d, want 400", newest)
 	}
 }

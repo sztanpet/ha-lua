@@ -168,19 +168,18 @@ func serveLogs(w http.ResponseWriter, r *http.Request, deps DebugDeps) {
 		return
 	}
 
-	var since uint64
+	query := logbuf.Query{Level: slog.LevelDebug, Script: r.URL.Query().Get("script")}
 	if raw := r.URL.Query().Get("since"); raw != "" {
-		since, _ = strconv.ParseUint(raw, 10, 64)
+		query.Since, _ = strconv.ParseUint(raw, 10, 64)
 	}
-	level := slog.LevelDebug
 	if raw := r.URL.Query().Get("level"); raw != "" {
-		if err := level.UnmarshalText([]byte(raw)); err != nil {
+		if err := query.Level.UnmarshalText([]byte(raw)); err != nil {
 			http.Error(w, "bad level", http.StatusBadRequest)
 			return
 		}
 	}
 
-	records, newest := deps.Logs.Snapshot(since, level)
+	records, newest := deps.Logs.Snapshot(query)
 	writeJSON(w, logsReply{Records: records, Newest: newest})
 }
 

@@ -51,23 +51,51 @@ func (b *Buffer) append(rec Record) {
 	}
 }
 
-// Snapshot returns records newer than sinceSeq at or above minLevel, oldest
-// first, plus the newest seq. A poller passes back the seq it last saw.
-func (b *Buffer) Snapshot(sinceSeq uint64, minLevel slog.Level) ([]Record, uint64) {
+// ScriptKey is the attr every script-attributed record carries: ha.log sets it,
+// and so does the daemon when it logs about one script.
+const ScriptKey = "script"
+
+// AnyScript matches every record carrying a ScriptKey attr, whichever script.
+const AnyScript = "*"
+
+// Query selects which buffered records a snapshot returns.
+type Query struct {
+	Since  uint64     // return records newer than this seq
+	Level  slog.Level // minimum level
+	Script string     // "" any record, AnyScript any script's, else that script id
+}
+
+// Snapshot returns the records matching q, oldest first, plus the newest seq.
+// A poller passes back the seq it last saw.
+func (b *Buffer) Snapshot(q Query) ([]Record, uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	out := make([]Record, 0, len(b.ring))
 	for _, rec := range b.ordered() {
-		if rec.Seq <= sinceSeq {
+		if rec.Seq <= q.Since {
 			continue
 		}
-		if lvl, err := parseLevel(rec.Level); err == nil && lvl < minLevel {
+		if lvl, err := parseLevel(rec.Level); err == nil && lvl < q.Level {
+			continue
+		}
+		if !rec.matchesScript(q.Script) {
 			continue
 		}
 		out = append(out, rec)
 	}
 	return out, b.seq
+}
+
+func (r Record) matchesScript(want string) bool {
+	if want == "" {
+		return true
+	}
+	got := r.Attrs[ScriptKey]
+	if want == AnyScript {
+		return got != ""
+	}
+	return got == want
 }
 
 // Caller holds b.mu.

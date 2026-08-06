@@ -3,6 +3,7 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +127,42 @@ func TestDebugLogsLevelFilter(t *testing.T) {
 
 	if rec := get(t, h, "/debug/api/logs?level=nonsense"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad level status = %d, want 400", rec.Code)
+	}
+}
+
+func TestDebugLogsScriptFilter(t *testing.T) {
+	buf := logbuf.New(10)
+	log := slog.New(logbuf.NewHandler(slog.NewTextHandler(discard{}, nil), buf))
+	h := DebugHandler(DebugDeps{Logs: buf})
+
+	log.Info("daemon start")
+	log.Info("from alpha", "script", "alpha")
+	log.Info("from beta", "script", "beta")
+
+	for _, tc := range []struct {
+		query string
+		want  []string
+	}{
+		{"", []string{"daemon start", "from alpha", "from beta"}},
+		{"&script=*", []string{"from alpha", "from beta"}},
+		{"&script=alpha", []string{"from alpha"}},
+		{"&script=missing", nil},
+	} {
+		var reply logsReply
+		rec := get(t, h, "/debug/api/logs?since=0"+tc.query)
+		if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+			t.Fatal(err)
+		}
+		got := make([]string, len(reply.Records))
+		for i, r := range reply.Records {
+			got[i] = r.Msg
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("logs%q = %v, want %v", tc.query, got, tc.want)
+		}
+		if reply.Newest != 3 {
+			t.Errorf("logs%q newest = %d, want 3", tc.query, reply.Newest)
+		}
 	}
 }
 
