@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -74,6 +75,13 @@ func serveShell(t *testing.T, scripts map[string]string) *httptest.Server {
 	tracker := state.New(writeDB, readDB)
 	global := store.NewGlobal(writeDB, readDB)
 
+	// ha.log goes through the default logger, so the page only sees script
+	// messages if the buffer is wired into it.
+	logs := logbuf.New(64)
+	previous := slog.Default()
+	slog.SetDefault(slog.New(logbuf.NewHandler(slog.NewTextHandler(discard{}, nil), logs)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
 	dir := t.TempDir()
 	reg := lua.NewRegistry()
 	router := lua.NewRouter(reg)
@@ -114,7 +122,7 @@ func serveShell(t *testing.T, scripts map[string]string) *httptest.Server {
 			Started: time.Now(),
 			Runners: reg.All,
 			Tracker: tracker,
-			Logs:    logbuf.New(16),
+			Logs:    logs,
 		}),
 	}))
 	t.Cleanup(srv.Close)
@@ -282,5 +290,71 @@ ha.serve("POST", "/api/thing", function(req) return 200, "ok" end)
 	}
 	if !strings.Contains(dumped, "goroutine ") {
 		t.Errorf("stack dump = %q", dumped)
+	}
+}
+
+func TestDebugLogPanelFiltersByScript(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveShell(t, map[string]string{
+		"alpha": `ha.ui("Alpha")
+ha.log("info", "alpha speaking")`,
+		"beta": `ha.ui("Beta")
+ha.log("warn", "beta speaking")`,
+	})
+
+	const lines = `(() => {
+		const doc = document.getElementById("page").contentDocument;
+		return Array.from(doc.querySelectorAll("#log div")).map(d => d.textContent).join("\n");
+	})()`
+
+	var sources []string
+	var everything, filtered string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/#debug"),
+		chromedp.WaitVisible(`nav a.active`, chromedp.ByQuery),
+		chromedp.Poll(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const log = doc && doc.getElementById("log");
+			const text = log ? log.textContent : "";
+			return text.includes("alpha speaking") && text.includes("beta speaking") ? text : null;
+		})()`, &everything, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			return Array.from(doc.querySelectorAll("#source option")).map(o => o.value);
+		})()`, &sources),
+		chromedp.Evaluate(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const source = doc.getElementById("source");
+			source.value = "alpha";
+			source.dispatchEvent(new Event("change"));
+		})()`, nil),
+		chromedp.Poll(`(() => {
+			const doc = document.getElementById("page").contentDocument;
+			const text = doc.getElementById("log").textContent;
+			return text.includes("alpha speaking") ? text : null;
+		})()`, &filtered, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(lines, &filtered),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(everything, "[alpha]") || !strings.Contains(everything, "[beta]") {
+		t.Errorf("unfiltered log = %q, want both scripts tagged", everything)
+	}
+	want := []string{"", "*", "alpha", "beta"}
+	if len(sources) != len(want) {
+		t.Fatalf("source options = %v, want %v", sources, want)
+	}
+	for i, value := range want {
+		if sources[i] != value {
+			t.Fatalf("source options = %v, want %v", sources, want)
+		}
+	}
+	// Every remaining line must be alpha's: the panel refetches from seq 0 on a
+	// filter change, so beta's lines cannot survive on screen.
+	for _, line := range strings.Split(filtered, "\n") {
+		if line != "" && !strings.Contains(line, "[alpha]") {
+			t.Errorf("filtered log kept %q; full text:\n%s", line, filtered)
+		}
 	}
 }

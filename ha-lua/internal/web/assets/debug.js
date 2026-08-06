@@ -4,9 +4,11 @@
 
   var logEl = document.getElementById("log");
   var levelEl = document.getElementById("level");
+  var sourceEl = document.getElementById("source");
   var followEl = document.getElementById("follow");
   var statusEl = document.getElementById("status");
   var since = 0;
+  var sourceIDs = "";
 
   function cells(target, pairs) {
     var host = document.getElementById(target);
@@ -79,6 +81,8 @@
       ["purge every", store.purge_interval],
     ]);
 
+    syncSources(info.scripts || []);
+
     var body = document.querySelector("#scripts tbody");
     body.textContent = "";
     (info.scripts || []).forEach(function (script) {
@@ -115,6 +119,27 @@
     });
   }
 
+  function syncSources(scripts) {
+    var ids = scripts.map(function (script) { return script.script_id; });
+    if (ids.join("\n") === sourceIDs) return;
+    sourceIDs = ids.join("\n");
+
+    var wanted = sourceEl.value;
+    sourceEl.textContent = "";
+    [["", "everything"], ["*", "all scripts"]].concat(ids.map(function (id) {
+      return [id, id];
+    })).forEach(function (pair) {
+      var option = document.createElement("option");
+      option.value = pair[0];
+      option.textContent = pair[1];
+      sourceEl.appendChild(option);
+    });
+    sourceEl.value = wanted;
+    // The selected script is gone (unloaded): the select fell back to
+    // everything, so the lines on screen no longer match the filter.
+    if (sourceEl.value !== wanted) resetLog();
+  }
+
   function renderLogs(reply) {
     var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
     (reply.records || []).forEach(function (rec) {
@@ -122,11 +147,23 @@
       var level = document.createElement("span");
       level.className = "lvl " + levelClass(rec.level);
       level.textContent = rec.level;
-      var text = " " + new Date(rec.time).toLocaleTimeString() + " " + rec.msg;
-      Object.keys(rec.attrs || {}).forEach(function (key) {
-        text += " " + key + "=" + rec.attrs[key];
-      });
       line.appendChild(level);
+      line.appendChild(document.createTextNode(" " + new Date(rec.time).toLocaleTimeString() + " "));
+
+      var attrs = rec.attrs || {};
+      if (attrs.script) {
+        var tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = "[" + attrs.script + "]";
+        line.appendChild(tag);
+        line.appendChild(document.createTextNode(" "));
+      }
+
+      var text = rec.msg;
+      Object.keys(attrs).forEach(function (key) {
+        if (key === "script") return; // already shown as the tag
+        text += " " + key + "=" + attrs[key];
+      });
       line.appendChild(document.createTextNode(text));
       logEl.appendChild(line);
     });
@@ -142,7 +179,9 @@
   }
 
   function poll() {
-    var logURL = "api/logs?since=" + since + "&level=" + encodeURIComponent(levelEl.value);
+    var logURL = "api/logs?since=" + since +
+      "&level=" + encodeURIComponent(levelEl.value) +
+      "&script=" + encodeURIComponent(sourceEl.value);
     Promise.all([
       fetch("api/info").then(function (r) { return r.json(); }),
       fetch(logURL).then(function (r) { return r.json(); }),
@@ -156,11 +195,17 @@
     });
   }
 
-  levelEl.addEventListener("change", function () {
-    // A stricter filter cannot retroactively hide what is already rendered.
+  // A narrower filter cannot retroactively hide what is already rendered.
+  function resetLog() {
     since = 0;
     logEl.textContent = "";
-    poll();
+  }
+
+  [levelEl, sourceEl].forEach(function (control) {
+    control.addEventListener("change", function () {
+      resetLog();
+      poll();
+    });
   });
   document.getElementById("clear").addEventListener("click", function () {
     logEl.textContent = "";

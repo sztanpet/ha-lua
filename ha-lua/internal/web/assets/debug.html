@@ -116,6 +116,7 @@ select, button {
   white-space: pre;
 }
 .lvl { display: inline-block; min-width: 44px; }
+.tag { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -146,6 +147,12 @@ select, button {
 
 <h2>Log</h2>
 <div class="controls">
+  <label>Source
+    <select id="source">
+      <option value="" selected>everything</option>
+      <option value="*">all scripts</option>
+    </select>
+  </label>
   <label>Level
     <select id="level">
       <option value="DEBUG">debug</option>
