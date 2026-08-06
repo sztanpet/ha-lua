@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-06 (debug log source filter, unreleased on top of v4.1.0)
+Last updated: 2026-08-06 (debug log source filter + print routing, v4.2.0)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,15 +11,17 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Debug log panel gained a per-script **Source** filter (2026-08-06, unreleased;
-1383635 logbuf, 345016c page, 5ff17c6 docs). `ha.log` lines were always in the
-panel — they carry a `script=<id>` slog attr — but the id sat at the tail of
-the attrs and one chatty script buried the rest. `logbuf.Snapshot` now takes a
+Debug log panel gained a per-script **Source** filter — RELEASED as **v4.2.0**
+(2026-08-06, tag on 1be2a19; 1383635 logbuf, 345016c page, cc6b124 print,
+5ff17c6 docs). `ha.log` lines were always in the panel — they carry a
+`script=<id>` slog attr — but the id sat at the tail of the attrs and one
+chatty script buried the rest. `logbuf.Snapshot` now takes a
 `Query{Since, Level, Script}` (`""` everything / `"*"` any script / exact id),
 `/debug/api/logs?script=` exposes it, and the page renders the id as a `[tag]`
 after the timestamp with a Source select rebuilt from the loaded scripts.
 ONE panel, filtered — the user explicitly steered away from a second panel.
-Detail in `state/ui-shell.md`.
+`print` is now a log call too (info, script-tagged) instead of writing to the
+daemon's stdout. Detail in `state/ui-shell.md`.
 
 Previously: the service_api + battery_levels bundled examples, released as
 **v4.1.0** (2026-08-06, tag on defe8a2) — `state/bundled-examples.md`; and the
@@ -44,12 +46,18 @@ tabbed UI shell + debug tab, v4.0.0/4.0.1/4.0.2 (2026-08-05) —
   memory mirror + background writer (event-latency-spec.md). Spec written,
   build pending review.
 - `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page
-  (ui-shell-spec.md). COMPLETE, released v4.0.0.
+  (ui-shell-spec.md). COMPLETE, released v4.0.0; source filter v4.2.0.
 - (sse-spec.md has no implementation yet — no state file.)
 
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 4.2.0 (2026-08-06): debug log panel narrows to one script (Source
+  filter + `?script=` on /debug/api/logs + the id as a `[tag]`), and
+  Lua `print` logs (info, script-tagged) instead of writing to the
+  daemon's stdout. Minor, not major: print's formatting and every
+  script's code are unchanged, only where the line lands. See
+  `state/ui-shell.md`.
 - 4.1.0 (2026-08-06): two new bundled examples -- service_api (one
   endpoint that calls any HA service from a shell script, plus a
   Service API tab that builds the URL/curl and carries the token) and

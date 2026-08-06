@@ -5,12 +5,13 @@ shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
 Status: **COMPLETE — released v4.0.0, v4.0.1, v4.0.2 (all 2026-08-05).** All
-11 milestones of spec §11 are done. One unreleased addition on top: the debug
-log panel's per-script source filter (2026-08-06, see below).
+11 milestones of spec §11 are done. One addition on top, released as **v4.2.0**
+(2026-08-06): the debug log panel's per-script source filter (see below).
 
-## Debug log panel: per-script source filter (2026-08-06, unreleased)
+## Debug log panel: per-script source filter (RELEASED v4.2.0, 2026-08-06)
 
-Commits `1383635` (logbuf), `345016c` (page), `5ff17c6` (docs).
+Commits `1383635` (logbuf), `345016c` (page), `5ff17c6` (docs), `cc6b124`
+(print), `e3b3db0`/`126e005` (state+changelog), `1be2a19` (release, tagged).
 
 Asked for "a log panel showing the messages of the different scripts", then
 immediately for "a single log panel that includes everything" — the second
@@ -34,9 +35,13 @@ buried the rest. **Do not add a second panel.**
 - The browser tests now install a `logbuf`-backed default logger in
   `serveShell` (restored via `t.Cleanup`). Without that, `Logs:` was a buffer
   no logger wrote to and no real `ha.log` call could ever reach the page.
-- `print()` still goes to stdout only — not the buffer, not the log file, not
-  the page. Documented in DOCS.md and lua_api.md rather than rerouted; nobody
-  asked for that.
+- `print()` was documented as stdout-only, then the user asked for it to land
+  in the panel too (`cc6b124`). It is now replaced in `registerHaAPI` — next to
+  `ha.log`, which is where the script id lives; `RegisterStdlib` has no script
+  id and 7 test call sites, so it was not worth a signature change. One info
+  line, base print's own formatting (`L.ToStringMeta`, tab-separated) so
+  scripts read unchanged. Nothing in the repo's Lua uses `print`, so no example
+  suddenly spams the log.
 
 ## Post-release fixes (v4.0.1)
 
