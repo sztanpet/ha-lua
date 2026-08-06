@@ -209,9 +209,9 @@ demand — no `pprof_addr` or restart needed.
 The log tail is one panel for everything the daemon and your scripts log. Every
 `ha.log(level, msg)` call is tagged with the script it came from, and the
 **Source** filter narrows the panel to all scripts at once or to a single one;
-**Level** filters independently. Note `print()` is not a log call — it goes to
-the add-on's stdout and reaches neither this panel nor the log file, so use
-`ha.log`.
+**Level** filters independently. `print()` is tagged the same way and logs at
+info, so debugging output lands here too instead of vanishing into the add-on's
+stdout.
 
 ### Reaching a UI
 

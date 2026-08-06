@@ -327,9 +327,11 @@ globals, CSS and element IDs, and the daemon never rewrites its HTML.
 Writes `msg` to the daemon log, tagged with the script id. `level` is one of
 `"debug"`, `"warn"`, `"error"`; anything else logs at info.
 
-The tag is what the Debug tab's **Source** filter selects on, so `ha.log` is
-how a script's messages become readable there. `print()` only reaches the
-add-on's stdout — not the log file, not the Debug tab.
+The tag is what the Debug tab's **Source** filter selects on.
+
+`print(...)` is a log call too: it writes one info-level line, tab-separated and
+tagged with the script id, exactly where `ha.log("info", …)` goes. It does not
+reach the daemon's stdout.
 
 ### Exception handling
 
@@ -622,6 +624,9 @@ are **removed or unavailable**, by design:
   `os.exit`, `os.getenv`, file ops, etc.
 - No `io` library; file access is only the read-only `fs` module.
 - `require` resolves only inside `scripts/lib/` (see [`require`](#require--shared-modules)).
+
+`print` is replaced rather than removed: it logs instead of writing to the
+daemon's stdout (see [`ha.log`](#haloglevel-msg)).
 
 A crashing script does not affect the others — each runs in its own VM, and
 uncaught errors route to its own [exception handler](#exception-handling).

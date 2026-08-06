@@ -152,6 +152,18 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		return 0
 	}))
 
+	// Base print writes to the daemon's stdout, where it reaches neither the log
+	// file nor the debug page. Route it to the log tagged like ha.log instead.
+	L.SetGlobal("print", L.NewFunction(func(L *lua.LState) int {
+		top := L.GetTop()
+		parts := make([]string, top)
+		for i := 1; i <= top; i++ {
+			parts[i-1] = L.ToStringMeta(L.Get(i)).String()
+		}
+		slog.Info(strings.Join(parts, "\t"), "script", api.scriptID)
+		return 0
+	}))
+
 	L.SetField(haTable, "get_state", L.NewFunction(func(L *lua.LState) int {
 		entityID := L.CheckString(1)
 		s, err := api.tracker.GetState(L.Context(), entityID)

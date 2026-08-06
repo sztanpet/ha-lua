@@ -1,8 +1,10 @@
 package lua
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/smtp"
 	"os"
@@ -709,5 +711,27 @@ func TestAfterFromCallbackDoesNotGrowKeepIDs(t *testing.T) {
 	// stops.
 	if len(api.timerFns) != 51 {
 		t.Errorf("timerFns = %d, want 51 registered timers", len(api.timerFns))
+	}
+}
+
+func TestPrintLogsTaggedWithTheScript(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	newUIRunner(t, "chatty", `
+local named = setmetatable({}, {__tostring = function() return "custom" end})
+print("hello", 42, named)
+ha.serve("GET", "/", function(req) return 200, "x" end)
+`)
+
+	out := buf.String()
+	// Base print's own formatting: tab-separated, __tostring honoured.
+	if !strings.Contains(out, `msg="hello\t42\tcustom"`) {
+		t.Errorf("print did not log its arguments as base print formats them:\n%s", out)
+	}
+	if !strings.Contains(out, "script=chatty") {
+		t.Errorf("print line is not tagged with the script id:\n%s", out)
 	}
 }
