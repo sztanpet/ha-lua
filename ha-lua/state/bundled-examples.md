@@ -69,7 +69,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - New bundled example: `battery_levels.lua` + `battery_levels.html`, a
   **Batteries** tab (`ha.ui`) listing level / last change / rundown ETA,
   sorted so the first battery to die is on top. Commit 7eb5584 (script,
-  page, tests), be24e8c (DOCS.md section). NOT released yet.
+  page, tests), be24e8c (DOCS.md section). RELEASED in v4.1.0.
 - The design decision worth remembering: the ETA cannot come from
   `ha.get_history`. State history is purged after `retention_days` (2 by
   default) and a battery forecast needs weeks. So the script keeps its OWN
@@ -101,7 +101,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 ## service_api example (2026-08-06)
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA
   service, aimed at shell scripts. Commit 26f0acd (script + tests), ea7f320
-  (DOCS.md). NOT released yet.
+  (DOCS.md). RELEASED in v4.1.0 (tag on defe8a2).
 - Routes: `POST|GET /call` (prefix, so it also owns `/call/<domain>/<service>`),
   `GET /ping`, `GET /entities`, and `GET "/"` for the builder page. The first
   cut had no `GET "/"` on purpose (a machine-facing API should not become a

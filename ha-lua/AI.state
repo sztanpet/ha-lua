@@ -11,10 +11,9 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Service API example — BUILT and PUSHED to both remotes, **not released**
-(2026-08-06, commits
-26f0acd script/tests, ea7f320 DOCS.md, a75d11c builder page, 356af45 token
-baked into the page, 409a0c1 docs). New bundled example
+Service API example — RELEASED as **v4.1.0** (2026-08-06, tag on defe8a2;
+commits 26f0acd script/tests, ea7f320 DOCS.md, a75d11c builder page, 356af45
+token baked into the page, 6033fd5 comment cleanup). New bundled example
 `service_api.lua` + `service_api.html`: one endpoint
 (`POST|GET /s/service_api/call[/<domain>/<service>]`) that calls ANY Home
 Assistant service, for shell scripts — the service can come from the path, a
@@ -29,8 +28,8 @@ the URL and curl command with copy buttons; it builds commands, never fires
 one. The page is served WITH the token substituted in (user's explicit call
 after being told the consequence — anyone who can open the page on the LAN
 port has the token; do not revert this to a prompt). Detail in
-`state/bundled-examples.md`. Pending: a minor release if the user wants it
-shipped (bundled examples are user-visible).
+`state/bundled-examples.md`. v4.1.0 shipped the battery_levels example too --
+it had been sitting unreleased.
 
 Previously: the battery rundown example (2026-08-06, 7eb5584/be24e8c/6a7b777,
 pushed, not released) — also `state/bundled-examples.md`; and the tabbed UI
@@ -61,6 +60,12 @@ shell + debug tab, released as v4.0.0/4.0.1/4.0.2 (2026-08-05) —
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 4.1.0 (2026-08-06): two new bundled examples -- service_api (one
+  endpoint that calls any HA service from a shell script, plus a
+  Service API tab that builds the URL/curl and carries the token) and
+  battery_levels (Batteries tab with a KV-backed rundown forecast).
+  Minor: examples are user-visible, nothing in the daemon changed. See
+  `state/bundled-examples.md`.
 - 4.0.2 (2026-08-05): debug page renders routes and timers one per
   line (comma-joined routes; timers' newlines were collapsed by
   white-space:normal). See `state/ui-shell.md`.
