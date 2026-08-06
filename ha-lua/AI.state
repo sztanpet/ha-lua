@@ -11,19 +11,21 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Tabbed UI shell + debug tab — BUILT AND RELEASED as **v4.0.0** (2026-08-05),
-**not yet pushed**. Scripts moved under `/s/<script_id>/` and the daemon owns
-`/`: every `ha.serve` route used to share one flat path space and both bundled
-UI examples register `GET "/"`, so load order decided the winner and two web
-UIs could not coexist. A script becomes a tab by calling the new `ha.ui(title)`
-(opt-in, so API-only scripts never appear). Composition is an **iframe shell**
-— the user chose iframes when asked to settle spec §7.1, which deleted the
-whole HTML-injection middleware and gave real per-page isolation for free. The
-Debug tab adds the runtime introspection the daemon never had: scripts /
-routes / timers / queue depth / dropped events / last error, HA link and
-runtime stats, a live log tail from the new `internal/logbuf` ring-buffer slog
-handler, and an on-demand goroutine stack dump. Detail in `state/ui-shell.md`. Followed by v4.0.1 (ordering fix, panel
-rename, untabbed-page hint) and v4.0.2 (debug page line formatting).
+Battery rundown example — BUILT, **not released, not pushed** (2026-08-06,
+commits 7eb5584 script/page/tests, be24e8c DOCS.md, on top of the unpushed
+v4.0.2). New bundled example `battery_levels.lua` + `.html`: a **Batteries**
+tab listing every battery's level, when it last changed, and an ETA to empty,
+sorted so the one that dies first is on top. The load-bearing decision is that
+the forecast CANNOT come from `ha.get_history` — state history is purged after
+`retention_days` (2 by default) and a battery needs weeks — so the script keeps
+its own sample series in its KV store and fits a least-squares slope through it
+(plus the current instant, so a stalled battery decays towards flat). Discovery
+is configuration-free (`device_class: battery` and `battery_level` attributes).
+Detail in `state/bundled-examples.md`. Pending: a minor release if the user
+wants it shipped (a new bundled example is user-visible).
+
+Previously: the tabbed UI shell + debug tab, released as v4.0.0/4.0.1/4.0.2
+(2026-08-05, also unpushed) — `state/ui-shell.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.

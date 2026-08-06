@@ -64,3 +64,36 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   the hourly purge DELETE holding the write connection; both left alone
   until actually measured as a problem.
 - Both rounds shipped in v3.0.1 (2026-07-07, tag on 4cdd2a1).
+
+## battery_levels example (2026-08-06)
+- New bundled example: `battery_levels.lua` + `battery_levels.html`, a
+  **Batteries** tab (`ha.ui`) listing level / last change / rundown ETA,
+  sorted so the first battery to die is on top. Commit 7eb5584 (script,
+  page, tests), be24e8c (DOCS.md section). NOT released yet.
+- The design decision worth remembering: the ETA cannot come from
+  `ha.get_history`. State history is purged after `retention_days` (2 by
+  default) and a battery forecast needs weeks. So the script keeps its OWN
+  series in its KV store (`series:<entity_id>`), one sample per observed level
+  change — a handful of rows a month per entity, capped at MAX_SAMPLES=120.
+- Fit is least squares over the samples PLUS the current instant as a point.
+  Appending "now" is what makes a battery that stopped moving decay towards a
+  flat slope instead of forever predicting last month's rate.
+- A rise > RECHARGE_JUMP (2 points) wipes the series: a charge or a swap makes
+  every earlier sample worthless. Guards before any ETA is shown at all:
+  >= 3 samples, >= 6 h span, >= 2% drop, negative slope. Otherwise the page
+  says "measuring".
+- Discovery is configuration-free: `device_class: battery` (state IS the
+  percentage) plus any entity with a numeric `battery_level` attribute. The
+  two are NOT interchangeable for "last changed" — a device_tracker's
+  last_changed tracks the phone moving, not the battery — hence the
+  `level_is_state` flag, and nil (not "just now") for a first sighting.
+- `changed_at` takes the OLDER of HA's last_changed and our newest sample:
+  HA's is exact but resets on every HA restart, ours is honest about age but
+  up to one scan interval (15 min) late.
+- Series cleanup is by "entity gone from the state mirror entirely"
+  (`ha.get_state == nil`), never by "missing from this pass" — an unavailable
+  device must not lose weeks of samples.
+- Tests: `internal/lua/battery_levels_test.go` drives the real example through
+  the Router — rundown math + urgency order, discovery/exclusion, recharge
+  reset, and a chromedp browser test for the rendered rows and the
+  client-side sort.
