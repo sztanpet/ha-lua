@@ -4,6 +4,50 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.1.0 - 2026-08-06
+
+### Added
+- **A `service_api` example: one endpoint that calls any Home Assistant
+  service**, for driving Home Assistant from shell scripts and cron jobs.
+  ```sh
+  curl -H "X-Auth-Token: $TOKEN" \
+    "http://homeassistant.local:8100/s/service_api/call/light/turn_on?entity_id=light.kitchen&brightness=200"
+  ```
+  The service comes from the path, from a dotted `service` field, or from
+  separate `domain`+`service` fields; every other field is forwarded to Home
+  Assistant untouched, so the endpoint never needs updating for a service it
+  has not heard of. Fields may arrive as query parameters, a form body (what
+  `curl -d k=v` sends) or a JSON body — and because the first two are text,
+  types are reconstructed: `true`/`false` become booleans, `[255,0,0]` is
+  parsed as JSON, and a number only becomes a number when the text round-trips
+  exactly, so an alarm `code=0123` stays the string a panel expects.
+
+  It ships with a **Service API** tab that assembles the call from your own
+  entity ids and hands back the finished URL and `curl` line with copy
+  buttons, token already filled in. Each value shows how the endpoint will
+  read it, so a call is right before you run it.
+
+  The endpoint is guarded by a token generated on first load and written to
+  the add-on log. Note that the builder page carries that token, so anyone who
+  can open the page on the LAN port has it: the token stops someone guessing
+  the URL, not someone already on your network. As ever, `http_port` is plain
+  HTTP with no Home Assistant login in front of it — keep it off the WAN.
+- **A `battery_levels` example: a Batteries tab** listing every battery in the
+  house — level, when it last changed, and an estimate of when it hits empty —
+  sorted so the one that dies first is on top. Nothing to configure: it picks
+  up `device_class: battery` sensors and anything carrying a `battery_level`
+  attribute.
+
+  A rundown forecast needs weeks of history and the daemon purges state
+  history after `retention_days` (2 by default), so the script keeps its own
+  series in its KV store and fits a least-squares line through it. Until there
+  are at least 3 samples spanning 6 hours and adding up to a 2% drop, the page
+  says **measuring** rather than inventing a number, and a rise of more than 2
+  points is read as a recharge or a battery swap and restarts the series.
+
+Both examples are in `/config/ha-lua/examples/`; copy the `.lua` **and** its
+`.html` into `scripts/` to use them.
+
 ## 4.0.2 - 2026-08-05
 
 ### Fixed
