@@ -5,7 +5,38 @@ shared tab bar, and the debug page. Spec: `ui-shell-spec.md`. Global decisions
 live in `../AI.state`.
 
 Status: **COMPLETE — released v4.0.0, v4.0.1, v4.0.2 (all 2026-08-05).** All
-11 milestones of spec §11 are done.
+11 milestones of spec §11 are done. One unreleased addition on top: the debug
+log panel's per-script source filter (2026-08-06, see below).
+
+## Debug log panel: per-script source filter (2026-08-06, unreleased)
+
+Commits `1383635` (logbuf), `345016c` (page), `5ff17c6` (docs).
+
+Asked for "a log panel showing the messages of the different scripts", then
+immediately for "a single log panel that includes everything" — the second
+reading is the one built, and it was also the correct one: `ha.log` already
+logs through the default `slog` logger with a `script=<id>` attr, so those
+lines were *always* in the existing panel. Nothing was missing; the id just sat
+at the tail of the attrs where the eye slides past it, and one chatty script
+buried the rest. **Do not add a second panel.**
+
+- `logbuf.Snapshot` takes a `Query{Since, Level, Script}` instead of two
+  positional args. `Script`: `""` everything, `logbuf.AnyScript` (`"*"`) any
+  record carrying the attr, else an exact id. `logbuf.ScriptKey` is the attr
+  name. A filtered snapshot still returns the *global* newest seq, so the
+  poller never re-fetches what the filter dropped.
+- `/debug/api/logs?script=` passes it through — a single script's tail is
+  curl-able from a headless box.
+- Page: `script` renders as a `[tag]` after the timestamp (removed from the
+  trailing attrs), plus a **Source** select rebuilt from `info.scripts` on
+  each poll. A filter change resets `since=0` and clears, same as **Level** —
+  a narrower filter cannot retroactively hide rendered lines.
+- The browser tests now install a `logbuf`-backed default logger in
+  `serveShell` (restored via `t.Cleanup`). Without that, `Logs:` was a buffer
+  no logger wrote to and no real `ha.log` call could ever reach the page.
+- `print()` still goes to stdout only — not the buffer, not the log file, not
+  the page. Documented in DOCS.md and lua_api.md rather than rerouted; nobody
+  asked for that.
 
 ## Post-release fixes (v4.0.1)
 
