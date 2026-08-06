@@ -366,6 +366,35 @@ Caveats:
   `sensor.ha_lua_enhanced_climate_*` to your recorder `exclude` if you don't
   need their history.
 
+## Battery levels example
+
+`battery_levels.lua` adds a **Batteries** tab listing every battery in the
+house: current level, when that level last changed, and an estimate of when it
+will hit empty — sorted so the one that dies first is on top.
+
+```sh
+cp /config/ha-lua/examples/battery_levels.lua  /config/ha-lua/scripts/
+cp /config/ha-lua/examples/battery_levels.html /config/ha-lua/scripts/
+```
+
+There is nothing to configure: it picks up `device_class: battery` sensors
+(whose state is the percentage) and any entity carrying a numeric
+`battery_level` attribute (device trackers, vacuums, some locks). Entity ids you
+do not want listed go in the script's `IGNORE` table.
+
+**How the estimate works.** A rundown forecast needs weeks of history, and the
+daemon purges state history after `retention_days` (2 by default), so the script
+keeps its own series in its KV store — one sample per observed level change,
+which is a handful of rows a month per battery. A least-squares line through
+those samples gives a percent-per-day drain rate, and the level divided by that
+rate gives the ETA. Until there are at least 3 samples spanning 6 hours and
+adding up to a 2% drop, the page shows **measuring** instead of a made-up
+number. A rise of more than 2 points is read as a charge or a battery swap and
+restarts the series, so an old slope never leaks into a fresh pack.
+
+Levels are sampled every 15 minutes (and on every page load). The script only
+reads — it publishes no entities and sends no notifications.
+
 ## Notes
 
 - Scripts are sandboxed: `io`, `os.execute`, `os.exit`, `load`, `dofile`, and
