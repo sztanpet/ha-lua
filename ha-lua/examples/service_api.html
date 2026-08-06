@@ -189,9 +189,8 @@ your shell script.</p>
 const DEFAULT_LAN_PORT = 8100;
 const STORAGE_PREFIX = "ha-lua-service-api:";
 
-// Written in by service_api.lua as it serves this page, so the builder never
-// has to ask. Left as the placeholder when the file is opened straight off
-// disk instead of through the daemon.
+// Substituted by service_api.lua as it serves the page; stays a placeholder
+// when the file is opened straight off disk.
 const SERVED_TOKEN = "__SERVICE_API_TOKEN__";
 
 // Services cannot be enumerated: the daemon has no binding for Home
@@ -232,9 +231,8 @@ function remember(key, value) {
   } catch (err) { /* private mode: the field still works, it just won't stick */ }
 }
 
-// The base URL a shell script should use. Served on the LAN port that is
-// already the right answer; under ingress the page's own URL carries a Home
-// Assistant session that curl does not have, so point at the LAN port instead.
+// Under ingress the page's own URL carries a Home Assistant session curl does
+// not have, so fall back to the LAN port.
 function defaultBase() {
   const path = location.pathname.replace(/\/+$/, "");
   const mount = path.lastIndexOf("/s/");
@@ -244,9 +242,8 @@ function defaultBase() {
   return location.protocol + "//" + location.hostname + ":" + DEFAULT_LAN_PORT + scriptPath;
 }
 
-// Mirrors the endpoint's own coercion rules, so what the page shows is what
-// Home Assistant will receive. A number only when the text round-trips
-// exactly — an alarm code of 0123 is not the number 123.
+// Mirrors the endpoint's coercion rules; if one side changes the other must
+// follow. A number only when the text round-trips exactly — 0123 is a code.
 function typeOf(text) {
   if (text === "") return "empty";
   if (text === "true" || text === "false") return "boolean";
@@ -359,7 +356,6 @@ function render() {
   for (const row of $("rows").children) {
     const key = row.querySelector(".key").value.trim();
     const valueInput = row.querySelector(".value");
-    // Only entity_id gets the picker; every other field is free-form.
     if (key === "entity_id") valueInput.setAttribute("list", "entities");
     else valueInput.removeAttribute("list");
     // entity_id is the one field the endpoint splits on commas.
@@ -446,8 +442,7 @@ async function copyText(text, button) {
   try {
     await navigator.clipboard.writeText(text);
   } catch (err) {
-    // Clipboard API refused (older browser, or a frame without permission):
-    // fall back to the selection trick rather than failing silently.
+    // Clipboard API refused (older browser, or a frame without permission).
     const scratch = document.createElement("textarea");
     scratch.value = text;
     scratch.style.position = "fixed";

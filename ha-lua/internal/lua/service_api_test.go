@@ -21,10 +21,8 @@ import (
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
-// errRejected stands in for Home Assistant refusing a call outright.
 var errRejected = errors.New("value 99.0 for climate.set_temperature is above max_temp 30.0")
 
-// serviceCall is one call the example asked Home Assistant to perform.
 type serviceCall struct {
 	domain  string
 	service string
@@ -32,9 +30,8 @@ type serviceCall struct {
 	waited  bool
 }
 
-// serveServiceAPI boots the real examples/service_api.lua and returns its
-// router, the token it generated on first load, and the recorded calls.
-// callErr, when non-nil, is what the fake HA returns for every call.
+// callErr, when non-nil, is what the fake Home Assistant refuses every call
+// with.
 func serveServiceAPI(t *testing.T, callErr error) (*Router, string, *[]serviceCall) {
 	t.Helper()
 	dir := t.TempDir()
@@ -114,7 +111,6 @@ type apiReply struct {
 	Entity  []string       `json:"entity_ids"`
 }
 
-// doAPI sends a request with the token in the X-Auth-Token header.
 func doAPI(t *testing.T, router *Router, token, method, target, body string) (int, apiReply) {
 	t.Helper()
 	req := httptest.NewRequestWithContext(context.Background(), method, Mount+"service_api"+target, strings.NewReader(body))
@@ -129,8 +125,7 @@ func doAPI(t *testing.T, router *Router, token, method, target, body string) (in
 	return rec.Code, reply
 }
 
-// Every way of naming a service must reach the same call, and query values
-// must arrive typed the way the header comment promises.
+// Every way of naming a service must reach the same call, typed as promised.
 func TestServiceAPICallForms(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -238,8 +233,7 @@ func sameJSON(t *testing.T, got, want any) bool {
 	return string(gotBytes) == string(wantBytes)
 }
 
-// An unauthenticated LAN port is the whole reason the token exists: no token,
-// wrong token, and a token in the wrong place must never reach a service.
+// An unauthenticated LAN port is the whole reason the token exists.
 func TestServiceAPIRejectsBadToken(t *testing.T) {
 	router, token, calls := serveServiceAPI(t, nil)
 
@@ -290,8 +284,8 @@ func TestServiceAPIRejectsBadToken(t *testing.T) {
 	}
 }
 
-// A shell script only ever sees the status code and the error string, so both
-// have to say something true about what went wrong.
+// A shell script sees only the status and the error string, so both have to
+// say something true about what went wrong.
 func TestServiceAPIErrors(t *testing.T) {
 	router, token, calls := serveServiceAPI(t, nil)
 
@@ -323,8 +317,8 @@ func TestServiceAPIErrors(t *testing.T) {
 	}
 }
 
-// A service Home Assistant refuses must not be reported as success, and its
-// message must survive to the client without gopher-lua's script position.
+// A refused service must not be reported as success, and HA's message must
+// survive without gopher-lua's script position glued to it.
 func TestServiceAPIReportsHARejection(t *testing.T) {
 	router, token, _ := serveServiceAPI(t, errRejected)
 	code, reply := doAPI(t, router, token, "GET", "/call/climate/set_temperature?entity_id=climate.x&temperature=99", "")
@@ -339,11 +333,9 @@ func TestServiceAPIReportsHARejection(t *testing.T) {
 	}
 }
 
-// wait=false must reach ha.call_service as such: a script firing a dozen
-// notifications should not pay a device round trip for each one.
+// Rejected by HA, yet the client still gets a 200: with wait=false nobody is
+// listening for the verdict any more. That is the trade being made.
 func TestServiceAPIWaitFalse(t *testing.T) {
-	// Rejected by HA, yet the client still gets a 200: with wait=false nobody
-	// is listening for the verdict any more. That is the trade being made.
 	router, token, calls := serveServiceAPI(t, errRejected)
 	code, reply := doAPI(t, router, token, "GET", "/call/switch/turn_on?entity_id=switch.a&wait=false", "")
 	if code != 200 || !reply.OK {
@@ -360,9 +352,8 @@ func TestServiceAPIWaitFalse(t *testing.T) {
 	}
 }
 
-// The builder page is served to anyone who asks, with the token baked in --
-// that is the deliberate trade for a builder nobody has to paste a token into.
-// The routes it drives still check that token.
+// The page is served to anyone who asks, token baked in -- the deliberate
+// trade for a builder nobody has to paste a token into. Its routes still check.
 func TestServiceAPIPageAndEntities(t *testing.T) {
 	router, token, _ := serveServiceAPI(t, nil)
 
@@ -387,10 +378,8 @@ func TestServiceAPIPageAndEntities(t *testing.T) {
 	}
 }
 
-// TestServiceAPIBuilderPage drives the builder in a browser: the token has to
-// verify against the live endpoint, the entity pickers have to fill from the
-// state mirror, and both outputs have to match what the endpoint parses --
-// this page is worthless if it hands out a command that does not work.
+// A builder that emits a command which does not work is worse than none, so
+// the generated URL is fired back at the endpoint here.
 func TestServiceAPIBuilderPage(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	router, token, calls := serveServiceAPI(t, nil)
@@ -431,7 +420,6 @@ func TestServiceAPIBuilderPage(t *testing.T) {
 		t.Errorf("curl repeats the token in the query: %q", curl)
 	}
 
-	// The generated GET must actually reach the service it claims to.
 	generated, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -448,8 +436,7 @@ func TestServiceAPIBuilderPage(t *testing.T) {
 		t.Fatalf("generated URL did not call light.turn_on: %+v", *calls)
 	}
 
-	// Switching to POST · JSON moves the data out of the query and into a
-	// typed body -- and the type badge must warn that 0123 is not a number.
+	// POST · JSON moves the data into a typed body; 0123 must survive as text.
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`#style button[data-style="json"]`, chromedp.ByQuery),
 		chromedp.Click("#add", chromedp.ByQuery),

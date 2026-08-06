@@ -49,8 +49,7 @@
 -- for a script on the same network, never something to port-forward. Put your
 -- own token in TOKEN below if you would rather pick it yourself.
 
--- Your own token, if you would rather not use the generated one. Anything
--- unguessable will do: `openssl rand -hex 16`.
+-- Your own token instead of the generated one: `openssl rand -hex 16`.
 local TOKEN = ""
 
 -- Fields that configure the request itself and are never sent to HA.
@@ -135,8 +134,6 @@ local function decode_form(body)
   return fields
 end
 
--- Returns the request's fields, or nil plus a message the caller can hand back
--- to the shell script that got it wrong.
 local function parse_body(body)
   local trimmed = strings.trim_space(body or "")
   if trimmed == "" then
@@ -211,8 +208,8 @@ local function handle(req)
       data[key] = value
     end
   end
-  -- Only entity_id: a comma is a separator here and cannot occur in an id,
-  -- while it is ordinary text in a notification message.
+  -- Only entity_id: a comma cannot occur in an id, but is ordinary text in a
+  -- notification message.
   if type(data.entity_id) == "string" and strings.contains(data.entity_id, ",") then
     data.entity_id = strings.split(data.entity_id, ",")
   end
@@ -232,12 +229,11 @@ local function handle(req)
 end
 
 ha.serve("POST", "/call", handle)
--- GET calls a service too, which no REST purist would allow. It is here
--- because `curl "…?entity_id=x"` from a shell needs no quoting gymnastics,
--- and nothing but a script with the token ever reaches this endpoint.
+-- GET calls a service, which is not REST. Deliberate: quoting a JSON body in a
+-- shell script is the friction this whole endpoint exists to remove.
 ha.serve("GET", "/call", handle)
 
--- Somewhere to check the token and the plumbing without switching anything on.
+-- A probe that checks the token without switching anything on.
 ha.serve("GET", "/ping", function(req)
   if not authorized(req) then
     return fail(401, "missing or wrong token")
@@ -245,8 +241,7 @@ ha.serve("GET", "/ping", function(req)
   return reply(200, { ok = true })
 end)
 
--- Entity ids for the builder page's pickers. Token-guarded like everything
--- else: knowing what exists is halfway to controlling it.
+-- Guarded like the rest: knowing what exists is halfway to controlling it.
 ha.serve("GET", "/entities", function(req)
   if not authorized(req) then
     return fail(401, "missing or wrong token")
@@ -254,21 +249,19 @@ ha.serve("GET", "/entities", function(req)
   return reply(200, { ok = true, entity_ids = ha.get_entity_ids("*") })
 end)
 
--- The builder page: a form that assembles one of these calls and hands you the
--- URL and the curl command, token already in them. The token is baked in here,
--- once, at load. Nothing can authenticate a page load on the LAN port, so
--- serving the page is serving the token -- see the SECURITY note at the top.
+-- Nothing can authenticate a page load on the LAN port, so serving the page is
+-- serving the token -- see the SECURITY note at the top.
 local PAGE = assert(fs.read("service_api.html"),
   "service_api.html missing next to service_api.lua")
 
--- Escaping for a JS string literal. The slash matters as much as the quotes:
--- without it a token containing "</script>" would end the script block.
+-- The slash matters as much as the quotes: without it a token containing
+-- "</script>" would end the script block.
 local function js_escape(text)
   return (string.gsub(text, "[\\\"/]", function(char) return "\\" .. char end))
 end
 
--- Replaced through a function so a "%" in a hand-picked token is not read as
--- a gsub capture reference.
+-- A replacement function, so a "%" in a hand-picked token is not read as a
+-- capture reference.
 PAGE = string.gsub(PAGE, "__SERVICE_API_TOKEN__", function() return js_escape(token) end, 1)
 
 ha.ui("Service API")
