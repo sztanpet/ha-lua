@@ -36,14 +36,18 @@
 --
 -- The script also serves a **Service API** tab: a form that assembles a call
 -- from your real entity ids and hands back the finished URL and curl command,
--- with copy buttons. It builds commands; it never fires one.
+-- with copy buttons, token already filled in. It builds commands; it never
+-- fires one.
 --
--- SECURITY. The LAN port serves this without any Home Assistant login, so the
--- endpoint is guarded by a shared token — without one, anyone on your network
--- could unlock your doors. The token is generated on first load and written to
--- the daemon log once; copy it from there. Lost it? Put your own in TOKEN
--- below. It is plain HTTP on your LAN: fine for a script on the same network,
--- never something to port-forward.
+-- SECURITY. The LAN port serves all of this without any Home Assistant login,
+-- so the endpoint is guarded by a shared token — without one, anyone on your
+-- network could unlock your doors. The token is generated on first load, put
+-- in the daemon log, and **written into the page**, so anyone who can open
+-- the page on the LAN port has it. That is the deal being made for a builder
+-- you never have to paste a token into: the token stops a stranger who
+-- guesses the URL, not one who loads the page. Plain HTTP on your LAN: fine
+-- for a script on the same network, never something to port-forward. Put your
+-- own token in TOKEN below if you would rather pick it yourself.
 
 -- Your own token, if you would rather not use the generated one. Anything
 -- unguessable will do: `openssl rand -hex 16`.
@@ -66,13 +70,13 @@ local function resolve_token()
   local stored = store.get("token")
   if stored then
     ha.log("info", "service_api: ready, token starts with " .. string.sub(stored, 1, 6) ..
-      " (set TOKEN in the script to use your own)")
+      " (it is on the Service API tab in full)")
     return stored
   end
   local generated = crypto.random_hex(16)
   store.set("token", generated)
   ha.log("warn", "service_api: generated API token " .. generated ..
-    " -- copy it now, it will not be logged again")
+    " -- also shown on the Service API tab")
   return generated
 end
 
@@ -251,11 +255,21 @@ ha.serve("GET", "/entities", function(req)
 end)
 
 -- The builder page: a form that assembles one of these calls and hands you the
--- URL and the curl command. It is served without a token -- there is no way to
--- authenticate a page load on the LAN port, and the page holds no secret; it
--- asks you for the token, which every request above still checks.
+-- URL and the curl command, token already in them. The token is baked in here,
+-- once, at load. Nothing can authenticate a page load on the LAN port, so
+-- serving the page is serving the token -- see the SECURITY note at the top.
 local PAGE = assert(fs.read("service_api.html"),
   "service_api.html missing next to service_api.lua")
+
+-- Escaping for a JS string literal. The slash matters as much as the quotes:
+-- without it a token containing "</script>" would end the script block.
+local function js_escape(text)
+  return (string.gsub(text, "[\\\"/]", function(char) return "\\" .. char end))
+end
+
+-- Replaced through a function so a "%" in a hand-picked token is not read as
+-- a gsub capture reference.
+PAGE = string.gsub(PAGE, "__SERVICE_API_TOKEN__", function() return js_escape(token) end, 1)
 
 ha.ui("Service API")
 ha.serve("GET", "/", function()

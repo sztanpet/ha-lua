@@ -360,8 +360,9 @@ func TestServiceAPIWaitFalse(t *testing.T) {
 	}
 }
 
-// The builder page must be served without a token (nothing can authenticate a
-// page load on the LAN port), while the entity list it feeds on must not be.
+// The builder page is served to anyone who asks, with the token baked in --
+// that is the deliberate trade for a builder nobody has to paste a token into.
+// The routes it drives still check that token.
 func TestServiceAPIPageAndEntities(t *testing.T) {
 	router, token, _ := serveServiceAPI(t, nil)
 
@@ -372,8 +373,8 @@ func TestServiceAPIPageAndEntities(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "<title>Service API</title>") {
 		t.Errorf("GET / did not serve the builder page: %.120q", rec.Body.String())
 	}
-	if strings.Contains(rec.Body.String(), token) {
-		t.Error("the page hands out the API token; anyone on the LAN can read it")
+	if !strings.Contains(rec.Body.String(), token) {
+		t.Error("the page was served without the token baked in")
 	}
 
 	if rec := doReqID(router, "service_api", "GET", "/entities", ""); rec.Code != 401 {
@@ -401,7 +402,7 @@ func TestServiceAPIBuilderPage(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/s/service_api/"),
 		chromedp.WaitVisible("#url", chromedp.ByQuery),
-		chromedp.SendKeys("#token", token, chromedp.ByQuery),
+		// No typing: the page arrives with the token already in the field.
 		chromedp.WaitVisible("#token-status.ok", chromedp.ByQuery),
 		chromedp.SendKeys("#domain", "light", chromedp.ByQuery),
 		chromedp.SendKeys("#service", "turn_on", chromedp.ByQuery),

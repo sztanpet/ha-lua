@@ -117,12 +117,12 @@ your shell script.</p>
     <label for="token">API token</label>
     <div class="token-row">
       <input type="text" id="token" class="mono" spellcheck="false"
-             autocomplete="off" placeholder="paste the token from the add-on log">
-      <span class="status" id="token-status">no token</span>
-      <button type="button" id="forget">Forget</button>
+             autocomplete="off">
+      <span class="status" id="token-status">checking…</span>
     </div>
-    <div class="hint">Written to the add-on log once, the first time
-      <code>service_api.lua</code> loaded. Kept in this browser only.</div>
+    <div class="hint">Filled in for you by <code>service_api.lua</code>, which
+      means anyone who can open this page on the LAN port has it. Change it
+      here only to build a command for some other install.</div>
   </div>
 </section>
 
@@ -188,6 +188,11 @@ your shell script.</p>
 // the field stays editable.
 const DEFAULT_LAN_PORT = 8100;
 const STORAGE_PREFIX = "ha-lua-service-api:";
+
+// Written in by service_api.lua as it serves this page, so the builder never
+// has to ask. Left as the placeholder when the file is opened straight off
+// disk instead of through the daemon.
+const SERVED_TOKEN = "__SERVICE_API_TOKEN__";
 
 // Services cannot be enumerated: the daemon has no binding for Home
 // Assistant's service registry. These are suggestions, not a whitelist — any
@@ -375,7 +380,7 @@ function render() {
     warnings.push("Name a domain and a service — the URL is incomplete without them.");
   }
   if (!$("token").value.trim()) {
-    warnings.push("No token yet: the commands carry a placeholder.");
+    warnings.push("No token: open this page through the daemon, or paste one here.");
   }
   if (state.style === "get" && fields().some(f => typeOf(f.value) === "json")) {
     warnings.push("JSON values survive the query string, but POST · JSON is easier to read.");
@@ -391,9 +396,8 @@ function render() {
 async function checkToken() {
   const token = $("token").value.trim();
   const status = $("token-status");
-  remember("token", token);
   if (!token) {
-    status.className = "status";
+    status.className = "status bad";
     status.textContent = "no token";
     state.entityIDs = [];
     render();
@@ -458,7 +462,7 @@ async function copyText(text, button) {
 }
 
 $("base").value = remembered("base", "") || defaultBase();
-$("token").value = remembered("token", "");
+$("token").value = SERVED_TOKEN.startsWith("__") ? "" : SERVED_TOKEN;
 $("domain").value = remembered("domain", "");
 $("service").value = remembered("service", "");
 $("rows").append(fieldRow("entity_id", ""));
@@ -469,7 +473,6 @@ $("domain").oninput = () => { remember("domain", $("domain").value.trim()); rend
 $("service").oninput = () => { remember("service", $("service").value.trim()); render(); };
 $("wait").onchange = render;
 $("flags").onchange = render;
-$("forget").onclick = () => { $("token").value = ""; checkToken(); };
 
 let tokenTimer = null;
 $("token").oninput = () => {
