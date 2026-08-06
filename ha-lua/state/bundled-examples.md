@@ -97,3 +97,41 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   the Router — rundown math + urgency order, discovery/exclusion, recharge
   reset, and a chromedp browser test for the rendered rows and the
   client-side sort.
+
+## service_api example (2026-08-06)
+- New bundled example: `service_api.lua`, one endpoint that calls ANY HA
+  service, aimed at shell scripts. Commit 26f0acd (script + tests), ea7f320
+  (DOCS.md). NOT released yet.
+- Routes: `POST|GET /call` (prefix, so it also owns `/call/<domain>/<service>`)
+  and `GET /ping`. No `ha.ui` and deliberately no `GET "/"` — a machine-facing
+  API must not become a tab, and the debug page flags a `/` route without
+  `ha.ui`.
+- Service naming, three ways: path segments, a dotted `service` field, or
+  separate `domain` + `service`. Everything not in RESERVED (token/wait/
+  domain/service) is forwarded as service data verbatim — that is the whole
+  point, no per-service code and nothing to update when HA gains a service.
+- Three input transports: query params, form-encoded body (`curl -d k=v`, no
+  Content-Type sniffing — a body starting with `{` is JSON, `[` is a 400,
+  anything else is form), JSON object body. Body wins over query on collision.
+- Type reconstruction for the text transports is the fiddly part:
+  `true`/`false` → bool, leading `[`/`{` → json.decode, and a number ONLY when
+  `tostring(tonumber(text)) == text`. That round-trip check is load-bearing:
+  an alarm `code=0123` must stay a string. `entity_id` is the one field split
+  on commas (a comma cannot appear in an entity id, but is ordinary text in a
+  notification message).
+- Auth: shared token, `crypto.equal` (constant time), accepted as
+  `X-Auth-Token`, `Authorization: Bearer`, or `?token=`. Generated with
+  `crypto.random_hex(16)` on first load, stored in the script KV and logged at
+  warn ONCE; later loads log only a 6-char prefix. Escape hatch for a lost
+  token is the `TOKEN` constant, which wins over the store — no magic reset
+  key. Rationale: the LAN port (`http_port`) has no HA login in front of it.
+- `ha.call_service` is wrapped in `pcall` so an HA rejection becomes a 502 with
+  HA's message instead of an on_exception; gopher-lua's `file:line:` prefix is
+  stripped from the message first (it means nothing to a curl user).
+- GET performing an action is intentional (curl without JSON quoting), noted in
+  the script and the commit.
+- Tests: `internal/lua/service_api_test.go` boots the real example with both a
+  recording sync and async call_service — every request shape, the coercion
+  rules incl. `0123`, token rejection (incl. one-char-short vs the constant
+  time compare), the 400/502 error contract, and `wait=false` taking the async
+  path.

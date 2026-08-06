@@ -11,22 +11,23 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Battery rundown example — BUILT and PUSHED to both remotes, **not released**
-(2026-08-06, commits 7eb5584 script/page/tests, be24e8c DOCS.md, 6a7b777 state).
-New bundled example `battery_levels.lua` + `.html`: a **Batteries**
-tab listing every battery's level, when it last changed, and an ETA to empty,
-sorted so the one that dies first is on top. The load-bearing decision is that
-the forecast CANNOT come from `ha.get_history` — state history is purged after
-`retention_days` (2 by default) and a battery needs weeks — so the script keeps
-its own sample series in its KV store and fits a least-squares slope through it
-(plus the current instant, so a stalled battery decays towards flat). Discovery
-is configuration-free (`device_class: battery` and `battery_level` attributes).
-Detail in `state/bundled-examples.md`. Pending: a minor release if the user
-wants it shipped (a new bundled example is user-visible).
+Service API example — BUILT, **not pushed, not released** (2026-08-06, commits
+26f0acd script/tests, ea7f320 DOCS.md). New bundled example `service_api.lua`:
+one endpoint (`POST|GET /s/service_api/call[/<domain>/<service>]`) that calls
+ANY Home Assistant service, for shell scripts — the service can come from the
+path, a dotted `service` field, or `domain`+`service`, and every other field is
+forwarded as service data verbatim, so it never needs updating for a new HA
+service. Accepts query params, a form body (`curl -d k=v`) or a JSON body;
+text values get types back, with the round-trip rule that keeps an alarm
+`code=0123` a string. Guarded by a shared token (`crypto.equal`, generated on
+first load and logged once) because `http_port` has no HA login in front of it.
+Detail in `state/bundled-examples.md`. Pending: push, plus a minor release if
+the user wants it shipped (bundled examples are user-visible).
 
-Previously: the tabbed UI shell + debug tab, released as v4.0.0/4.0.1/4.0.2
-(2026-08-05) — `state/ui-shell.md`. Those commits and their tags ARE on both
-remotes; the older "not yet pushed" notes in this file were stale.
+Previously: the battery rundown example (2026-08-06, 7eb5584/be24e8c/6a7b777,
+pushed, not released) — also `state/bundled-examples.md`; and the tabbed UI
+shell + debug tab, released as v4.0.0/4.0.1/4.0.2 (2026-08-05) —
+`state/ui-shell.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
