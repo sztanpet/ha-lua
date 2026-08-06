@@ -203,8 +203,15 @@ warning at load, because its tab would open onto a 404.
 goroutine and heap numbers, the HA connection with its reconnect count and last
 error, database size, mirrored entity count and write-queue depth, and a row
 per script with its routes, timers, queue depth, dropped events and last
-exception. It also tails the log live, with a level filter, and can capture a
-goroutine stack dump on demand — no `pprof_addr` or restart needed.
+exception. It also tails the log live and can capture a goroutine stack dump on
+demand — no `pprof_addr` or restart needed.
+
+The log tail is one panel for everything the daemon and your scripts log. Every
+`ha.log(level, msg)` call is tagged with the script it came from, and the
+**Source** filter narrows the panel to all scripts at once or to a single one;
+**Level** filters independently. Note `print()` is not a log call — it goes to
+the add-on's stdout and reaches neither this panel nor the log file, so use
+`ha.log`.
 
 ### Reaching a UI
 

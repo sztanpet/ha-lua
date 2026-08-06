@@ -327,6 +327,10 @@ globals, CSS and element IDs, and the daemon never rewrites its HTML.
 Writes `msg` to the daemon log, tagged with the script id. `level` is one of
 `"debug"`, `"warn"`, `"error"`; anything else logs at info.
 
+The tag is what the Debug tab's **Source** filter selects on, so `ha.log` is
+how a script's messages become readable there. `print()` only reaches the
+add-on's stdout — not the log file, not the Debug tab.
+
 ### Exception handling
 
 #### `ha.on_exception(handler)`
