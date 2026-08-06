@@ -137,10 +137,18 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   domain/entity pickers from the state mirror; service names CANNOT be
   enumerated (no binding for HA's service registry), so those are a static
   suggestion list over a free-text field — do not mistake it for a whitelist.
-- The page is served WITHOUT a token, deliberately: nothing can authenticate a
-  page load on the LAN port, and the page carries no secret. It asks for the
-  token, verifies it against `./ping` (its own origin, not the typed base URL,
-  which may not even resolve from the browser), and keeps it in localStorage.
+- Token delivery, REVERSED on user instruction (commit 356af45): the first cut
+  asked the user to paste the token; now `service_api.lua` substitutes it into
+  the page (`__SERVICE_API_TOKEN__`) as it serves it. The user was told the
+  consequence and reaffirmed: anyone who can open the page on the LAN port has
+  the token, so it guards against guessing the URL, not against the network.
+  Do NOT "fix" this back to a prompt. The field is still editable (build a
+  command for another install) and still verified against `./ping` — its own
+  origin, not the typed base URL, which may not resolve from the browser.
+- Injection escapes `\`, `"` AND `/` for the JS string literal (a token
+  containing `</script>` would end the script block), and substitutes through a
+  gsub replacement FUNCTION so a `%` in a hand-picked TOKEN is not read as a
+  capture reference.
 - Base URL default: page origin + `/s/service_api`, EXCEPT under ingress
   (path contains `/api/hassio_ingress/`), where it falls back to
   `<host>:8100` — the ingress URL carries an HA session curl does not have,

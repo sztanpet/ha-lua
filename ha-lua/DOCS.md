@@ -411,12 +411,13 @@ log once (*Settings → Add-ons → HA Lua → Log*, or
 `/config/ha-lua/logs/ha-lua.log`) — copy it from there. If you lose it, put your
 own in the script's `TOKEN` constant instead.
 
-**The Service API tab** builds the commands for you: paste the token once, pick
-a domain, service and entity from your own entities, add whatever fields the
-service takes, and copy the finished URL or `curl` line. Each value shows how
-the endpoint will read it — `200` as a number, `0123` as text — so a call is
-right before you run it, not after. The page only assembles commands; it never
-fires one.
+**The Service API tab** builds the commands for you, token already filled in:
+pick a domain, service and entity from your own entities, add whatever fields
+the service takes, and copy the finished URL or `curl` line. Each value shows
+how the endpoint will read it — `200` as a number, `0123` as text — so a call
+is right before you run it, not after. The page only assembles commands; it
+never fires one. Note that it carries the token, so anyone who can open it on
+the LAN port has it.
 
 ```sh
 TOKEN=…
@@ -456,9 +457,10 @@ anything on, and `GET /s/service_api/entities` lists your entity ids (both need
 the token too).
 
 The port above (`http_port`, 8100 by default) is the LAN port, which has **no
-Home Assistant login in front of it** — that is what the token is for. It is
-plain HTTP: fine for a script on your own network, not something to
-port-forward.
+Home Assistant login in front of it** — that is what the token is for, and
+since the builder page hands the token to whoever opens it, the token stops
+someone who guesses the URL rather than someone on your network. It is plain
+HTTP: fine for a script on your own network, not something to port-forward.
 
 ## Notes
 
