@@ -395,6 +395,62 @@ restarts the series, so an old slope never leaks into a fresh pack.
 Levels are sampled every 15 minutes (and on every page load). The script only
 reads — it publishes no entities and sends no notifications.
 
+## Service API example
+
+`service_api.lua` is one HTTP endpoint that calls **any** Home Assistant
+service, for driving Home Assistant from shell scripts, cron jobs, or anything
+else that has `curl`.
+
+```sh
+cp /config/ha-lua/examples/service_api.lua /config/ha-lua/scripts/
+```
+
+On its first load the script generates an API token and writes it to the add-on
+log once (*Settings → Add-ons → HA Lua → Log*, or
+`/config/ha-lua/logs/ha-lua.log`) — copy it from there. If you lose it, put your
+own in the script's `TOKEN` constant instead.
+
+```sh
+TOKEN=…
+API=http://homeassistant.local:8100/s/service_api
+
+# service in the path, data as query parameters
+curl -H "X-Auth-Token: $TOKEN" \
+  "$API/call/light/turn_on?entity_id=light.kitchen&brightness=200"
+
+# form body — what curl -d sends by default
+curl -H "X-Auth-Token: $TOKEN" -d 'entity_id=switch.pump' \
+  "$API/call/switch/turn_off"
+
+# JSON body, service named inline
+curl -H "X-Auth-Token: $TOKEN" \
+  -d '{"service":"notify.mobile_app_phone","message":"backup done"}' \
+  "$API/call"
+```
+
+Every field that is not `token`, `wait`, `domain` or `service` is forwarded to
+Home Assistant as service data verbatim, so the endpoint needs no changes to
+call a service it has never heard of.
+
+**Types.** Query and form values are text, so the obvious types are
+reconstructed: `true`/`false` become booleans, a value starting with `[` or `{`
+is parsed as JSON (`rgb_color=[255,0,0]`), and a number becomes a number only
+when the text round-trips exactly — `code=0123` stays the string an alarm panel
+expects. `entity_id` may be a comma-separated list. Use a JSON body when you
+want exact control; on a collision the body wins over the query.
+
+**Replies** are always JSON — `{"ok":true,…}` with 200, or `{"ok":false,
+"error":"…"}` with 400 (malformed request), 401 (missing or wrong token) or 502
+(Home Assistant refused the call). The call waits for Home Assistant's verdict
+by default, so a 200 means the service actually ran; add `wait=false` for
+fire-and-forget. `GET /s/service_api/ping` checks the token without switching
+anything on.
+
+The port above (`http_port`, 8100 by default) is the LAN port, which has **no
+Home Assistant login in front of it** — that is what the token is for. It is
+plain HTTP: fine for a script on your own network, not something to
+port-forward.
+
 ## Notes
 
 - Scripts are sandboxed: `io`, `os.execute`, `os.exit`, `load`, `dofile`, and
