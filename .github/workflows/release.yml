@@ -12,6 +12,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 env:
   ARCHITECTURES: '["amd64", "aarch64"]'
@@ -30,7 +31,17 @@ jobs:
     steps:
       - name: Resolve version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          # A manual dispatch can point at any ref; a branch would publish
+          # itself as `latest`, so refuse anything that is not a v* tag.
+          case "$GITHUB_REF_NAME" in
+            v*) ;;
+            *)
+              echo "::error::refusing to build '$GITHUB_REF_NAME'; dispatch against a v* tag"
+              exit 1
+              ;;
+          esac
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Get build matrix
         id: matrix
