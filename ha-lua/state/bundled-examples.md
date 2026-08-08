@@ -3,7 +3,9 @@
 Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0).
+Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
+growing on top; newest unreleased: per-battery ignore on the Batteries page
+(2026-08-08, `26cd2e2`).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -97,6 +99,25 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   the Router — rundown math + urgency order, discovery/exclusion, recharge
   reset, and a chromedp browser test for the rendered rows and the
   client-side sort.
+
+## battery_levels: per-battery ignore (2026-08-08)
+- Commit `26cd2e2`. UNRELEASED — no version bump yet.
+- The static `IGNORE` table in the script is GONE, replaced by an `ignored`
+  key in the script KV store toggled from the page (`POST /api/ignore`
+  `{entity_id, ignored}`, replying with the whole rebuilt scan payload so the
+  page never has to patch a row by hand).
+- Semantics the user asked for and the tests pin: an ignored battery is **not
+  hidden**. It keeps its row and its level, dims, and sorts last — in the
+  daemon's urgency order (`by_urgency` checks `ignored` first) AND in every
+  client-side sort mode (one trailing stable partition in `sorted()`).
+- Ignoring means STOP TRACKING: it is never sampled, and `forget_removed` now
+  also deletes the series of anything just ignored, so tracking it again
+  starts from one fresh sample instead of a stale slope.
+- `goto continue` is not available — gopher-lua is Lua 5.1. The scan loop
+  branches with if/else instead.
+- Tests: `TestBatteryLevelsIgnore` (still listed, last, no forecast, samples
+  dropped, resume starts fresh, 404 unknown entity, 400 no entity_id) plus a
+  click-through in the existing chromedp UI test.
 
 ## service_api example (2026-08-06)
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA
