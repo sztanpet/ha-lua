@@ -238,6 +238,7 @@ const DAY_GROUPS = [
 const editing = new Set();  // zones with an open schedule editor (suppresses polling)
 const busy = new Set();      // zones mid-transition: open fetch in flight or close animating
 let lastState = null;
+let rendered = null;   // signature() of what the cards currently show
 
 // Tiny hyperscript builder: h(tag, attrs?, ...children) returns a DOM node.
 // Text children become auto-escaped text nodes; element children are appended
@@ -320,7 +321,11 @@ async function poll() {
   if (editing.size || busy.size) return;   // don't clobber an open or transitioning editor
   try {
     const resp = await fetch("./api/state");
-    if (resp.ok) { lastState = await resp.json(); render(lastState); }
+    if (!resp.ok) return;
+    lastState = await resp.json();
+    // Replacing the cards throws away scroll and touch state for a beat; a
+    // 5-second poll that changed nothing must not cost that.
+    if (signature(lastState) !== rendered) render(lastState);
   } catch (err) { /* transient; next poll retries */ }
 }
 
@@ -414,8 +419,16 @@ async function endDrag() {
   render(lastState);
 }
 
+// What is on screen, as a comparable string. remaining_s ticks every second but
+// the countdown is recomputed locally from it once, so it must not count as a
+// change — otherwise every poll rebuilds every card for nothing.
+function signature(state) {
+  return JSON.stringify(state, (key, value) => key === "remaining_s" ? undefined : value);
+}
+
 function render(state) {
   if (editing.size || busy.size) return;
+  rendered = signature(state);
   const app = document.getElementById("app");
   app.innerHTML = "";
   // The backend supplies the persisted display order (alphabetical until the
