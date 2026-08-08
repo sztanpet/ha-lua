@@ -10,7 +10,8 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v4.3.2** (2026-08-08, `c0ef33f`): framed pages are denied a scroll region
+**v4.3.2** (2026-08-08, `c0ef33f`, CONFIRMED fixed on device): framed pages are
+denied a scroll region
 (`overflow:hidden` + 2px slack) because Chromium does not chain a scroll out of a
 frame — one scrollable pixel in the framed document consumed the whole gesture
 and painted the overscroll glow, which is what the Heating tab was doing before

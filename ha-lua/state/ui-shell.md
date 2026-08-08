@@ -11,7 +11,8 @@ fix on top of that: the shell scroll fix (2026-08-08, `dbb0cda`, v4.3.0).
 
 ## Framed pages get no scroller at all (2026-08-08, v4.3.2)
 
-Commit `c0ef33f`. The v4.3.0/v4.3.1 sizing was not enough for the Heating tab:
+Commit `c0ef33f`. CONFIRMED fixed on the user's Android device.
+The v4.3.0/v4.3.1 sizing was not enough for the Heating tab:
 it still wanted a tap before every drag, and the decisive clue was the user
 noticing that dragging painted the **overscroll glow**. That means the gesture
 WAS consumed — by a scroller with nothing to give. Chromium does not chain a
