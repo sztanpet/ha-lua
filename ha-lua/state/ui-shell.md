@@ -9,6 +9,29 @@ Status: **COMPLETE — released v4.0.0, v4.0.1, v4.0.2 (all 2026-08-05).** All
 (2026-08-06): the debug log panel's per-script source filter (see below). One
 fix on top of that: the shell scroll fix (2026-08-08, `dbb0cda`, v4.3.0).
 
+## Framed pages get no scroller at all (2026-08-08, v4.3.2)
+
+Commit `c0ef33f`. The v4.3.0/v4.3.1 sizing was not enough for the Heating tab:
+it still wanted a tap before every drag, and the decisive clue was the user
+noticing that dragging painted the **overscroll glow**. That means the gesture
+WAS consumed — by a scroller with nothing to give. Chromium does not chain a
+scroll out of a frame, so a framed document able to scroll one pixel eats the
+gesture and `#view` never moves; the tap spent that pixel, and the page's 5 s
+repoll reset scrollTop and handed it back, hence "every time".
+
+The pixel is unavoidable by measurement: content heights are fractional,
+`scrollHeight` is not, and a device viewport that is not a whole number of CSS
+pixels rounds the wrong way. So `fit()` now forces `overflow:hidden` on the
+framed document (no scroll node whatever the rounding does) and adds 2px of
+slack. `scrollHeight` still reports content extent under `overflow:hidden`, so
+the grow loop for viewport-sized pages keeps working.
+
+NOT reproducible locally: headless Chromium reports zero overflow at DPR 1 and at
+the device's 2.625, with old and new code alike. Three attempts were needed
+because each earlier theory (WebKit, DOM churn, body.scrollHeight) was inferred
+from a symptom rather than observed. What finally narrowed it was the user
+describing the glow — ask for what the failure LOOKS like before theorising.
+
 ## Scroll fix: the shell scrolls, not the framed page (2026-08-08)
 
 Commit `dbb0cda`, released in **v4.3.0**. CONFIRMED fixed by the user on Android

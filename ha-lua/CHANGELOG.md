@@ -4,6 +4,18 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.3.2 - 2026-08-08
+
+### Fixed
+- **A script page could still swallow every scroll gesture in the companion
+  app**, painting the "cannot scroll further" glow instead of moving — worst on
+  the Heating tab, which repolls every five seconds. Chromium does not chain a
+  scroll out of a frame, so a framed page able to scroll by even one pixel (a
+  fractional content height rounding up on a device whose viewport is not a whole
+  number of CSS pixels) consumed the gesture. The framed page is now denied a
+  scroll region outright, so the gesture always reaches the shell. Nothing is
+  clipped — the frame is still as tall as the page it holds.
+
 ## 4.3.1 - 2026-08-08
 
 ### Fixed

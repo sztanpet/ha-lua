@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-08 (v4.3.1)
+Last updated: 2026-08-08 (v4.3.2)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,18 +10,18 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v4.3.1** (2026-08-08): the Heating tab needed a tap before every scroll on
-Android. The shell was ruled out by measurement (zero frame-height writes over
-16 s of the real page polling), leaving the thermostat page rebuilding every card
-on each 5 s poll — it now renders only on a real change (`6195389`) — plus a
-`fit()` gap where a viewport-sized page never grew the frame (`1d01f2f`).
-INFERRED, not observed: desktop Chromium never reproduces the touch behaviour, so
-the device is the only verdict. Awaiting the user.
+**v4.3.2** (2026-08-08, `c0ef33f`): framed pages are denied a scroll region
+(`overflow:hidden` + 2px slack) because Chromium does not chain a scroll out of a
+frame — one scrollable pixel in the framed document consumed the whole gesture
+and painted the overscroll glow, which is what the Heating tab was doing before
+every drag. Third attempt at this bug; the first two (v4.3.0 sizing, v4.3.1
+render-skip + viewport-sized growth) were inferred from symptoms. None of it
+reproduces in headless Chromium at any DPR — the device is the only verdict, so
+ASK WHAT THE FAILURE LOOKS LIKE before theorising. Detail: `state/ui-shell.md`.
 
-Before that, **v4.3.0** (tag on `4579cb4`): the shell stopped scrolling the framed
-page (`dbb0cda`, confirmed fixed on Android for the Batteries tab) and the
-Batteries page grew a per-row Ignore/Track button (`a734f9c`). Detail:
-`state/ui-shell.md`, `state/thermostat-ui.md`, `state/bundled-examples.md`.
+Before that, **v4.3.0**: the shell stopped scrolling the framed page (`dbb0cda`,
+confirmed on Android for Batteries) and the Batteries page grew a per-row
+Ignore/Track button (`a734f9c`). Detail: `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -75,8 +75,10 @@ here.
   prefix — and the 308 for a missing trailing slash writes its own Location
   header because http.Redirect would absolutize it out of the ingress prefix.
   Since v4.3.0 the framed page is NOT a scroller: the shell sizes the frame to
-  its document and scrolls `#view`, so script pages must lay out as documents
-  (no `100vh`, no `position:fixed`).
+  its document, forces `overflow:hidden` on it (Chromium never chains a scroll
+  out of a frame, so one scrollable pixel in there eats the whole gesture) and
+  scrolls `#view`. Script pages must therefore lay out as documents — no
+  `100vh`, no `position:fixed`.
 - **Debug introspection accessors never touch an `*lua.LState`** — cached fields
   and atomics only. `logbuf` WRAPS the text handler, never replaces it.
 - **The Lovelace card is one vanilla file**: plain HTML + HA CSS theme variables,
