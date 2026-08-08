@@ -9,15 +9,8 @@
   var tabs = [];
   var watching = null;
 
-  // The framed page must not be a scroller of its own. Chromium does not chain
-  // a scroll out of a frame, so a framed document that can scroll even one
-  // pixel swallows the whole gesture: it moves that pixel, paints the
-  // overscroll glow, and #view never moves. Sizing the frame to the content is
-  // not enough on its own -- a fractional content height rounds up into exactly
-  // that pixel on a device whose viewport is not a whole number of CSS pixels
-  // -- so the framed document is also denied a scroll node outright, and the
-  // frame gets slack on top. Nothing is clipped: the frame is as tall as the
-  // page, and #view does the scrolling.
+  // Chromium never chains a scroll out of a frame, so one scrollable pixel in
+  // the framed document eats the whole gesture.
   var SLACK = 2;
 
   function fit() {
@@ -27,9 +20,7 @@
     doc.documentElement.style.overflow = "hidden";
     var content = body.scrollHeight;
     frame.style.height = (content > view.clientHeight ? content + SLACK : view.clientHeight) + "px";
-    // A page sized against the viewport (html,body{height:100%}) never grows
-    // its body, so the frame would go on scrolling itself. Grow it to whatever
-    // it is trying to scroll instead; one pass converges unless it reflows.
+    // A viewport-sized page never grows its body; grow to what it scrolls.
     var root = doc.scrollingElement;
     for (var i = 0; i < 3 && root && root.scrollHeight > root.clientHeight; i++) {
       frame.style.height = (root.scrollHeight + SLACK) + "px";
@@ -42,7 +33,6 @@
     fit();
     var body = frame.contentDocument && frame.contentDocument.body;
     if (!body || !window.ResizeObserver) return;
-    // Script pages repaint on their own poll interval; the frame follows.
     watching = new ResizeObserver(fit);
     watching.observe(body);
   }

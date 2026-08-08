@@ -215,9 +215,6 @@ func TestBatteryLevelsRechargeResets(t *testing.T) {
 	}
 }
 
-// TestBatteryLevelsIgnore covers the whole point of ignoring: the battery stays
-// on the page, sorts last, loses its forecast, and its samples are dropped —
-// and tracking it again starts a fresh series rather than resurrecting the old.
 func TestBatteryLevelsIgnore(t *testing.T) {
 	now := time.Now()
 	seed := []ha.StateData{
@@ -236,7 +233,6 @@ func TestBatteryLevelsIgnore(t *testing.T) {
 	}
 	router := serveBatteryLevels(t, seed, series)
 
-	// The doorbell dies first, so it leads until it is ignored.
 	if rows := getBatteries(t, router); rows[0].EntityID != "sensor.doorbell_battery" {
 		t.Fatalf("first row = %s, want the doorbell", rows[0].EntityID)
 	}
@@ -347,8 +343,6 @@ func TestBatteryLevelsUIRendersRows(t *testing.T) {
 		t.Errorf("name-sorted order = %v, want Attic first", order)
 	}
 
-	// Ignoring from the page must sink the row without hiding it, and the
-	// button must flip so the choice can be undone.
 	var buttons []string
 	if err := chromedp.Run(ctx,
 		chromedp.Click(".row .act button", chromedp.ByQuery),

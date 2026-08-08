@@ -74,7 +74,6 @@
                 font-size:.85rem; cursor:pointer; }
   .act button:hover { color:var(--ink); }
   .act button[disabled] { opacity:.5; cursor:default; }
-  /* Ignored rows stay readable but must never compete with a dying battery. */
   .row.ignored { opacity:.55; }
   .row.ignored .bar span { background:var(--muted); }
   .row.ignored .pct { color:var(--muted); }
@@ -242,7 +241,6 @@ function sorted(batteries) {
     rows.sort((a, b) => (b.changed_ago ?? -1) - (a.changed_ago ?? -1)
                      || a.name.localeCompare(b.name));
   }
-  // Every order sinks the ignored ones, the daemon's included.
   rows.sort((a, b) => (a.ignored ? 1 : 0) - (b.ignored ? 1 : 0));
   return rows;
 }

@@ -238,7 +238,7 @@ const DAY_GROUPS = [
 const editing = new Set();  // zones with an open schedule editor (suppresses polling)
 const busy = new Set();      // zones mid-transition: open fetch in flight or close animating
 let lastState = null;
-let rendered = null;   // signature() of what the cards currently show
+let rendered = null;
 
 // Tiny hyperscript builder: h(tag, attrs?, ...children) returns a DOM node.
 // Text children become auto-escaped text nodes; element children are appended
@@ -323,8 +323,7 @@ async function poll() {
     const resp = await fetch("./api/state");
     if (!resp.ok) return;
     lastState = await resp.json();
-    // Replacing the cards throws away scroll and touch state for a beat; a
-    // 5-second poll that changed nothing must not cost that.
+    // Rebuilding the cards costs the in-flight touch gesture.
     if (signature(lastState) !== rendered) render(lastState);
   } catch (err) { /* transient; next poll retries */ }
 }
@@ -419,9 +418,8 @@ async function endDrag() {
   render(lastState);
 }
 
-// What is on screen, as a comparable string. remaining_s ticks every second but
-// the countdown is recomputed locally from it once, so it must not count as a
-// change — otherwise every poll rebuilds every card for nothing.
+// remaining_s ticks every second but the countdown is recomputed locally, so it
+// must not count as a change.
 function signature(state) {
   return JSON.stringify(state, (key, value) => key === "remaining_s" ? undefined : value);
 }

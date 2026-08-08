@@ -177,8 +177,6 @@ func TestShellRendersTabsAndFramesPage(t *testing.T) {
 	}
 }
 
-// A nested frame is not a dependable touch-scroll target, so the shell must
-// size the frame to its page and scroll #view itself.
 func TestShellFrameGrowsToPageHeight(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveShell(t, map[string]string{
@@ -209,8 +207,6 @@ func TestShellFrameGrowsToPageHeight(t *testing.T) {
 	if frameH < innerScrollH {
 		t.Errorf("iframe height = %v, want at least the page's %v", frameH, innerScrollH)
 	}
-	// One scrollable pixel in the framed document swallows the whole gesture:
-	// Chromium latches to it and never chains out to #view.
 	if innerOverflow {
 		t.Errorf("framed document can still scroll itself at frame height %v", frameH)
 	}
@@ -223,9 +219,6 @@ func TestShellFrameGrowsToPageHeight(t *testing.T) {
 	}
 }
 
-// A page that sizes itself to the viewport never grows its body, so the frame
-// has to be grown to what the page is scrolling or the nested frame stays the
-// scroller.
 func TestShellFrameGrowsForViewportSizedPage(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveShell(t, map[string]string{

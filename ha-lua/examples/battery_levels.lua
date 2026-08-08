@@ -49,9 +49,7 @@ local MAX_SAMPLES = 120
 -- entities that leave Home Assistant can be cleaned up.
 local TRACKED_KEY = "tracked"
 
--- Key holding the entity ids the page has ignored. Ignored batteries are still
--- listed — a battery you stopped caring about is not a battery you want to
--- forget exists — but they are never sampled and always sort last.
+-- Ignored batteries stay listed but are never sampled.
 local IGNORED_KEY = "ignored"
 
 local function series_key(entity_id) return "series:" .. entity_id end
@@ -290,8 +288,6 @@ ha.serve("GET", "/api/state", function()
   return 200, json.encode(scan()), JSON_HDR
 end)
 
--- Toggling ignore returns the whole rebuilt payload: the page never has to
--- guess what the daemon did with the row it just changed.
 ha.serve("POST", "/api/ignore", function(req)
   local ok, body = pcall(json.decode, req.body)
   if not ok or type(body) ~= "table" or type(body.entity_id) ~= "string" then
