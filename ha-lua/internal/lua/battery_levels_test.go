@@ -79,6 +79,7 @@ type batteryRow struct {
 	DrainPerDay *float64 `json:"drain_per_day"`
 	ETASeconds  *float64 `json:"eta_seconds"`
 	Samples     int      `json:"samples"`
+	Ignored     bool     `json:"ignored"`
 }
 
 func getBatteries(t *testing.T, router *Router) []batteryRow {
@@ -214,6 +215,80 @@ func TestBatteryLevelsRechargeResets(t *testing.T) {
 	}
 }
 
+// TestBatteryLevelsIgnore covers the whole point of ignoring: the battery stays
+// on the page, sorts last, loses its forecast, and its samples are dropped —
+// and tracking it again starts a fresh series rather than resurrecting the old.
+func TestBatteryLevelsIgnore(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.attic_battery", State: "80",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Attic"}`),
+			LastChanged: now.Add(-6 * time.Hour).UTC().Format(time.RFC3339)},
+		{EntityID: "sensor.doorbell_battery", State: "30",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Doorbell"}`),
+			LastChanged: now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.doorbell_battery": []any{
+			sample(now.Add(-5*24*time.Hour), 80),
+			sample(now.Add(-2*24*time.Hour), 50),
+		},
+	}
+	router := serveBatteryLevels(t, seed, series)
+
+	// The doorbell dies first, so it leads until it is ignored.
+	if rows := getBatteries(t, router); rows[0].EntityID != "sensor.doorbell_battery" {
+		t.Fatalf("first row = %s, want the doorbell", rows[0].EntityID)
+	}
+
+	rows := postIgnore(t, router, "sensor.doorbell_battery", true, 200)
+	if len(rows) != 2 {
+		t.Fatalf("got %d batteries after ignoring one, want both listed: %+v", len(rows), rows)
+	}
+	doorbell := rows[1]
+	if doorbell.EntityID != "sensor.doorbell_battery" || !doorbell.Ignored {
+		t.Fatalf("last row = %+v, want the ignored doorbell", doorbell)
+	}
+	if doorbell.ETASeconds != nil || doorbell.DrainPerDay != nil || doorbell.Samples != 0 {
+		t.Errorf("ignored row = %+v, want no forecast and no samples", doorbell)
+	}
+	if doorbell.Level != 30 {
+		t.Errorf("ignored level = %v, want the level still reported", doorbell.Level)
+	}
+
+	rows = postIgnore(t, router, "sensor.doorbell_battery", false, 200)
+	if rows[0].EntityID != "sensor.doorbell_battery" || rows[0].Ignored {
+		t.Fatalf("first row after tracking again = %+v, want the doorbell back on top", rows[0])
+	}
+	if rows[0].Samples != 1 || rows[0].ETASeconds != nil {
+		t.Errorf("resumed row = %+v, want a series restarted at one sample", rows[0])
+	}
+
+	postIgnore(t, router, "sensor.nonexistent_battery", true, 404)
+	if rec := doReqID(router, "battery_levels", "POST", "/api/ignore", `{"ignored":true}`); rec.Code != 400 {
+		t.Errorf("POST without an entity_id = %d, want 400", rec.Code)
+	}
+}
+
+func postIgnore(t *testing.T, router *Router, entityID string, ignored bool, wantCode int) []batteryRow {
+	t.Helper()
+	body := fmt.Sprintf(`{"entity_id":%q,"ignored":%t}`, entityID, ignored)
+	rec := doReqID(router, "battery_levels", "POST", "/api/ignore", body)
+	if rec.Code != wantCode {
+		t.Fatalf("POST /api/ignore %s status %d, want %d (body %q)", body, rec.Code, wantCode, rec.Body.String())
+	}
+	if rec.Code != 200 {
+		return nil
+	}
+	var payload struct {
+		Batteries []batteryRow `json:"batteries"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	return payload.Batteries
+}
+
 // TestBatteryLevelsUIRendersRows drives the served page in a browser: the rows
 // must arrive in the daemon's urgency order, carry the level and the forecast,
 // and the sort control must reorder them client-side.
@@ -270,6 +345,24 @@ func TestBatteryLevelsUIRendersRows(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != "Attic" {
 		t.Errorf("name-sorted order = %v, want Attic first", order)
+	}
+
+	// Ignoring from the page must sink the row without hiding it, and the
+	// button must flip so the choice can be undone.
+	var buttons []string
+	if err := chromedp.Run(ctx,
+		chromedp.Click(".row .act button", chromedp.ByQuery),
+		chromedp.WaitVisible(".row.ignored", chromedp.ByQuery),
+		chromedp.Evaluate(names, &order),
+		chromedp.Evaluate(`Array.from(document.querySelectorAll(".row .act button")).map(node => node.textContent)`, &buttons),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 2 || order[1] != "Attic" {
+		t.Errorf("order after ignoring Attic = %v, want it listed last", order)
+	}
+	if len(buttons) != 2 || buttons[1] != "Track" {
+		t.Errorf("row buttons = %v, want the ignored row offering Track", buttons)
 	}
 }
 

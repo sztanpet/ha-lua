@@ -17,17 +17,14 @@
 --   * `device_class: battery` sensors, whose state IS the percentage;
 --   * anything carrying a numeric `battery_level` attribute (device_tracker,
 --     vacuum, some locks), whose state is something else entirely.
--- Add entity ids to IGNORE to drop the ones you do not care about.
+-- The ones you do not care about (a phone you charge nightly, a test device)
+-- can be ignored from the page: they stay listed, sorted last, but are no
+-- longer sampled and get no forecast.
 
 -- How often the levels are sampled. Batteries move in whole percent steps over
 -- days, so a coarse tick is plenty and keeps the series small. The page also
 -- samples on every load, so opening it never shows a stale reading.
 local SCAN_INTERVAL = "15m"
-
--- Entity ids never listed (phones you charge nightly, test devices, ...).
-local IGNORE = {
-  -- ["sensor.my_phone_battery_level"] = true,
-}
 
 -- The level a device is considered dead at. Some hardware stops reporting well
 -- above zero; raise this if your sensors go silent at, say, 5%.
@@ -52,7 +49,28 @@ local MAX_SAMPLES = 120
 -- entities that leave Home Assistant can be cleaned up.
 local TRACKED_KEY = "tracked"
 
+-- Key holding the entity ids the page has ignored. Ignored batteries are still
+-- listed — a battery you stopped caring about is not a battery you want to
+-- forget exists — but they are never sampled and always sort last.
+local IGNORED_KEY = "ignored"
+
 local function series_key(entity_id) return "series:" .. entity_id end
+
+local function ignored_set()
+  local ids = store.get(IGNORED_KEY)
+  local set = {}
+  if type(ids) == "table" then
+    for _, entity_id in ipairs(ids) do set[entity_id] = true end
+  end
+  return set
+end
+
+local function save_ignored(set)
+  local ids = {}
+  for entity_id in pairs(set) do ids[#ids + 1] = entity_id end
+  table.sort(ids)
+  store.set(IGNORED_KEY, ids)
+end
 
 local function numeric(value)
   if type(value) == "number" then return value end
@@ -82,17 +100,15 @@ end
 local function batteries()
   local found = {}
   for _, state in ipairs(ha.get_entities("*")) do
-    if not IGNORE[state.entity_id] then
-      local level, level_is_state = battery_level(state)
-      if level ~= nil and level >= 0 and level <= 100 then
-        found[#found + 1] = {
-          entity_id = state.entity_id,
-          name = (state.attributes or {}).friendly_name or state.entity_id,
-          level = level,
-          level_is_state = level_is_state,
-          last_changed = state.last_changed,
-        }
-      end
+    local level, level_is_state = battery_level(state)
+    if level ~= nil and level >= 0 and level <= 100 then
+      found[#found + 1] = {
+        entity_id = state.entity_id,
+        name = (state.attributes or {}).friendly_name or state.entity_id,
+        level = level,
+        level_is_state = level_is_state,
+        last_changed = state.last_changed,
+      }
     end
   end
   return found
@@ -176,11 +192,13 @@ local function changed_at(battery, series)
   return reported
 end
 
--- forget_removed drops series for entities Home Assistant no longer has. An
--- entity that is merely unavailable keeps its history — a device offline for an
--- afternoon must not lose weeks of samples — so removal is judged by the entity
--- being gone from the state mirror entirely, not by it missing from this pass.
-local function forget_removed(present)
+-- forget_removed drops series for entities Home Assistant no longer has, and
+-- for the ones just ignored — ignoring means "stop tracking this", so the
+-- samples go with it. An entity that is merely unavailable keeps its history —
+-- a device offline for an afternoon must not lose weeks of samples — so removal
+-- is judged by the entity being gone from the state mirror entirely, not by it
+-- missing from this pass.
+local function forget_removed(present, ignored)
   local tracked = {}
   for _, entity_id in ipairs(present) do tracked[entity_id] = true end
 
@@ -188,7 +206,7 @@ local function forget_removed(present)
   if type(previous) == "table" then
     for _, entity_id in ipairs(previous) do
       if not tracked[entity_id] then
-        if ha.get_state(entity_id) == nil then
+        if ignored[entity_id] or ha.get_state(entity_id) == nil then
           store.delete(series_key(entity_id))
         else
           tracked[entity_id] = true
@@ -205,8 +223,9 @@ end
 
 -- Soonest to die first: entities with an ETA lead, ascending; the rest follow
 -- by level, lowest first. Name breaks every tie so the order never wobbles
--- between polls.
+-- between polls. Ignored batteries sink below the lot regardless.
 local function by_urgency(left, right)
+  if not left.ignored ~= not right.ignored then return not left.ignored end
   if (left.eta_seconds ~= nil) ~= (right.eta_seconds ~= nil) then
     return left.eta_seconds ~= nil
   end
@@ -223,31 +242,42 @@ end
 local function scan()
   local now = time.now()
   local now_unix = now:unix()
+  local ignored = ignored_set()
   local rows, present = {}, {}
 
   for _, battery in ipairs(batteries()) do
-    present[#present + 1] = battery.entity_id
-    local series = record(battery.entity_id, battery.level, now_unix)
-    local slope = drain_rate(series, battery.level, now_unix)
-    local eta_seconds
-    if slope ~= nil and battery.level > EMPTY_LEVEL then
-      eta_seconds = (battery.level - EMPTY_LEVEL) / -slope
+    if ignored[battery.entity_id] then
+      rows[#rows + 1] = {
+        entity_id = battery.entity_id,
+        name = battery.name,
+        level = battery.level,
+        ignored = true,
+        samples = 0,
+      }
+    else
+      present[#present + 1] = battery.entity_id
+      local series = record(battery.entity_id, battery.level, now_unix)
+      local slope = drain_rate(series, battery.level, now_unix)
+      local eta_seconds
+      if slope ~= nil and battery.level > EMPTY_LEVEL then
+        eta_seconds = (battery.level - EMPTY_LEVEL) / -slope
+      end
+      local moved_at = changed_at(battery, series)
+      rows[#rows + 1] = {
+        entity_id = battery.entity_id,
+        name = battery.name,
+        level = battery.level,
+        changed_ago = moved_at and (now_unix - moved_at) or nil,
+        changed_at = moved_at,
+        drain_per_day = slope and -slope * time.day or nil,
+        eta_seconds = eta_seconds,
+        empty_at = eta_seconds and now:add(eta_seconds):unix() or nil,
+        samples = #series,
+      }
     end
-    local moved_at = changed_at(battery, series)
-    rows[#rows + 1] = {
-      entity_id = battery.entity_id,
-      name = battery.name,
-      level = battery.level,
-      changed_ago = moved_at and (now_unix - moved_at) or nil,
-      changed_at = moved_at,
-      drain_per_day = slope and -slope * time.day or nil,
-      eta_seconds = eta_seconds,
-      empty_at = eta_seconds and now:add(eta_seconds):unix() or nil,
-      samples = #series,
-    }
   end
 
-  forget_removed(present)
+  forget_removed(present, ignored)
   table.sort(rows, by_urgency)
   return { generated_at = now:unix(), batteries = rows }
 end
@@ -257,6 +287,23 @@ ha.every(SCAN_INTERVAL, function() scan() end)
 local JSON_HDR = { ["Content-Type"] = "application/json" }
 
 ha.serve("GET", "/api/state", function()
+  return 200, json.encode(scan()), JSON_HDR
+end)
+
+-- Toggling ignore returns the whole rebuilt payload: the page never has to
+-- guess what the daemon did with the row it just changed.
+ha.serve("POST", "/api/ignore", function(req)
+  local ok, body = pcall(json.decode, req.body)
+  if not ok or type(body) ~= "table" or type(body.entity_id) ~= "string" then
+    return 400, json.encode({ error = "entity_id required" }), JSON_HDR
+  end
+  if ha.get_state(body.entity_id) == nil then
+    return 404, json.encode({ error = "unknown entity" }), JSON_HDR
+  end
+
+  local set = ignored_set()
+  set[body.entity_id] = body.ignored and true or nil
+  save_ignored(set)
   return 200, json.encode(scan()), JSON_HDR
 end)
 

@@ -386,8 +386,13 @@ cp /config/ha-lua/examples/battery_levels.html /config/ha-lua/scripts/
 
 There is nothing to configure: it picks up `device_class: battery` sensors
 (whose state is the percentage) and any entity carrying a numeric
-`battery_level` attribute (device trackers, vacuums, some locks). Entity ids you
-do not want listed go in the script's `IGNORE` table.
+`battery_level` attribute (device trackers, vacuums, some locks).
+
+**Ignoring a battery.** The phone you charge nightly is noise, not a forecast.
+Its row's **Ignore** button stops the script sampling it and drops the samples
+it had; the row stays on the page — dimmed, always last — with a **Track**
+button to change your mind. The choice lives in the script's KV store, so it
+survives restarts and reloads.
 
 **How the estimate works.** A rundown forecast needs weeks of history, and the
 daemon purges state history after `retention_days` (2 by default), so the script

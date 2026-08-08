@@ -41,7 +41,7 @@
   select { padding:6px 8px; border:1px solid var(--line); border-radius:8px;
            background:var(--surface); color:var(--ink); cursor:pointer; }
   .head, .row { display:grid; gap:6px 12px; align-items:center;
-                grid-template-columns:minmax(0,1fr) 150px 110px 150px; }
+                grid-template-columns:minmax(0,1fr) 150px 110px 150px 72px; }
   .head { padding:0 14px 6px; color:var(--muted); font-size:.78rem;
           font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
   .row { background:var(--card); border-radius:12px; padding:12px 14px;
@@ -68,6 +68,16 @@
   .pill.warn { background:var(--warn-soft); color:var(--warn); }
   .pill.bad  { background:var(--bad-soft);  color:var(--bad); }
   .pill.unknown { background:var(--surface); color:var(--muted); font-weight:400; }
+  .act { display:flex; justify-content:flex-end; }
+  .act button { padding:4px 10px; border:1px solid var(--line); border-radius:8px;
+                background:var(--surface); color:var(--muted); font:inherit;
+                font-size:.85rem; cursor:pointer; }
+  .act button:hover { color:var(--ink); }
+  .act button[disabled] { opacity:.5; cursor:default; }
+  /* Ignored rows stay readable but must never compete with a dying battery. */
+  .row.ignored { opacity:.55; }
+  .row.ignored .bar span { background:var(--muted); }
+  .row.ignored .pct { color:var(--muted); }
   .empty, .err { padding:16px; color:var(--muted); text-align:center; }
   .err { color:var(--bad); }
   /* One column per line below the table breakpoint; each cell grows a label so
@@ -78,7 +88,8 @@
     .cell::before { content:attr(data-label) ": "; color:var(--muted);
                     font-size:.8rem; text-transform:uppercase;
                     letter-spacing:.04em; margin-right:6px; }
-    .cell.name::before { content:none; }
+    .cell.name::before, .cell.act::before { content:none; }
+    .act { justify-content:flex-start; }
   }
 </style>
 </head>
@@ -98,7 +109,7 @@
   </label>
 </div>
 <div class="head">
-  <span>Device</span><span>Level</span><span>Last change</span><span>Empty in</span>
+  <span>Device</span><span>Level</span><span>Last change</span><span>Empty in</span><span></span>
 </div>
 <div id="app"><div class="empty">Loading…</div></div>
 
@@ -156,6 +167,11 @@ function etaClass(seconds) {
 }
 
 function etaCell(battery) {
+  if (battery.ignored) {
+    return h("div", { class: "cell eta", "data-label": "Empty in" },
+      h("span", { class: "pill unknown",
+        title: "ignored: no samples are kept and no forecast is made" }, "ignored"));
+  }
   if (battery.eta_seconds == null) {
     // No fit yet: say why in the title so the blank cell isn't a mystery.
     const samples = battery.samples || 0;
@@ -176,7 +192,7 @@ function row(battery) {
   const drain = battery.drain_per_day != null
     ? battery.drain_per_day.toFixed(1) + " %/day"
     : "";
-  return h("div", { class: "row " + levelClass(level) },
+  return h("div", { class: "row " + (battery.ignored ? "ignored " : "") + levelClass(level) },
     h("div", { class: "cell name" },
       battery.name,
       h("span", { class: "eid" }, battery.entity_id)),
@@ -188,7 +204,31 @@ function row(battery) {
                title: battery.changed_at
                  ? new Date(battery.changed_at * 1000).toLocaleString() : null },
       battery.changed_ago != null ? fmtDuration(battery.changed_ago) + " ago" : "—"),
-    etaCell(battery));
+    etaCell(battery),
+    h("div", { class: "cell act" },
+      h("button", {
+        title: battery.ignored
+          ? "Track this battery again"
+          : "Stop sampling this battery and sort it last",
+        onclick: event => setIgnored(battery, !battery.ignored, event.currentTarget)
+      }, battery.ignored ? "Track" : "Ignore")));
+}
+
+async function setIgnored(battery, ignored, button) {
+  button.disabled = true;
+  try {
+    const resp = await fetch("./api/ignore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity_id: battery.entity_id, ignored: ignored })
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    lastState = await resp.json();
+    render(lastState);
+  } catch (err) {
+    button.disabled = false;
+    button.textContent = "retry";
+  }
 }
 
 // The daemon already sorts by urgency; the other orders are pure presentation,
@@ -202,6 +242,8 @@ function sorted(batteries) {
     rows.sort((a, b) => (b.changed_ago ?? -1) - (a.changed_ago ?? -1)
                      || a.name.localeCompare(b.name));
   }
+  // Every order sinks the ignored ones, the daemon's included.
+  rows.sort((a, b) => (a.ignored ? 1 : 0) - (b.ignored ? 1 : 0));
   return rows;
 }
 
