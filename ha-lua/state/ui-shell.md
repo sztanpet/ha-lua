@@ -11,7 +11,12 @@ fix on top of that: the shell scroll fix (2026-08-08, `dbb0cda`, v4.3.0).
 
 ## Scroll fix: the shell scrolls, not the framed page (2026-08-08)
 
-Commit `dbb0cda`, released in **v4.3.0**. CONFIRMED fixed by the user on Android.
+Commit `dbb0cda`, released in **v4.3.0**. CONFIRMED fixed by the user on Android
+for the Batteries tab. Follow-up in **v4.3.1** (`1d01f2f`): `fit()` measured only
+`body.scrollHeight`, which a page sized against the viewport
+(`html,body{height:100%}`) never grows, so such a page kept scrolling itself —
+the frame is now grown to whatever the framed document is scrolling, capped at
+three passes.
 
 Symptom: opening the panel from the HA sidebar in the Android companion app left
 the first tab unscrollable until you tapped something on the page or switched

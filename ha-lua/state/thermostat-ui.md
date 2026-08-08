@@ -12,6 +12,23 @@ and dial-detected "override"→"manual". Pre-2026-06-23 notes below still say
 "boost"/"comfort"; read them as today's "override"/"override_temp". The old
 "override" (dial) is today's "manual".
 
+## Poll no longer rebuilds unchanged cards (2026-08-08, v4.3.1)
+
+Commit `6195389`. The user reported having to tap the Heating tab once before
+every scroll on Android. The shell was ruled out by measurement: with the real
+page framed in the real shell, the frame height was written ZERO times over 16 s
+of polling, and the page's geometry was correct (frame == content, framed
+document not scrollable). What was left is that `render()` cleared `#app` and
+rebuilt every card on each 5 s poll regardless of whether anything changed —
+replacing a framed document's content out from under a touch gesture. `poll()`
+now compares a `signature()` of the payload against what is on screen.
+`remaining_s` is excluded from that signature: it ticks every second while an
+override is active but the countdown is recomputed locally at render, so
+including it would defeat the check.
+
+NOT confirmed on the device yet, and the mechanism is still inferred rather than
+observed — desktop Chromium never reproduces the touch behaviour.
+
 ## VOCAB RENAME boost->override, override->manual (2026-06-23, 28a15b9)
 - The UI "boost" (timed 10/30/60-min hold) never boosted -- it is a timed
   manual override; the UI already said "Temporary override". Renamed to

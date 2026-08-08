@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-08 (v4.3.0)
+Last updated: 2026-08-08 (v4.3.1)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,13 +10,18 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v4.3.0** (2026-08-08, tag on `4579cb4`), both halves from using the Batteries
-tab in the Android companion app: the UI shell stopped scrolling the framed page
-(`dbb0cda` — the app's WebView would not touch-scroll a nested frame until it had
-been tapped; user confirmed fixed on device), and the Batteries page grew a
-per-row Ignore/Track button (`a734f9c` — KV-backed; ignored batteries stay
-listed, dim, sort last, are never sampled). Detail: `state/ui-shell.md`,
-`state/bundled-examples.md`.
+**v4.3.1** (2026-08-08): the Heating tab needed a tap before every scroll on
+Android. The shell was ruled out by measurement (zero frame-height writes over
+16 s of the real page polling), leaving the thermostat page rebuilding every card
+on each 5 s poll — it now renders only on a real change (`6195389`) — plus a
+`fit()` gap where a viewport-sized page never grew the frame (`1d01f2f`).
+INFERRED, not observed: desktop Chromium never reproduces the touch behaviour, so
+the device is the only verdict. Awaiting the user.
+
+Before that, **v4.3.0** (tag on `4579cb4`): the shell stopped scrolling the framed
+page (`dbb0cda`, confirmed fixed on Android for the Batteries tab) and the
+Batteries page grew a per-row Ignore/Track button (`a734f9c`). Detail:
+`state/ui-shell.md`, `state/thermostat-ui.md`, `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
