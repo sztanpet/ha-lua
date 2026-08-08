@@ -4,8 +4,8 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest unreleased: per-battery ignore on the Batteries page
-(2026-08-08, `26cd2e2`).
+growing on top; newest: per-battery ignore on the Batteries page (2026-08-08,
+`a734f9c`, v4.3.0).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -101,7 +101,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   client-side sort.
 
 ## battery_levels: per-battery ignore (2026-08-08)
-- Commit `26cd2e2`. UNRELEASED — no version bump yet.
+- Commit `a734f9c`. RELEASED in **v4.3.0** (2026-08-08, tag on `4579cb4`).
 - The static `IGNORE` table in the script is GONE, replaced by an `ignored`
   key in the script KV store toggled from the page (`POST /api/ignore`
   `{entity_id, ignored}`, replying with the whole rebuilt scan payload so the

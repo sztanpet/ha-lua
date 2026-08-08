@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-08 (shell scroll fix + per-battery ignore)
+Last updated: 2026-08-08 (v4.3.0: shell scroll fix + per-battery ignore)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,8 +11,8 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Two UNRELEASED changes from the same session (2026-08-08), both from using the
-Batteries tab in the Android companion app:
+Two changes from the same session, RELEASED as **v4.3.0** (2026-08-08, tag on
+`4579cb4`), both from using the Batteries tab in the Android companion app:
 1. **Shell scroll fix** (`dbb0cda`, `state/ui-shell.md`). The app's WebView would
    not hand a touch-scroll to the nested frame until it had been tapped, so the
    panel opened on a page that could not be scrolled until you tapped it or
@@ -62,12 +62,19 @@ tabbed UI shell + debug tab, v4.0.0/4.0.1/4.0.2 (2026-08-05) —
   memory mirror + background writer (event-latency-spec.md). Spec written,
   build pending review.
 - `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page
-  (ui-shell-spec.md). COMPLETE, released v4.0.0; source filter v4.2.0.
+  (ui-shell-spec.md). COMPLETE, released v4.0.0; source filter v4.2.0; scroll
+  fix v4.3.0.
 - (sse-spec.md has no implementation yet — no state file.)
 
 ## Release log
 SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
 add-on change, minor = feature, patch = fix.
+- 4.3.0 (2026-08-08): Batteries page grew a per-row Ignore/Track button
+  (KV-backed; ignored batteries stay listed, dim, sort last, are never
+  sampled), and the UI shell stopped scrolling the framed page — the
+  companion app's WebView would not touch-scroll a nested frame until it
+  had been tapped. Minor: the ignore button is new user-visible
+  behaviour. See `state/bundled-examples.md` + `state/ui-shell.md`.
 - 4.2.0 (2026-08-06): debug log panel narrows to one script (Source
   filter + `?script=` on /debug/api/logs + the id as a `[tag]`), and
   Lua `print` logs (info, script-tagged) instead of writing to the

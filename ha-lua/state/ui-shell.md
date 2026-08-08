@@ -7,11 +7,11 @@ live in `../AI.state`.
 Status: **COMPLETE — released v4.0.0, v4.0.1, v4.0.2 (all 2026-08-05).** All
 11 milestones of spec §11 are done. One addition on top, released as **v4.2.0**
 (2026-08-06): the debug log panel's per-script source filter (see below). One
-unreleased fix on top of that: the shell scroll fix (2026-08-08, `dbb0cda`).
+fix on top of that: the shell scroll fix (2026-08-08, `dbb0cda`, v4.3.0).
 
 ## Scroll fix: the shell scrolls, not the framed page (2026-08-08)
 
-Commit `dbb0cda`. UNRELEASED — no version bump yet.
+Commit `dbb0cda`. RELEASED in **v4.3.0** (2026-08-08, tag on `4579cb4`).
 
 Symptom: opening the panel from the HA sidebar in the **Android** companion app
 left the first tab (Batteries) unscrollable; tapping anything on the page, or
