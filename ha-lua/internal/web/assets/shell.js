@@ -18,6 +18,13 @@
     var body = doc && doc.body;
     if (!body) return; // cross-origin or still about:blank
     frame.style.height = Math.max(body.scrollHeight, view.clientHeight) + "px";
+    // A page sized against the viewport (html,body{height:100%}) never grows
+    // its body, so the frame would go on scrolling itself. Grow it to whatever
+    // it is trying to scroll instead; one pass converges unless it reflows.
+    var root = doc.scrollingElement;
+    for (var i = 0; i < 3 && root && root.scrollHeight > root.clientHeight + 1; i++) {
+      frame.style.height = root.scrollHeight + "px";
+    }
   }
 
   function watch() {

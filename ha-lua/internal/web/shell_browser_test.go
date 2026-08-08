@@ -182,7 +182,7 @@ func TestShellRendersTabsAndFramesPage(t *testing.T) {
 func TestShellFrameGrowsToPageHeight(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveShell(t, map[string]string{
-		"tall": tallScript("Tall", 400),
+		"tall": tallScript("Tall", 400, ""),
 	})
 
 	var frameH, viewClientH, viewScrollH, innerScrollH float64
@@ -208,11 +208,47 @@ func TestShellFrameGrowsToPageHeight(t *testing.T) {
 	}
 }
 
-func tallScript(title string, rows int) string {
+// A page that sizes itself to the viewport never grows its body, so the frame
+// has to be grown to what the page is scrolling or the nested frame stays the
+// scroller.
+func TestShellFrameGrowsForViewportSizedPage(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveShell(t, map[string]string{
+		"full": tallScript("Full", 400, `html,body{height:100%;margin:0}`),
+	})
+
+	var innerScrollable bool
+	var frameH, viewScrollH, viewClientH float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`nav a`, chromedp.ByQuery),
+		chromedp.Poll(`document.getElementById("page").clientHeight > document.getElementById("view").clientHeight`,
+			nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`(() => {
+			const inner = document.getElementById("page").contentDocument.scrollingElement;
+			return inner.scrollHeight > inner.clientHeight + 1;
+		})()`, &innerScrollable),
+		chromedp.Evaluate(`document.getElementById("page").clientHeight`, &frameH),
+		chromedp.Evaluate(`document.getElementById("view").scrollHeight`, &viewScrollH),
+		chromedp.Evaluate(`document.getElementById("view").clientHeight`, &viewClientH),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if innerScrollable {
+		t.Errorf("framed document still scrolls itself at frame height %v", frameH)
+	}
+	if viewScrollH <= viewClientH {
+		t.Errorf("#view scrollHeight %v <= clientHeight %v: the shell has nothing to scroll",
+			viewScrollH, viewClientH)
+	}
+}
+
+func tallScript(title string, rows int, css string) string {
 	return `
 ha.ui("` + title + `")
 ha.serve("GET", "/", function(req)
-  local parts = {"<!DOCTYPE html><html><body style='margin:0'>"}
+  local parts = {"<!DOCTYPE html><html><head><style>` + css + `</style></head><body style='margin:0'>"}
   for i = 1, ` + strconv.Itoa(rows) + ` do
     parts[#parts+1] = "<p style='height:40px;margin:0'>row " .. i .. "</p>"
   end
