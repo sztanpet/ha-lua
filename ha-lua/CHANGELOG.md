@@ -4,6 +4,16 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.3.1 - 2026-08-08
+
+### Fixed
+- **The Heating tab needed a tap before every scroll on Android.** Two causes,
+  both addressed: the thermostat page rebuilt every card on each 5-second poll
+  even when nothing had changed — replacing a framed page's content out from
+  under a touch gesture costs exactly that — and the shell's frame sizing did not
+  grow the frame for a page that lays itself out against the viewport
+  (`html,body{height:100%}`), leaving the framed page scrolling itself again.
+
 ## 4.3.0 - 2026-08-08
 
 ### Added
