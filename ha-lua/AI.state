@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-06 (debug log source filter + print routing, v4.2.0)
+Last updated: 2026-08-08 (iOS scroll fix in the UI shell)
 
 This file holds ONLY globally-useful state: the single thing most recently/
 currently worked on (with a pointer to its full state), an index of the per-spec
@@ -11,7 +11,15 @@ the `state/` file for the track you're touching. See CLAUDE.md "AI working state
 for the protocol (how to keep this single-latest and where new notes go).
 
 ## Latest
-Debug log panel gained a per-script **Source** filter — RELEASED as **v4.2.0**
+UI shell no longer scrolls the framed page — UNRELEASED (2026-08-08, `dbb0cda`).
+The HA companion app (Android) would not hand a touch-scroll to a nested frame
+until it has been tapped, so the sidebar panel opened on a Batteries tab that
+could not be scrolled until you tapped it or switched tabs. `shell.js` now grows
+`#page` to its document's height (ResizeObserver on the framed body) and the new
+`#view` wrapper scrolls instead; script pages must therefore lay out as
+documents, not against the viewport. Detail in `state/ui-shell.md`.
+
+Previously: debug log panel gained a per-script **Source** filter — RELEASED as **v4.2.0**
 (2026-08-06, tag on 1be2a19; 1383635 logbuf, 345016c page, cc6b124 print,
 5ff17c6 docs). `ha.log` lines were always in the panel — they carry a
 `script=<id>` slog attr — but the id sat at the tail of the attrs and one

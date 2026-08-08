@@ -6,7 +6,43 @@ live in `../AI.state`.
 
 Status: **COMPLETE — released v4.0.0, v4.0.1, v4.0.2 (all 2026-08-05).** All
 11 milestones of spec §11 are done. One addition on top, released as **v4.2.0**
-(2026-08-06): the debug log panel's per-script source filter (see below).
+(2026-08-06): the debug log panel's per-script source filter (see below). One
+unreleased fix on top of that: the shell scroll fix (2026-08-08, `dbb0cda`).
+
+## Scroll fix: the shell scrolls, not the framed page (2026-08-08)
+
+Commit `dbb0cda`. UNRELEASED — no version bump yet.
+
+Symptom: opening the panel from the HA sidebar in the **Android** companion app
+left the first tab (Batteries) unscrollable; tapping anything on the page, or
+switching to another tab, made it scroll from then on. The nested frame was
+refusing the touch-scroll gesture until it had been hit-tested by a tap.
+
+Cause: UNKNOWN, and deliberately not guessed at. It does NOT reproduce in
+desktop Chromium — a headless reproduction of the whole nesting (HA panel frame
+→ shell → script page) scrolls the framed page on first load both with wheel
+events and with emulated touch (device metrics + touch emulation + a synthetic
+drag). An earlier note here blamed WKWebView; wrong, the user is on Android.
+Nothing to do with the page's CSS or with `100dvh`.
+
+Fix: since the mechanism could not be observed, do not work around it — remove
+the dependency. The framed page is no longer a scroller at all. `shell.js` sets
+`#page`'s height to `max(body.scrollHeight, view.clientHeight)` on the frame's
+`load` and keeps it current with a `ResizeObserver` on the framed body (pages
+repaint on their own poll intervals); the new `#view` wrapper (`flex:1;
+min-height:0; overflow:auto`) does the scrolling, in the frame that does get
+gestures. `min-height:0` is load-bearing — without it the flex item's `auto`
+minimum would grow to the frame's full height and no scroller would exist.
+
+Consequence for script pages: they must lay out as a document, not against the
+viewport. `100vh`/`100dvh` and `position:fixed` inside a framed page now
+measure against the whole page height, not the visible strip. None of the
+bundled pages did that (debug.html's log/stacks panels are fixed-px, which is
+fine); worth remembering before writing a new one.
+
+Not verified on the user's device at the time of writing — the desktop path is
+covered by `TestShellFrameGrowsToPageHeight`, but whether the companion app is
+happy is the user's to confirm.
 
 ## Debug log panel: per-script source filter (RELEASED v4.2.0, 2026-08-06)
 
