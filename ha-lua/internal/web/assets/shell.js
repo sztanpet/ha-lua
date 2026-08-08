@@ -4,8 +4,35 @@
   "use strict";
 
   var nav = document.getElementById("tabs");
+  var view = document.getElementById("view");
   var frame = document.getElementById("page");
   var tabs = [];
+  var watching = null;
+
+  // The framed page must not be a scroller of its own: in the HA companion
+  // app's WebView a nested frame ignored touch-scrolls until it had been tapped
+  // once. Growing the iframe to its document's height leaves #view as the only
+  // scroller.
+  function fit() {
+    var doc = frame.contentDocument;
+    var body = doc && doc.body;
+    if (!body) return; // cross-origin or still about:blank
+    frame.style.height = Math.max(body.scrollHeight, view.clientHeight) + "px";
+  }
+
+  function watch() {
+    if (watching) watching.disconnect();
+    watching = null;
+    fit();
+    var body = frame.contentDocument && frame.contentDocument.body;
+    if (!body || !window.ResizeObserver) return;
+    // Script pages repaint on their own poll interval; the frame follows.
+    watching = new ResizeObserver(fit);
+    watching.observe(body);
+  }
+
+  frame.addEventListener("load", watch);
+  window.addEventListener("resize", fit);
 
   function activeID() {
     var wanted = decodeURIComponent(location.hash.replace(/^#/, ""));
@@ -30,7 +57,10 @@
     var tab = tabs.find(function (candidate) { return candidate.id === active; });
     // Re-assigning the same src would reload the page and lose its state.
     var src = tab ? tab.path : "about:blank";
-    if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
+    if (frame.getAttribute("src") !== src) {
+      frame.setAttribute("src", src);
+      view.scrollTop = 0; // #view outlives the page it scrolls
+    }
     document.title = tab ? "ha-lua — " + tab.title : "ha-lua";
   }
 

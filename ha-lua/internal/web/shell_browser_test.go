@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +175,51 @@ func TestShellRendersTabsAndFramesPage(t *testing.T) {
 	if framed != "alpha page" {
 		t.Fatalf("framed document = %q, want the alpha script's page", framed)
 	}
+}
+
+// A nested frame is not a dependable touch-scroll target, so the shell must
+// size the frame to its page and scroll #view itself.
+func TestShellFrameGrowsToPageHeight(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveShell(t, map[string]string{
+		"tall": tallScript("Tall", 400),
+	})
+
+	var frameH, viewClientH, viewScrollH, innerScrollH float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`nav a`, chromedp.ByQuery),
+		chromedp.Poll(`document.getElementById("page").clientHeight > document.getElementById("view").clientHeight`,
+			nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`document.getElementById("page").clientHeight`, &frameH),
+		chromedp.Evaluate(`document.getElementById("view").clientHeight`, &viewClientH),
+		chromedp.Evaluate(`document.getElementById("view").scrollHeight`, &viewScrollH),
+		chromedp.Evaluate(`document.getElementById("page").contentDocument.scrollingElement.scrollHeight`, &innerScrollH),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if frameH < innerScrollH {
+		t.Errorf("iframe height = %v, want at least the page's %v", frameH, innerScrollH)
+	}
+	if viewScrollH <= viewClientH {
+		t.Errorf("#view scrollHeight %v <= clientHeight %v: the shell has nothing to scroll",
+			viewScrollH, viewClientH)
+	}
+}
+
+func tallScript(title string, rows int) string {
+	return `
+ha.ui("` + title + `")
+ha.serve("GET", "/", function(req)
+  local parts = {"<!DOCTYPE html><html><body style='margin:0'>"}
+  for i = 1, ` + strconv.Itoa(rows) + ` do
+    parts[#parts+1] = "<p style='height:40px;margin:0'>row " .. i .. "</p>"
+  end
+  parts[#parts+1] = "</body></html>"
+  return 200, table.concat(parts), {["Content-Type"]="text/html"}
+end)
+`
 }
 
 func TestShellSwitchesTabOnHash(t *testing.T) {
