@@ -4,6 +4,26 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.3.0 - 2026-08-08
+
+### Added
+- **Batteries you do not care about can be ignored from the page.** Every row on
+  the **Batteries** tab gets an **Ignore** button: the battery stays listed with
+  its level — dimmed and always sorted last, so you can still see it is there —
+  but the script stops sampling it, drops the samples it had, and makes no
+  forecast for it. **Track** puts it back, starting a fresh series rather than
+  resuming a stale drain rate. The choice is stored per script and survives
+  restarts, replacing the `IGNORE` table that had to be edited in the script.
+
+### Fixed
+- **The web UI would not scroll in the Home Assistant companion app** until you
+  tapped something on the page or switched tabs: the app's WebView did not treat
+  the framed script page as a scroll target until it had been touched. The shell
+  no longer asks it to — the frame is now sized to its page and the shell itself
+  does the scrolling. A script page that lays itself out against the viewport
+  (`100vh`, `position:fixed`) now measures against the whole page height instead
+  of the visible strip; none of the bundled pages do.
+
 ## 4.2.0 - 2026-08-06
 
 ### Added
