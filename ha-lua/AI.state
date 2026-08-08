@@ -1,260 +1,123 @@
 # AI Working State
-Last updated: 2026-08-08 (v4.3.0: shell scroll fix + per-battery ignore)
+Last updated: 2026-08-08 (v4.3.0)
 
-This file holds ONLY globally-useful state: the single thing most recently/
-currently worked on (with a pointer to its full state), an index of the per-spec
-state files, the release log, and the cross-cutting decisions/preferences.
+Small on purpose: where the work stopped, where the detail lives, and the
+cross-cutting decisions that must not be re-litigated. Everything that can be
+read off the code, CLAUDE.md, CHANGELOG.md or git history is deliberately NOT
+here.
 
-**Detailed, spec-scoped working state lives in `state/<track>.md`** — one file
-per spec, each linked from its spec's header. Read AI.state first; then read only
-the `state/` file for the track you're touching. See CLAUDE.md "AI working state"
-for the protocol (how to keep this single-latest and where new notes go).
+Read this first. Then read `state/<track>.md` for the track you are touching —
+and only that one.
 
 ## Latest
-Two changes from the same session, RELEASED as **v4.3.0** (2026-08-08, tag on
-`4579cb4`), both from using the Batteries tab in the Android companion app:
-1. **Shell scroll fix** (`dbb0cda`, `state/ui-shell.md`). The app's WebView would
-   not hand a touch-scroll to the nested frame until it had been tapped, so the
-   panel opened on a page that could not be scrolled until you tapped it or
-   switched tabs. Not reproducible in desktop Chromium (wheel or emulated touch)
-   and the mechanism was never observed, so the dependency was removed instead of
-   worked around: `shell.js` grows `#page` to its document's height
-   (ResizeObserver on the framed body) and the new `#view` wrapper scrolls — so
-   script pages must lay out as documents, not against the viewport (no `100vh`,
-   no `position:fixed`).
-2. **Per-battery ignore** (`26cd2e2`, `state/bundled-examples.md`). The script's
-   static `IGNORE` table is replaced by an `ignored` KV key toggled from the page:
-   ignored batteries stay listed with their level, dim, sort last everywhere, and
-   are never sampled (their series is dropped).
-
-Previously: debug log panel gained a per-script **Source** filter — RELEASED as **v4.2.0**
-(2026-08-06, tag on 1be2a19; 1383635 logbuf, 345016c page, cc6b124 print,
-5ff17c6 docs). `ha.log` lines were always in the panel — they carry a
-`script=<id>` slog attr — but the id sat at the tail of the attrs and one
-chatty script buried the rest. `logbuf.Snapshot` now takes a
-`Query{Since, Level, Script}` (`""` everything / `"*"` any script / exact id),
-`/debug/api/logs?script=` exposes it, and the page renders the id as a `[tag]`
-after the timestamp with a Source select rebuilt from the loaded scripts.
-ONE panel, filtered — the user explicitly steered away from a second panel.
-`print` is now a log call too (info, script-tagged) instead of writing to the
-daemon's stdout. Detail in `state/ui-shell.md`.
-
-Previously: the service_api + battery_levels bundled examples, released as
-**v4.1.0** (2026-08-06, tag on defe8a2) — `state/bundled-examples.md`; and the
-tabbed UI shell + debug tab, v4.0.0/4.0.1/4.0.2 (2026-08-05) —
-`state/ui-shell.md`.
+**v4.3.0** (2026-08-08, tag on `4579cb4`), both halves from using the Batteries
+tab in the Android companion app: the UI shell stopped scrolling the framed page
+(`dbb0cda` — the app's WebView would not touch-scroll a nested frame until it had
+been tapped; user confirmed fixed on device), and the Batteries page grew a
+per-row Ignore/Track button (`a734f9c` — KV-backed; ignored batteries stay
+listed, dim, sort last, are never sampled). Detail: `state/ui-shell.md`,
+`state/bundled-examples.md`.
 
 ## State files (per spec)
-- `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE, M1–12.
-- `state/thermostat-ui.md` — thermostat web UI + heating example scripts
-  (thermostat/heating_windows/valve_watch, lib/zones) (thermostat-ui-spec.md).
-  COMPLETE.
-- `state/fs-plugin.md` — Lua `fs` module, read+write, rooted log_file
-  (fs-plugin-spec.md). COMPLETE.
-- `state/bundled-examples.md` — read-only examples tree + Materialize
-  (load-examples-spec.md). COMPLETE.
-- `state/enhanced-climate.md` — REST/command transport + enhanced_climate example
-  + Lovelace card (enhanced-climate-spec.md). Released v2.7.0, card at 0.3.8.
-- `state/code-review.md` — whole-codebase review findings + fix status
-  (no spec; review track). Round 1 2026-07-01 (CLOSED, v2.8.9), round 2
-  2026-07-25 (CLOSED, v3.2.2).
-- `state/event-latency.md` — event-to-action latency: async call_service +
-  memory mirror + background writer (event-latency-spec.md). Spec written,
-  build pending review.
-- `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page
-  (ui-shell-spec.md). COMPLETE, released v4.0.0; source filter v4.2.0; scroll
-  fix v4.3.0.
-- (sse-spec.md has no implementation yet — no state file.)
+- `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
+- `state/thermostat-ui.md` — thermostat UI + heating example scripts. COMPLETE.
+- `state/fs-plugin.md` — Lua `fs` module, rooted log_file. COMPLETE.
+- `state/bundled-examples.md` — examples tree + Materialize; battery_levels and
+  service_api live here.
+- `state/enhanced-climate.md` — REST/command transport, enhanced_climate example,
+  Lovelace card.
+- `state/event-latency.md` — async call_service, memory mirror, write-behind.
+- `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page, web shell.
+- `state/code-review.md` — review rounds 1 (v2.8.9) and 2 (v3.2.2), both CLOSED.
+- (sse-spec.md has no implementation and no state file.)
 
-## Release log
-SemVer; source of truth is config.yaml `version:`. Major = breaking Lua API /
-add-on change, minor = feature, patch = fix.
-- 4.3.0 (2026-08-08): Batteries page grew a per-row Ignore/Track button
-  (KV-backed; ignored batteries stay listed, dim, sort last, are never
-  sampled), and the UI shell stopped scrolling the framed page — the
-  companion app's WebView would not touch-scroll a nested frame until it
-  had been tapped. Minor: the ignore button is new user-visible
-  behaviour. See `state/bundled-examples.md` + `state/ui-shell.md`.
-- 4.2.0 (2026-08-06): debug log panel narrows to one script (Source
-  filter + `?script=` on /debug/api/logs + the id as a `[tag]`), and
-  Lua `print` logs (info, script-tagged) instead of writing to the
-  daemon's stdout. Minor, not major: print's formatting and every
-  script's code are unchanged, only where the line lands. See
-  `state/ui-shell.md`.
-- 4.1.0 (2026-08-06): two new bundled examples -- service_api (one
-  endpoint that calls any HA service from a shell script, plus a
-  Service API tab that builds the URL/curl and carries the token) and
-  battery_levels (Batteries tab with a KV-backed rundown forecast).
-  Minor: examples are user-visible, nothing in the daemon changed. See
-  `state/bundled-examples.md`.
-- 4.0.2 (2026-08-05): debug page renders routes and timers one per
-  line (comma-joined routes; timers' newlines were collapsed by
-  white-space:normal). See `state/ui-shell.md`.
-- 4.0.1 (2026-08-05): debug page script list stopped reshuffling
-  (Registry.All ranged over a map; now id-ordered, tab sort stable on
-  top); sidebar panel renamed Heating -> HA Lua with a Lua icon; debug
-  page flags a script serving GET "/" without ha.ui. See
-  `state/ui-shell.md`.
-- 4.0.0 (2026-08-05): BREAKING — script UIs moved from `/` to
-  `/s/<script_id>/`; the daemon owns `/` and serves a tab bar (one tab
-  per `ha.ui(title)` script, plus Debug) hosting pages in an iframe.
-  New: debug page with runtime/HA/storage/script stats, live log tail
-  (`internal/logbuf`), on-demand goroutine dump; `--version` stamped
-  from config.yaml. See `state/ui-shell.md`.
-- 3.3.0 (2026-07-31): pprof goroutine labels daemon-wide, script id on
-  script goroutines and UI requests. Minor, not patch: nothing was
-  broken, it adds a diagnostic capability. See `state/core-daemon.md`.
-- 3.2.2 (2026-07-25): five review fixes — cyclic-table stack overflow
-  (fatal, killed the daemon), StopScript unregistering a newer runner
-  outside the lock, ha.after keepIDs leak from callbacks, time
-  __tostring on the wrong table, time.Local data race. See
-  `state/code-review.md` round 2.
-- 3.2.1 (2026-07-08): mirrored_switches fast-toggle fix — echo attribution
-  (FIFO of expected reports) replaces the reported-state guard that lost
-  commands at ~4 toggles/sec; regression tests drive the real example
-  file. Script-only fix. See `state/event-latency.md` round 4.
-- 3.2.0 (2026-07-07): states mirror table retired — memory-authoritative
-  since 3.1.0; seed dedups vs memory (reconnect) / newest history row
-  (cold start); schema DROPs the table on upgrade; seed appends ride the
-  write-behind queue. See `state/event-latency.md` (phase 2 + review).
-- 3.1.0 (2026-07-07): event-latency track — call_service { wait = false }
-  (async verdict → on_exception), memory-authoritative state mirror,
-  write-behind batched persistence, dispatch-delay warn logs. See
-  `state/event-latency.md`.
-- 3.0.1 (2026-07-07): latency fixes — SQLite synchronous=NORMAL (fsync
-  jitter was on the event-dispatch critical path); mirrored_switches
-  example opts into ha.immediate_events(); 100 ms batch window documented
-  loudly. See `state/bundled-examples.md`.
-- 3.0.0 (2026-07-03): fs write support (write/append/mkdir/remove on the
-  scripts root) + BREAKING ha.exceptions.log_file paths now relative to
-  log_dir (own os.Root; abs/../unset-log_dir raise at registration);
-  rooted LoadAll enumeration. See `state/fs-plugin.md`.
-- 2.9.3 (2026-07-02): dependency updates — coder/websocket v1.8.15,
-  modernc.org/sqlite v1.53.0, go-json-experiment/json latest. No vulns,
-  no API changes.
-- 2.9.2 (2026-07-02): card 0.3.32 — held badge tooltip works on touch:
-  tap toggles the explanation as an inline note (title attr is hover-only).
-  See `state/enhanced-climate.md`.
-- 2.9.1 (2026-07-02): card 0.3.31 — radiator temp honours the sensor's
-  "Display precision" entity setting, else one decimal (was raw float).
-  See `state/enhanced-climate.md`.
-- 2.9.0 (2026-07-02): card 0.3.30 — display-only `radiator_entity` option:
-  radiator temp as a `rad. X°` status-line segment (valve-health at a
-  glance). See `state/enhanced-climate.md`.
-- 2.8.12 (2026-07-02): card 0.3.29 — override row on one line: segmented
-  duration pill (flexing segments) + stepper-first ordering; active state
-  is countdown + Stop only. See `state/enhanced-climate.md`.
-- 2.8.11 (2026-07-02): card 0.3.28 — held badge onto the title row (was
-  floating between title and subtitle); add-on icon.png + tools/icon
-  generator. See `state/enhanced-climate.md`.
-- 2.8.10 (2026-07-02): card 0.3.27 — window open/closed moved onto the
-  subtitle status line; held-until clock honours hass.locale.time_format
-  (24h profiles no longer get AM/PM); held badge gained a tooltip explaining
-  the manual hold. See `state/enhanced-climate.md`.
-- 2.8.9 (2026-07-02): card 0.3.25 — whole-codebase review fixes: seed prunes
-  ghost entities (Seed = full snapshot now), load-time ha.after rows survive
-  PruneScript, http stdlib 30s timeout, SMTP 30s deadline (no more StopScript
-  hang), log_level warning, card renders only on relevant changes. See
-  `state/code-review.md`.
-- 2.8.8 (2026-06-26): card 0.3.24 — fire commands over the websocket (callWS
-  fire_event) instead of a REST fetch; the fetch tripped Firefox 152 Local Network
-  Access and dropped the live wss:// connection on every command. SOLVED 2.8.7's
-  open issue. See `state/enhanced-climate.md`.
-- 2.8.7 (2026-06-26): card 0.3.23 — "Applying…" spinner on override actions
-  (optimism-free, clears on companion push) + opt-in localStorage "ha-lua-debug"
-  tracing + VERSION banner bump (had drifted to 0.3.21). Investigating a Firefox
-  152 Local Network Access + split-horizon DNS WS-interruption report (not card/
-  daemon logic — both ruled out). See `state/enhanced-climate.md`.
-- 2.8.6 (2026-06-26): card 0.3.22 — EDITOR configure-storm fix: dedupe by
-  (entity,config) not entity (two cards/one entity ping-ponged while editing) +
-  editor preview never provisions (this.preview, deferred to microtask). See
-  `state/enhanced-climate.md`.
-- 2.8.5 (2026-06-26): card 0.3.21 — DEFINITIVE configure-storm fix: deleted the
-  reconciler, configure is now strictly fire-once per config. See `state/enhanced-climate.md`.
-- 2.8.4 (2026-06-26): card 0.3.20 — terminate the reconcile retry loop (daemon
-  republishes companion on every configure) + fix editor window picker (ha-entities-
-  picker gone → single ha-entity-picker). See `state/enhanced-climate.md`.
-- 2.8.3 (2026-06-26): card 0.3.19 — REAL fix for the configure storm (2.8.2's
-  per-instance guard lost the card-recreation race); configure reworked as
-  module-level reconciliation. See `state/enhanced-climate.md`.
-- 2.8.2 (2026-06-26): card 0.3.18 — first (insufficient) configure-storm fix +
-  skip rewriting unchanged companion sensors every minute.
-- 2.8.1 (2026-06-26): card 0.3.17 — setpoint stepper fused into one pill + HVAC
-  mode icons right-align beside the stepper. See `state/enhanced-climate.md`.
-- 2.7.0–2.7.4 (2026-06-25): enhanced-climate transport + example + card, then
-  card fixes/polish. See `state/enhanced-climate.md`.
-- 2.6.0 (2026-06-23): boost->override / override->manual vocab rename (examples).
-- 2.5.0 (2026-06-23): drag-to-reorder thermostat cards, backend-persisted.
-- 2.4.0 (2026-06-23): thermostat status badge ("on"/"heating").
-- 2.3.0 (2026-06-23): comfort+schedule device-range bounds; call_service result
-  checking (CallService is now synchronous — waits for HA's ack).
-- 2.2.0 (2026-06-22): read-only bundled examples dir.
-- 2.1.0 (2026-06-21): comfort stepper 0.5°->0.1°.
-- 2.0.0: get_history `since` string->time BC break.
-- 1.3.0: scripts moved to /config dir. 1.2.0: fs plugin. 1.1.0: thermostat UI.
-  1.0.0: initial add-on.
+Released versions and what shipped in them: `CHANGELOG.md`. Do not mirror it
+here.
 
 ## Key decisions (do not re-litigate without good reason)
-- **State scope**: full history log (append-only) + current-state mirror for fast get_state
-- **Lua concurrency**: one LState per script goroutine, never shared
-- **Script registration**: in-script (ha.on_state_change style), no external manifest
-- **KV encoding**: JSON round-trip via github.com/go-json-experiment/json (json/v2)
-- **Global KV**: separate global_kv table (not a reserved script_id in script_kv); no proxy — use global.get/set directly
-- **Timer IDs (every/at)**: stable key = script_id|type|spec|N; INSERT OR IGNORE preserves last_run/next_run across reloads
-- **Timer IDs (after)**: UUID per call; row deleted after firing; orphaned rows cleaned up on startup
-- **ha.after persistence**: best-effort — survives restart only if called at load time; callback-registered timers are dropped and logged on restart
-- **Catch-up semantics**: fire at most once per missed timer (not replay all missed intervals)
-- **Scheduler coupling**: scheduler sends TimerFiredEvent via onFire callback → script channel; scheduler does not hold *lua.LFunction references
-- **HA add-on**: repo root = add-on directory; supervisor injects SUPERVISOR_TOKEN + ws://supervisor/core/websocket; scripts at /config/ha-lua/scripts/ (HA config dir mounted at /config via homeassistant_config + path:/config, like ESPHome — NOT addon_config, which hides files in a private /addon_configs/<slug> folder); DB at /data/ha-lua.db; user options from /data/options.json
-- **Core REST API**: ha.set_state/remove_state ride POST/DELETE /api/states/{id}; the REST base is DERIVED from the WS URL in ha.New (no config field); bindings are NON-RAISING (value|nil,err) so per-minute publishers can't spam on_exception
-- **Card assets**: bundled in the `cards/` embed package and Materialized to /config/www/ha-lua on boot (served at /local/ha-lua/...); a card fix only reaches a user after a new image + add-on restart. The card needs an admin HA user to fire ha_lua_command
-- **Config**: production reads /data/options.json; development uses --config flag pointing to config.dev.yaml
-- **Logging**: slog TextHandler writes to stderr (Supervisor add-on log) and, when cfg.LogDir set, also to <LogDir>/ha-lua.log via io.MultiWriter; add-on mode forces LogDir=/config/ha-lua/logs, dev leaves it empty (stderr only). File open is best-effort (warn + stderr-only on failure). NO rotation yet. ha.exceptions.log_file MkdirAll's the parent
-- **Lua sandbox**: SkipOpenLibs=true; open base/math/string/table/os/coroutine selectively; nil out load/loadfile/dofile/io/debug/package/os.execute/os.exit; replace require with restricted loader (scripts/lib/ only)
-- **Error handling**: every callback dispatch wrapped in pcall; on error build exception info table {script_id, error, traceback, callback, event, timestamp} and call registered on_exception handler; slog.Error fallback if no handler; ha.exceptions.email uses net/smtp, ha.exceptions.log_file uses os.OpenFile append
-- **JSON library**: github.com/go-json-experiment/json everywhere — strict UTF-8; import path changes to encoding/json/v2 when stdlib proposal lands. Deterministic key order is NOT the default: every marshal site that needs stable output must pass json.Deterministic(true) (luaMarshal does)
-- **Lua stdlib modules**: strings, time, json (v2), re (kept — user explicitly disagreed with cutting it), http, crypto (md5/sha1/sha256/sha512/hmac_sha256/hmac_sha512/base64/hex/rand/equal); math augmentation (round/clamp/log2/sign)
-- **call_service**: SYNCHRONOUS since 2.3.0 — SendCommandWaitResult registers a waiter by msg id, routes the "result" frame back, success:false -> error carrying HA's message; 10s timeout + drain-on-disconnect. FireEvent stays fire-and-forget
-- **Tests**: real SQLite (:memory:) everywhere, no mocks; table-driven; helpers in internal/testutil/db.go. Browser tests via chromedp, skip cleanly with no browser. Card: node --check + chromedp harness against the embed FS
-- **Benchmark regression**: benchstat comparison is informational only — bench-compare target prints output but does not fail the build; no cmd/bench-check tool
-- **Purge**: single DELETE for rows older than retention_days (default 2); no downsampling; no stats tables; Purger.RunOnce() for tests
-- **Retention config**: state_history.retention_days default 2; purge_interval default "1h"
-- **Purge cutoff**: computed in Go as RFC3339 and bound as a parameter — never datetime('now',...) in SQL (format mismatch vs RFC3339 changed_at breaks string comparison)
-- **Seed dedup**: state_history row on seed only when state/attributes differ from mirror (reconnects must not pollute history)
-- **require semantics**: per-LState loaded-module cache + circular-require error (not bare DoFile)
-- **http timeout**: shared client with a fixed 30s Timeout (stdlib_http.go) + the script's lifetime context; no per-callback context and no timeout config option (the old "callback context (5s)" note was never implemented)
-- **Email cooldown**: per-script window (config.cooldown, default "15m"), suppressed errors counted and reported in next send; log_file is unlimited (but size-capped: active + one .1 backup)
-- **Rooted filesystem IO (v3.0.0)**: TWO process-wide os.Roots — scripts root (fs module incl. write/append/mkdir/remove, require, LoadAll enumeration) and logs root over log_dir (ha.exceptions.log_file, relative paths only, raises at registration on abs/../unset log_dir)
-- **ha.at timezone**: timezone config option → $TZ → UTC-with-warning; time/tzdata embedded; next_run stored UTC. main also sets time.Local from the timezone so script time.now() agrees with the scheduler
-- **Prod config channel**: /data/options.json + $SUPERVISOR_TOKEN only; run.sh passes no flags
-- **golangci-lint**: v2.12.2 (config format version "2"); a `tool` dependency in go.mod alongside staticcheck and benchstat — run via `go tool golangci-lint run`, never go install or a release binary; errcheck excludes deferred-cleanup calls (Tx.Rollback, Rows.Close, DB.Close, websocket Conn.CloseNow, fsnotify Watcher.Close, os.Root.Close) — configure the tool, don't litter the code with `_ =`
-- **Tool dependencies**: staticcheck, benchstat, golangci-lint are `tool` directives in go.mod (Go 1.24+ idiom; tools.go removed). `make` targets call them as `go tool <name>`. Root `make install-tools` only runs `go mod download`; nothing lands in a bin dir
-- **SQLite DSN**: modernc.org/sqlite pragmas use `_pragma=name(value)` — mattn-style params are silently ignored; any new DB open site must use the modernc form (TestOpenDBEnablesWAL is the canary)
-- **SQLite synchronous=NORMAL** (not the FULL default): every state_changed commits on the write handle before dispatch, and at FULL that fsync's jitter (ms–tens of ms on HA flash) lands directly on script handler latency. WAL+NORMAL loses at most the last commits on power cut, never corrupts; the mirror re-seeds from HA, history is throwaway, timers rebuild at load — do NOT "fix durability" back to FULL
-- **Script stop semantics**: drain (close channel) not kill; 5s grace then per-script context cancel aborts the VM; registry removal always precedes channel close
-- **Hot reload trigger**: debounce 300ms per script, then stat the file — present → reload, absent → stop; never decide from fsnotify event types (atomic saves lie). The watcher only watches .lua — editing a sibling .html alone does NOT reload
-- **Seed delivery**: client.States stays open forever, capacity 1, newest batch wins; one batch per (re)connect
-- **Event batching**: 100 ms per-script coalescing window (runner.go batchWindow) is the default because unbatched bursts REALLY dropped events (overflowed script channels) before batching existed; latency-sensitive scripts opt out per-script via ha.immediate_events() (do NOT make immediate the default or lower the window). Tracker apply stays BEFORE Dispatch in main.go — handlers read fresh state via ha.get_state
-- **State mirror (v3.1.0, states table retired right after)**: current state is memory-authoritative (RWMutex map in Tracker, applied before dispatch); only state_history is persisted, write-behind via one goroutine batching a 1024-cap queue into single transactions (full queue blocks with warn — never drop silently; failed batch retried once then dropped loudly). Seed stays synchronous; dedup baseline = memory on reconnect, newest history row per entity on cold start. Accepted corollary: an entity whose history aged out entirely gets one baseline row per restart. The old "State scope: history log + current-state mirror" decision is superseded for the mirror half
-- **call_service wait=false (v3.1.0)**: opts 4th arg; send is synchronous+ordered (SendCommandAsync), verdict awaited off-loop, rejection → on_exception via runner.asyncErrCh (never-closed channel — event channel closes on stop). Default STAYS wait=true; do not flip it
-- **Lua VM stays gopher-lua**: arnodel/golua (Lua 5.4/5.5) evaluated 2026-06-13 and rejected — v0.x single-maintainer vs battle-tested v1.x; CPS binding API is more verbose than LState stack API across ~30 bindings; M6 stop semantics depend on SetContext; 5.3+ integers would split the number type through the whole JSON layer. Reasons documented in README. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real script-author problem
-- **Web namespacing (v4.0.0)**: script routes mount at `/s/<id>/` (`lua.Mount`), path stripped before Lua sees it; the daemon owns `/`. The shell is ONE document hosting pages in an **iframe** — never inject into or rewrite a script's HTML (auto-injection and an SPA splice were both rejected). Every URL the shell emits is relative; the 308 for a missing trailing slash writes its own Location header because http.Redirect would absolutize it and escape the ingress prefix
-- **Debug introspection**: accessors (`Runner.Stats`, `Tracker.Stats`, `Client.Stats`, `Scheduler.Timers`) must never touch an `*lua.LState` — cached-after-load fields plus atomics only. `logbuf` WRAPS the text handler, never replaces it
-- **Card components**: the Lovelace card uses plain HTML + HA CSS theme variables, NOT HA's undocumented styling primitives (ha-button/ha-switch/...), which churn across releases. It DOES use the load-safe ones: <ha-card>, <ha-icon>, and ha-entity-picker/ha-entities-picker in the config editor (flagged as version-fragile). No build step, no imports — one vanilla file
-- **No vendoring**: vendor/ measures 241MB (226MB = modernc.org); go.sum + module proxy pin and preserve everything; `go mod vendor` is one command away if hermetic offline builds are ever needed
-- **Dependency updates**: `make update-deps` (go get -u -t ./... + go get -u tool + tidy); analyzers update via the tool meta-pattern
+- **Lua VM stays gopher-lua.** arnodel/golua (5.4/5.5) evaluated 2026-06-13 and
+  rejected: v0.x single-maintainer, verbose CPS bindings across ~30 sites, stop
+  semantics need SetContext, 5.3+ integers would split the number type through
+  the JSON layer. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real
+  problem for script authors.
+- **Event batching stays 100 ms by default** (`runner.go` batchWindow). Unbatched
+  bursts REALLY overflowed script channels and dropped events — that is why it
+  exists. Latency-sensitive scripts opt out with `ha.immediate_events()`; do not
+  make immediate the default. Tracker apply stays BEFORE Dispatch in main.go so
+  handlers read fresh state.
+- **SQLite `synchronous=NORMAL`, not FULL.** Every state_changed commits on the
+  write handle before dispatch; FULL's fsync jitter lands straight on handler
+  latency. The mirror re-seeds from HA, history is throwaway, timers rebuild —
+  do NOT "fix durability" back to FULL.
+- **SQLite DSN pragmas must use `_pragma=name(value)`** — modernc silently
+  ignores mattn-style params. `TestOpenDBEnablesWAL` is the canary.
+- **Purge cutoff is computed in Go as RFC3339 and bound as a parameter** — never
+  `datetime('now',…)` in SQL; the format mismatch breaks the string comparison.
+- **History is write-behind and must never drop silently**: one goroutine batches
+  a 1024-cap queue into single transactions; a full queue blocks with a warn, a
+  failed batch is retried once then dropped loudly. Corollary accepted: an entity
+  whose history aged out entirely gets one baseline row per restart.
+- **`call_service` stays synchronous by default.** `wait = false` sends in order
+  and routes the rejection to `on_exception` off-loop; do not flip the default.
+- **`ha.after` persistence is best-effort** — it survives a restart only if
+  registered at load time; callback-registered timers are dropped and logged.
+  Catch-up fires a missed timer at most once, never replays every interval.
+- **Scripts register themselves in-script** (`ha.on_state_change` style). No
+  external manifest, ever.
+- **Web shell: one document, script pages in an iframe.** Never inject into or
+  rewrite a script's HTML (auto-injection and an SPA splice were both rejected).
+  Every URL the shell emits is relative — under ingress it cannot know its
+  prefix — and the 308 for a missing trailing slash writes its own Location
+  header because http.Redirect would absolutize it out of the ingress prefix.
+  Since v4.3.0 the framed page is NOT a scroller: the shell sizes the frame to
+  its document and scrolls `#view`, so script pages must lay out as documents
+  (no `100vh`, no `position:fixed`).
+- **Debug introspection accessors never touch an `*lua.LState`** — cached fields
+  and atomics only. `logbuf` WRAPS the text handler, never replaces it.
+- **The Lovelace card is one vanilla file**: plain HTML + HA CSS theme variables,
+  never HA's undocumented styling primitives (`ha-button`, `ha-switch`, …) which
+  churn across releases. `<ha-card>`, `<ha-icon>` and the editor's entity pickers
+  are the allowed exceptions. Card assets are Materialized to /config/www/ha-lua
+  on boot, so a card fix reaches a user only after a new image AND a restart.
+- **Add-on layout**: the HA config dir is mounted at `/config` via
+  `homeassistant_config` + `path: /config` (like ESPHome) — NOT `addon_config`,
+  which hides files in a private `/addon_configs/<slug>`. Options arrive as
+  `/data/options.json` + `$SUPERVISOR_TOKEN`; run.sh passes no flags.
+- **Two rooted filesystems**: scripts root (fs module, require, LoadAll) and logs
+  root over log_dir. `ha.exceptions.log_file` takes relative paths only and
+  raises at registration on absolute/`../`/unset log_dir.
+- **Hot reload** debounces 300 ms then stats the file — present reloads, absent
+  stops; never decide from fsnotify event types (atomic saves lie). Only `.lua`
+  is watched: editing a sibling `.html` alone does NOT reload.
+- **Core REST bindings are non-raising** (`value|nil, err`) so a per-minute
+  publisher cannot spam `on_exception`. The REST base is derived from the WS URL,
+  not configured.
+- **`ha.at` timezone**: config option → `$TZ` → UTC-with-warning; `time/tzdata`
+  embedded, next_run stored UTC, and main sets `time.Local` so script
+  `time.now()` agrees with the scheduler.
+- **json/v2 everywhere**, and deterministic key order is NOT its default — every
+  marshal site that needs stable output passes `json.Deterministic(true)`.
+- **One shared http client, fixed 30 s timeout**, plus the script's lifetime
+  context. No per-callback context, no timeout config option.
+- **Tests use real SQLite (`:memory:`), never mocks**; browser coverage is
+  chromedp and skips cleanly when no browser is installed. Benchmark comparison
+  is informational — it never fails the build.
+- **Analyzers are `tool` directives in go.mod**, run as `go tool <name>`; errcheck
+  exclusions are configured in golangci-lint rather than littering the code with
+  `_ =`.
+- **No vendoring** — go.sum plus the module proxy pin everything; `go mod vendor`
+  is one command away if hermetic builds are ever needed.
 
 ## Removed (do not add back without explicit user request)
-- state_stats_hourly / state_stats_daily tables
-- ha.get_stats
-- is_numeric column on state_history
-- 4-step transactional purge (aggregate → hourly → daily → delete)
-- global.state() persistent-proxy (cache coherency issue with concurrent scripts)
-- cmd/bench-check tool (over-engineered for a home project)
+- state_stats_hourly / state_stats_daily tables, `ha.get_stats`, the `is_numeric`
+  column, and the 4-step transactional purge
+- `global.state()` persistent proxy (cache coherency across concurrent scripts)
+- `cmd/bench-check` (over-engineered for a home project)
+- the `states` mirror table (memory-authoritative since v3.1.0)
+- the battery example's static `IGNORE` table (replaced by the page's toggle)
 
 ## User preferences observed
-- Studio Code Server is the editor; scripts live at /config/ha-lua/scripts/
-- Pure Go only — modernc.org/sqlite (no CGO), gopher-lua (no CGO)
-- Deployment target: HA add-on (single static binary + /data + HA config dir mounted at /config)
-- Prefers planning to be done before any code is written
-- Wants code written in the persona of Linus Torvalds; avoid needless complexity
+- Pure Go only — modernc.org/sqlite and gopher-lua, no CGO.
+- Plan before writing code.
+- Keep this file lean: if the code, CLAUDE.md, CHANGELOG.md or git says it,
+  it does not belong here.

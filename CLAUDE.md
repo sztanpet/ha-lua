@@ -197,7 +197,7 @@ Steps for releasing `vX.Y.Z` (do not skip the per-step commits):
 3. **Tag.** Annotated tag on the `release:` commit:
    `git tag -a vX.Y.Z <release-commit> -m "vX.Y.Z"` (message is just the tag).
    Later docs commits may sit on top of the tagged commit; that's fine.
-4. **Update the working state** to record the release: add the version to the `AI.state` release log, refresh the `## Latest` pointer, and note the release detail in the track's `ha-lua/state/<track>.md`.
+4. **Update the working state** to record the release: refresh the `## Latest` pointer in `ha-lua/AI.state` and note the release detail in the track's `ha-lua/state/<track>.md`. The changelog already carries what shipped — do not repeat it in `AI.state`.
 5. **Push.** There is **no auto-push** — push explicitly. Two remotes:
    `origin` (private mirror) and `github` (github.com). Push `main` and the tag
    to **both**: `git push origin main && git push github main`, then
@@ -218,8 +218,12 @@ it needs, never one giant file of mostly-irrelevant history:
 
 - **`ha-lua/AI.state`** holds ONLY globally-useful data: the single most-recent/
   in-progress thing (a one-paragraph "Latest" pointer to its full state file),
-  an index of the per-spec state files, the release log, and the cross-cutting
-  "Key decisions / Removed / User preferences" lists. It stays small.
+  an index of the per-spec state files, and the cross-cutting "Key decisions /
+  Removed / User preferences" lists. It stays small. Anything readable off the
+  code, this file, `CHANGELOG.md` or git history does NOT go in it — in
+  particular there is no release log there, `CHANGELOG.md` is the release log.
+  A "key decision" earns its line only by carrying a *why* or a *don't do this*
+  that the code cannot show.
 - **`ha-lua/state/<track>.md`** holds the detailed, spec-scoped working state —
   one file per spec (e.g. `state/enhanced-climate.md` for
   `enhanced-climate-spec.md`). Each spec links to its own state file from a
@@ -235,9 +239,9 @@ other tracks' state files.
 2. In `AI.state`, keep the **`## Latest`** section to a SINGLE thing — replace
    it with whatever you just worked on, plus the pointer to its state file. Only
    ever one "latest" entry; older context lives in the state files, not here.
-3. Add the version to the `AI.state` release log, and add any new cross-cutting
-   decision to the "Key decisions" list. Update the state-file index if you
-   created a new track.
+3. Add any new cross-cutting decision to the `AI.state` "Key decisions" list, and
+   update the state-file index if you created a new track. The version itself is
+   recorded in `CHANGELOG.md`, not in `AI.state`.
 
 When a brand-new spec's work begins, create its `state/<track>.md`, add the
 `> **Working state:**` link to the spec header, and add the file to the AI.state
