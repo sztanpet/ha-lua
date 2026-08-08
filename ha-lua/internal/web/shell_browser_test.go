@@ -186,11 +186,18 @@ func TestShellFrameGrowsToPageHeight(t *testing.T) {
 	})
 
 	var frameH, viewClientH, viewScrollH, innerScrollH float64
+	var innerOverflow bool
+	var framedOverflow string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`nav a`, chromedp.ByQuery),
 		chromedp.Poll(`document.getElementById("page").clientHeight > document.getElementById("view").clientHeight`,
 			nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`(() => {
+			const inner = document.getElementById("page").contentDocument.scrollingElement;
+			return inner.scrollHeight > inner.clientHeight;
+		})()`, &innerOverflow),
+		chromedp.Evaluate(`getComputedStyle(document.getElementById("page").contentDocument.documentElement).overflowY`, &framedOverflow),
 		chromedp.Evaluate(`document.getElementById("page").clientHeight`, &frameH),
 		chromedp.Evaluate(`document.getElementById("view").clientHeight`, &viewClientH),
 		chromedp.Evaluate(`document.getElementById("view").scrollHeight`, &viewScrollH),
@@ -201,6 +208,14 @@ func TestShellFrameGrowsToPageHeight(t *testing.T) {
 
 	if frameH < innerScrollH {
 		t.Errorf("iframe height = %v, want at least the page's %v", frameH, innerScrollH)
+	}
+	// One scrollable pixel in the framed document swallows the whole gesture:
+	// Chromium latches to it and never chains out to #view.
+	if innerOverflow {
+		t.Errorf("framed document can still scroll itself at frame height %v", frameH)
+	}
+	if framedOverflow != "hidden" {
+		t.Errorf("framed document overflow-y = %q, want hidden so it cannot take a gesture", framedOverflow)
 	}
 	if viewScrollH <= viewClientH {
 		t.Errorf("#view scrollHeight %v <= clientHeight %v: the shell has nothing to scroll",
@@ -250,7 +265,7 @@ ha.ui("` + title + `")
 ha.serve("GET", "/", function(req)
   local parts = {"<!DOCTYPE html><html><head><style>` + css + `</style></head><body style='margin:0'>"}
   for i = 1, ` + strconv.Itoa(rows) + ` do
-    parts[#parts+1] = "<p style='height:40px;margin:0'>row " .. i .. "</p>"
+    parts[#parts+1] = "<p style='height:40.3px;margin:0'>row " .. i .. "</p>"
   end
   parts[#parts+1] = "</body></html>"
   return 200, table.concat(parts), {["Content-Type"]="text/html"}
