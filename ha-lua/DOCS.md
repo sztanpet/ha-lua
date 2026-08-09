@@ -397,12 +397,25 @@ survives restarts and reloads.
 **How the estimate works.** A rundown forecast needs weeks of history, and the
 daemon purges state history after `retention_days` (2 by default), so the script
 keeps its own series in its KV store — one sample per observed level change,
-which is a handful of rows a month per battery. A least-squares line through
-those samples gives a percent-per-day drain rate, and the level divided by that
-rate gives the ETA. Until there are at least 3 samples spanning 6 hours and
-adding up to a 2% drop, the page shows **measuring** instead of a made-up
-number. A rise of more than 2 points is read as a charge or a battery swap and
-restarts the series, so an old slope never leaks into a fresh pack.
+which is a handful of rows a month per battery. The drain rate is the drop from
+the oldest sample to the level right now, divided by the time between them, and
+the level divided by that rate gives the ETA. The countdown ends at **15%**, not
+0: most hardware goes flaky well before it stops reporting, and the question
+here is when to replace a cell.
+
+A single observed level step is enough, so a coarse 10%-granularity sensor gets
+a forecast on its first step rather than after its second. Such an estimate is
+hedged on the page — **~4 mo** — and settles as more steps land. Nothing at all
+is inferred from a window shorter than 24 hours.
+
+A battery that has not stepped once since tracking started has no rate, but
+having held one level for weeks does bound its lifetime. Those rows read
+**> 3 mo**: a floor, uncoloured, never a prediction, and always sorted below the
+batteries with a real measurement. A row only shows **measuring** when the level
+has neither moved nor held long enough to bound.
+
+A rise of more than 2 points is read as a charge or a battery swap and restarts
+the series, so an old slope never leaks into a fresh pack.
 
 Levels are sampled every 15 minutes (and on every page load). The script only
 reads — it publishes no entities and sends no notifications.

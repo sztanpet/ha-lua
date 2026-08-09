@@ -4,8 +4,8 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: per-battery ignore on the Batteries page (2026-08-08,
-`a734f9c`, v4.3.0).
+growing on top; newest: the Batteries page forecasting from one level step
+(2026-08-09, `6c26427` + `36bd760`, unreleased).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -80,6 +80,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - Fit is least squares over the samples PLUS the current instant as a point.
   Appending "now" is what makes a battery that stopped moving decay towards a
   flat slope instead of forever predicting last month's rate.
+  **SUPERSEDED 2026-08-09** — the fit and its guards are gone, see below.
 - A rise > RECHARGE_JUMP (2 points) wipes the series: a charge or a swap makes
   every earlier sample worthless. Guards before any ETA is shown at all:
   >= 3 samples, >= 6 h span, >= 2% drop, negative slope. Otherwise the page
@@ -118,6 +119,46 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - Tests: `TestBatteryLevelsIgnore` (still listed, last, no forecast, samples
   dropped, resume starts fresh, 404 unknown entity, 400 no entity_id) plus a
   click-through in the existing chromedp UI test.
+
+## battery_levels: forecast from one step (2026-08-09)
+- Commits `6c26427` (script + Lua-side tests), `36bd760` (page + chromedp).
+  UNRELEASED at the time of writing.
+- The reported bug: nearly every row said "measuring". `MIN_SAMPLES = 3` meant
+  **two observed level steps** (a sample is only written when the level moves),
+  which on a 10%-granularity sensor is a 20% drop. The forecast was only ever
+  visible on the batteries fast enough that nobody needed a forecast.
+- Least squares is GONE, replaced by the secant across the whole observation
+  window: `drop / (now - series[1].at)`. Why this is not a downgrade — with one
+  sample per level step the endpoints carry the entire signal, and the two
+  censoring errors cancel: `series[1]` is an *observation* (we caught the level
+  part-way through its dwell, so the window is short by that remainder) and the
+  dwell in progress at the current level is cut short by a remainder of its own.
+  Over the window the drop counts as many whole steps as the elapsed time does,
+  so the estimator is unbiased. It also degrades to ONE step, which is the point.
+- `MIN_SAMPLES` and `MIN_DROP` are gone. Only `MIN_SPAN` survives, raised
+  6 h → 24 h. That is the one knob that matters: with a single step, the window
+  bounds how wrong the extrapolation can be, and 24 h caps the worst case at
+  ~99 days instead of the ~25 days a 6 h window allowed. The estimate is
+  pessimistic early and stretches on its own as the battery sits.
+- New third case: a battery that has never stepped gets `eta_at_least`, a floor
+  from `remaining / COARSEST_STEP * dwell` with `COARSEST_STEP = 10` (the
+  coarsest granularity common hardware reports, so the floor stays true for
+  fine-grained sensors too). It needs `dwell >= MIN_SPAN`, otherwise a battery
+  that stepped a minute ago would be "dying within the hour".
+- Sorting is three tiers (`urgency_rank`): measured ETA, then floor, then level.
+  A floor NEVER outranks a measurement even when it is the smaller number — it
+  is systematically pessimistic, so mixing the two by value would crowd the top
+  of the page with ignorance. The chromedp test pins this.
+- `EMPTY_LEVEL` 0 → **15** (user request). Countdown ends at the replace-it
+  line, and a battery already below it reports `eta_seconds = 0` rather than
+  nothing — the `remaining <= 0` branch, which did not exist when empty was 0.
+- Page: `~4 mo` when `steps < 2`, `> 3 mo` for a floor (uncoloured — colouring a
+  bound reads as a prediction), `measuring` only when there is neither.
+- Rejected (asked, user said no): seeding the series from HA's own history.
+  `recorder/statistics_during_period` keeps hourly long-term statistics forever
+  for any `state_class: measurement` sensor, which would have given months of
+  real data on first run. It needs `resultMsg` (internal/ha/types.go) to carry
+  the result payload and a new Lua binding. Revisit only on request.
 
 ## service_api example (2026-08-06)
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA

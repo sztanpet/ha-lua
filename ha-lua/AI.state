@@ -10,19 +10,13 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v4.3.2** (2026-08-08, `c0ef33f`, CONFIRMED fixed on device): framed pages are
-denied a scroll region
-(`overflow:hidden` + 2px slack) because Chromium does not chain a scroll out of a
-frame — one scrollable pixel in the framed document consumed the whole gesture
-and painted the overscroll glow, which is what the Heating tab was doing before
-every drag. Third attempt at this bug; the first two (v4.3.0 sizing, v4.3.1
-render-skip + viewport-sized growth) were inferred from symptoms. None of it
-reproduces in headless Chromium at any DPR — the device is the only verdict, so
-ASK WHAT THE FAILURE LOOKS LIKE before theorising. Detail: `state/ui-shell.md`.
-
-Before that, **v4.3.0**: the shell stopped scrolling the framed page (`dbb0cda`,
-confirmed on Android for Batteries) and the Batteries page grew a per-row
-Ignore/Track button (`a734f9c`). Detail: `state/bundled-examples.md`.
+**Batteries page forecasts from one level step** (2026-08-09, `6c26427` +
+`36bd760`, unreleased). Nearly every row said "measuring" because the ETA was
+gated behind two observed level steps, which on a coarse sensor is a 20% drop.
+Least squares is gone — the secant over the whole observation window is
+unbiased here and works from a single step — and a battery that has never
+stepped now gets a lifetime floor from its dwell instead of nothing. Detail:
+`state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -127,5 +121,9 @@ here.
 ## User preferences observed
 - Pure Go only — modernc.org/sqlite and gopher-lua, no CGO.
 - Plan before writing code.
+- **ASK WHAT THE FAILURE LOOKS LIKE before theorising** about a UI bug. The
+  v4.3.0–v4.3.2 scroll bug took three attempts because the first two were
+  inferred from symptoms; none of it ever reproduced in headless Chromium at any
+  DPR, so on device-visible bugs the device is the only verdict.
 - Keep this file lean: if the code, CLAUDE.md, CHANGELOG.md or git says it,
   it does not belong here.
