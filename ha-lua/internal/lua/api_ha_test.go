@@ -323,6 +323,48 @@ func TestGetStateContextOmitsEmptyFields(t *testing.T) {
 	}
 }
 
+func TestHistoryAggregateBindings(t *testing.T) {
+	L, _, tracker, _ := newHALState(t)
+	ctx := context.Background()
+	tracker.Start(t.Context())
+
+	for _, row := range []struct{ state, at string }{
+		{"off", "2026-01-01T01:00:00Z"},
+		{"on", "2026-01-01T03:00:00Z"},
+		{"off", "2026-01-01T04:00:00Z"},
+	} {
+		err := tracker.HandleStateChanged(ctx, jsontext.Value(`{
+			"entity_id": "binary_sensor.door",
+			"new_state": {"entity_id":"binary_sensor.door","state":"`+row.state+`",
+				"attributes":{},"last_changed":"`+row.at+`","last_updated":"`+row.at+`"}
+		}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracker.Flush()
+
+	pushTime(L, time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC))
+	L.SetGlobal("_since", L.Get(-1))
+	L.Pop(1)
+
+	if err := L.DoString(`
+		_secs, _complete = ha.duration_in_state("binary_sensor.door", "on", _since)
+		_opens = ha.count_changes("binary_sensor.door", _since, "on")
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if got := L.GetGlobal("_secs"); got != lua.LNumber(3600) {
+		t.Errorf("duration: want 3600 seconds, got %v", got)
+	}
+	if got := L.GetGlobal("_complete"); got != lua.LTrue {
+		t.Errorf("complete: want true, got %v", got)
+	}
+	if got := L.GetGlobal("_opens"); got != lua.LNumber(1) {
+		t.Errorf("openings: want 1, got %v", got)
+	}
+}
+
 func TestWhoChangedBinding(t *testing.T) {
 	L, _, tracker, _ := newHALState(t)
 	ctx := context.Background()

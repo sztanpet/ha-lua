@@ -317,6 +317,104 @@ func TestStateHistoryKeepsContext(t *testing.T) {
 	}
 }
 
+// A day's worth of a door: closed, then two separate openings, with one
+// attribute-only update (same state, new row) in the middle of the first.
+func seedDoor(t *testing.T, tr *Tracker) {
+	t.Helper()
+	for _, row := range []struct{ state, at string }{
+		{"off", "2026-01-01T01:00:00Z"},
+		{"on", "2026-01-01T03:00:00Z"},
+		{"on", "2026-01-01T03:30:00Z"}, // attribute-only update, not a transition
+		{"off", "2026-01-01T04:00:00Z"},
+		{"on", "2026-01-01T06:00:00Z"},
+		{"off", "2026-01-01T06:30:00Z"},
+	} {
+		changed(t, tr, "binary_sensor.door", row.state, row.at, "", "", "")
+	}
+	tr.Flush()
+}
+
+func TestDurationInState(t *testing.T) {
+	tr := newTracker(t)
+	seedDoor(t, tr)
+	since := time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC)
+
+	d, complete, err := tr.DurationInState(context.Background(), "binary_sensor.door", "on", since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !complete {
+		t.Error("complete: want true, history reaches back past 02:00")
+	}
+	if want := 90 * time.Minute; d != want {
+		t.Errorf("duration: want %v, got %v", want, d)
+	}
+}
+
+// The window opens before the first row we still have: the answer is a lower
+// bound and must say so.
+func TestDurationInStateIncompleteWindow(t *testing.T) {
+	tr := newTracker(t)
+	seedDoor(t, tr)
+	since := time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC)
+
+	_, complete, err := tr.DurationInState(context.Background(), "binary_sensor.door", "on", since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete {
+		t.Error("complete: want false for a window older than the oldest row")
+	}
+}
+
+// A state still in effect accrues time up to now, not up to its last row.
+func TestDurationInStateOpenEnded(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+	start := time.Now().UTC().Add(-time.Hour)
+	changed(t, tr, "light.hall", "off", start.Add(-time.Hour).Format(time.RFC3339), "", "", "")
+	changed(t, tr, "light.hall", "on", start.Format(time.RFC3339), "", "", "")
+	tr.Flush()
+
+	d, _, err := tr.DurationInState(ctx, "light.hall", "on", start.Add(-30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d < 59*time.Minute || d > 61*time.Minute {
+		t.Errorf("duration: want about an hour, got %v", d)
+	}
+}
+
+func TestCountChanges(t *testing.T) {
+	tr := newTracker(t)
+	seedDoor(t, tr)
+	since := time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		state string
+		want  int
+	}{
+		{"every transition", "", 4},
+		{"openings only", "on", 2},
+		{"closings only", "off", 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			n, complete, err := tr.CountChanges(context.Background(), "binary_sensor.door", tc.state, since)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !complete {
+				t.Error("complete: want true")
+			}
+			if n != tc.want {
+				t.Errorf("count: want %d, got %d", tc.want, n)
+			}
+		})
+	}
+}
+
 // changed feeds one state_changed through the tracker with a context.
 func changed(t *testing.T, tr *Tracker, entityID, state, at, ctxID, parentID, userID string) {
 	t.Helper()

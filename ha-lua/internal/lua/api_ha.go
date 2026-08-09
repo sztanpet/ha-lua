@@ -227,6 +227,41 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		return 1
 	}))
 
+	// ha.duration_in_state(entity_id, state, since) — seconds spent in state,
+	// plus whether history reaches all the way back to `since`.
+	L.SetField(haTable, "duration_in_state", L.NewFunction(func(L *lua.LState) int {
+		entityID := L.CheckString(1)
+		want := L.CheckString(2)
+		since := getTime(L, 3)
+		d, complete, err := api.tracker.DurationInState(L.Context(), entityID, want, since)
+		if err != nil {
+			L.RaiseError("duration_in_state: %v", err)
+			return 0
+		}
+		L.Push(lua.LNumber(d.Seconds()))
+		L.Push(lua.LBool(complete))
+		return 2
+	}))
+
+	// ha.count_changes(entity_id, since [, state]) — transitions in the window,
+	// plus whether history reaches all the way back to `since`.
+	L.SetField(haTable, "count_changes", L.NewFunction(func(L *lua.LState) int {
+		entityID := L.CheckString(1)
+		since := getTime(L, 2)
+		want := ""
+		if L.GetTop() >= 3 && L.Get(3) != lua.LNil {
+			want = L.CheckString(3)
+		}
+		n, complete, err := api.tracker.CountChanges(L.Context(), entityID, want, since)
+		if err != nil {
+			L.RaiseError("count_changes: %v", err)
+			return 0
+		}
+		L.Push(lua.LNumber(n))
+		L.Push(lua.LBool(complete))
+		return 2
+	}))
+
 	// ha.who_changed(entity_id [, at]) attributes a change to a user, an
 	// automation, or nobody. Without `at` it explains the current state.
 	L.SetField(haTable, "who_changed", L.NewFunction(func(L *lua.LState) int {

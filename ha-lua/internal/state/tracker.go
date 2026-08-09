@@ -361,6 +361,120 @@ func (t *Tracker) GetHistory(ctx context.Context, entityID string, since time.Ti
 	return scanStates(rows)
 }
 
+// historyPoint is one recorded state at one instant.
+type historyPoint struct {
+	state string
+	at    time.Time
+}
+
+// historyPoints returns the entity's timeline over [since, now]: the state it
+// was already in when the window opened, then every change inside it.
+//
+// complete is false when that opening state is unknown — no row survives from
+// before `since`, so the window reaches further back than retention kept and
+// every aggregate over it is a lower bound. Callers pass that verdict on
+// rather than quietly answering "0 hours" for a window we cannot see.
+func (t *Tracker) historyPoints(ctx context.Context, entityID string, since time.Time) (baseline string, points []historyPoint, complete bool, err error) {
+	bound := since.UTC().Format(sinceLayout)
+
+	row := t.readDB.QueryRowContext(ctx, `
+		SELECT state FROM state_history
+		WHERE entity_id = ? AND changed_at < ?
+		ORDER BY changed_at DESC, id DESC
+		LIMIT 1`, entityID, bound)
+	switch err := row.Scan(&baseline); {
+	case err == nil:
+		complete = true
+	case !errors.Is(err, sql.ErrNoRows):
+		return "", nil, false, fmt.Errorf("history baseline %s: %w", entityID, err)
+	}
+
+	rows, err := t.readDB.QueryContext(ctx, `
+		SELECT state, changed_at FROM state_history
+		WHERE entity_id = ? AND changed_at >= ?
+		ORDER BY changed_at, id`, entityID, bound)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("history window %s: %w", entityID, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p historyPoint
+		var at string
+		if err := rows.Scan(&p.state, &at); err != nil {
+			return "", nil, false, err
+		}
+		p.at, err = time.Parse(time.RFC3339, at)
+		if err != nil {
+			// changed_at is HA's last_changed verbatim; an unparseable one is
+			// a single corrupt row, not a reason to fail the whole aggregate.
+			slog.Warn("state: skipping history row with unparseable timestamp",
+				"entity", entityID, "changed_at", at)
+			continue
+		}
+		if p.at.Before(since) {
+			// sinceLayout truncates to the second, so a row inside the same
+			// second as `since` can land just before it.
+			p.at = since
+		}
+		points = append(points, p)
+	}
+	return baseline, points, complete, rows.Err()
+}
+
+// DurationInState reports how long entityID has been in `state` since the
+// given instant. The second return is false when history does not reach back
+// to `since` (see historyPoints) — the duration is then a lower bound.
+func (t *Tracker) DurationInState(ctx context.Context, entityID, state string, since time.Time) (time.Duration, bool, error) {
+	baseline, points, complete, err := t.historyPoints(ctx, entityID, since)
+	if err != nil {
+		return 0, false, err
+	}
+
+	var total time.Duration
+	current, at := baseline, since
+	for _, p := range points {
+		if current == state {
+			total += p.at.Sub(at)
+		}
+		current, at = p.state, p.at
+	}
+	if current == state {
+		if now := time.Now(); now.After(at) {
+			total += now.Sub(at)
+		}
+	}
+	return total, complete, nil
+}
+
+// CountChanges counts the entity's state transitions since the given instant.
+// With a non-empty state only transitions into that state count. Repeated
+// history rows carrying the same state are attribute-only updates — HA emits
+// a state_changed for those too — and are not transitions.
+//
+// The second return is false when history does not reach back to `since`; the
+// first change in the window is then counted, because an entity that appears
+// mid-window did become what it is at some point we cannot see.
+func (t *Tracker) CountChanges(ctx context.Context, entityID, state string, since time.Time) (int, bool, error) {
+	baseline, points, complete, err := t.historyPoints(ctx, entityID, since)
+	if err != nil {
+		return 0, false, err
+	}
+
+	count := 0
+	previous := baseline
+	for i, p := range points {
+		unknownStart := i == 0 && !complete
+		if p.state == previous && !unknownStart {
+			continue
+		}
+		if state == "" || p.state == state {
+			count++
+		}
+		previous = p.state
+	}
+	return count, complete, nil
+}
+
 // Attribution answers "what produced this change". UserID is set when a person
 // acted through the UI or the API; CausedBy is the automation, script or scene
 // whose run shares the change's context. Both can be empty: a device reporting
