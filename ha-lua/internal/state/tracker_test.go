@@ -293,6 +293,67 @@ func TestStateHistoryAppended(t *testing.T) {
 	}
 }
 
+func TestStateHistoryKeepsContext(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	_ = tr.HandleStateChanged(ctx, jsontext.Value(`{
+		"entity_id": "light.living",
+		"new_state": {"entity_id":"light.living","state":"on","attributes":{},
+			"last_changed":"2026-01-01T01:00:00Z","last_updated":"2026-01-01T01:00:00Z",
+			"context":{"id":"ctx1","parent_id":"ctx0","user_id":"alice"}}
+	}`))
+	tr.Flush()
+
+	history, err := tr.GetHistory(ctx, "light.living", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("want 1 history row, got %d", len(history))
+	}
+	if got := history[0].Context; got != (ha.Context{ID: "ctx1", ParentID: "ctx0", UserID: "alice"}) {
+		t.Errorf("context: %+v", got)
+	}
+}
+
+// A database written by a version without the context columns must gain them
+// rather than fail every insert.
+func TestMigrateAddsContextColumns(t *testing.T) {
+	writeDB, _ := testutil.NewTestDB(t, nil)
+	ctx := context.Background()
+
+	_, err := writeDB.ExecContext(ctx, `
+		CREATE TABLE state_history (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			entity_id  TEXT NOT NULL,
+			state      TEXT NOT NULL,
+			attributes TEXT NOT NULL DEFAULT '{}',
+			changed_at TEXT NOT NULL
+		);
+		INSERT INTO state_history(entity_id, state, changed_at)
+		VALUES('light.old','on','2026-01-01T00:00:00Z');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(writeDB); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var contextID string
+	if err := writeDB.QueryRowContext(ctx,
+		`SELECT context_id FROM state_history WHERE entity_id = 'light.old'`).Scan(&contextID); err != nil {
+		t.Fatalf("read migrated row: %v", err)
+	}
+	if contextID != "" {
+		t.Errorf("pre-existing row: want an empty context, got %q", contextID)
+	}
+	if err := Migrate(writeDB); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+}
+
 // TestGetHistorySinceTimezone guards the old foot gun: `since` used to be a
 // raw string compared lexically, so a non-UTC instant ("…+02:00") sorted
 // wrong against the UTC changed_at and silently dropped rows. A time.Time in

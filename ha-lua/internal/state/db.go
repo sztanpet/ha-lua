@@ -18,14 +18,20 @@ const schema = `
 DROP TABLE IF EXISTS states;
 
 CREATE TABLE IF NOT EXISTS state_history (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_id  TEXT NOT NULL,
-    state      TEXT NOT NULL,
-    attributes TEXT NOT NULL DEFAULT '{}',
-    changed_at TEXT NOT NULL
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id         TEXT NOT NULL,
+    state             TEXT NOT NULL,
+    attributes        TEXT NOT NULL DEFAULT '{}',
+    changed_at        TEXT NOT NULL,
+    context_id        TEXT NOT NULL DEFAULT '',
+    context_parent_id TEXT NOT NULL DEFAULT '',
+    context_user_id   TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_sh_entity_time ON state_history(entity_id, changed_at);
 CREATE INDEX IF NOT EXISTS idx_sh_time ON state_history(changed_at);
+-- Partial: WhoChanged looks a context id up in reverse, and the seed rows
+-- (no context at all) would otherwise double the index for nothing.
+CREATE INDEX IF NOT EXISTS idx_sh_context ON state_history(context_id) WHERE context_id != '';
 
 CREATE TABLE IF NOT EXISTS script_kv (
     script_id TEXT NOT NULL,
@@ -94,6 +100,57 @@ func OpenDB(path string) (writeDB, readDB *sql.DB, err error) {
 
 // Migrate applies the schema to db. Safe to call multiple times (idempotent).
 func Migrate(db *sql.DB) error {
-	_, err := db.ExecContext(context.Background(), schema)
+	ctx := context.Background()
+	if err := addedColumns(ctx, db); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, schema)
 	return err
+}
+
+// addedColumns brings a state_history table created by an older version up to
+// the current shape. It runs before the schema so the partial index over
+// context_id has its column; on a fresh database the table does not exist yet
+// and this is a no-op.
+//
+// SQLite has no ADD COLUMN IF NOT EXISTS, and blind ALTERs would mean matching
+// on an error string, so the current columns are read first.
+func addedColumns(ctx context.Context, db *sql.DB) error {
+	added := []struct{ name, decl string }{
+		{"context_id", "TEXT NOT NULL DEFAULT ''"},
+		{"context_parent_id", "TEXT NOT NULL DEFAULT ''"},
+		{"context_user_id", "TEXT NOT NULL DEFAULT ''"},
+	}
+
+	rows, err := db.QueryContext(ctx, `SELECT name FROM pragma_table_info('state_history')`)
+	if err != nil {
+		return fmt.Errorf("read state_history columns: %w", err)
+	}
+	have := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		have[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(have) == 0 {
+		return nil // fresh database: the schema below creates the table whole
+	}
+
+	for _, col := range added {
+		if have[col.name] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx,
+			"ALTER TABLE state_history ADD COLUMN "+col.name+" "+col.decl); err != nil {
+			return fmt.Errorf("add state_history.%s: %w", col.name, err)
+		}
+	}
+	return nil
 }

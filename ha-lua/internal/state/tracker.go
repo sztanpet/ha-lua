@@ -150,9 +150,11 @@ func (t *Tracker) writeBatch(batch []writeReq) error {
 		}
 		s := req.upsert
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO state_history(entity_id, state, attributes, changed_at)
-			VALUES(?,?,?,?)`,
-			s.EntityID, s.State, string(s.Attributes), s.LastChanged); err != nil {
+			INSERT INTO state_history(entity_id, state, attributes, changed_at,
+			                          context_id, context_parent_id, context_user_id)
+			VALUES(?,?,?,?,?,?,?)`,
+			s.EntityID, s.State, string(s.Attributes), s.LastChanged,
+			s.Context.ID, s.Context.ParentID, s.Context.UserID); err != nil {
 			return fmt.Errorf("insert state_history %s: %w", s.EntityID, err)
 		}
 	}
@@ -345,7 +347,8 @@ const sinceLayout = "2006-01-02T15:04:05"
 // GetHistory returns state history for an entity since a given instant.
 func (t *Tracker) GetHistory(ctx context.Context, entityID string, since time.Time, limit int) ([]ha.StateData, error) {
 	rows, err := t.readDB.QueryContext(ctx,
-		`SELECT entity_id, state, attributes, changed_at, changed_at
+		`SELECT entity_id, state, attributes, changed_at, changed_at,
+		        context_id, context_parent_id, context_user_id
 		 FROM state_history
 		 WHERE entity_id = ? AND changed_at >= ?
 		 ORDER BY changed_at
@@ -362,7 +365,8 @@ func scanStates(rows *sql.Rows) ([]ha.StateData, error) {
 	for rows.Next() {
 		var s ha.StateData
 		var attrs string
-		if err := rows.Scan(&s.EntityID, &s.State, &attrs, &s.LastChanged, &s.LastUpdated); err != nil {
+		if err := rows.Scan(&s.EntityID, &s.State, &attrs, &s.LastChanged, &s.LastUpdated,
+			&s.Context.ID, &s.Context.ParentID, &s.Context.UserID); err != nil {
 			return nil, err
 		}
 		s.Attributes = jsontext.Value(attrs)
