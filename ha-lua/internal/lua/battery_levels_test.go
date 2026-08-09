@@ -300,6 +300,75 @@ func TestBatteryLevelsRechargeResets(t *testing.T) {
 	}
 }
 
+// TestBatteryLevelsNoisyLevelKeeps pins the reason the threshold is ten: a
+// level that wobbles a few points a day must keep its run, or it re-starts
+// every day and forecasts nothing for the rest of its life.
+func TestBatteryLevelsNoisyLevelKeeps(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.attic_battery", State: "71",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Attic"}`),
+			LastChanged: now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.attic_battery": []any{
+			sample(now.Add(-5*24*time.Hour), 80),
+			sample(now.Add(-4*24*time.Hour), 77),
+			sample(now.Add(-3*24*time.Hour), 79),
+			sample(now.Add(-2*24*time.Hour), 74),
+			sample(now.Add(-24*time.Hour), 76),
+		},
+	}
+
+	rows := getBatteries(t, serveBatteryLevels(t, seed, series))
+	if len(rows) != 1 {
+		t.Fatalf("got %d batteries, want 1", len(rows))
+	}
+	if rows[0].Samples != 6 {
+		t.Errorf("samples = %d, want the noisy run kept and extended to 6", rows[0].Samples)
+	}
+	if rows[0].ETASeconds == nil {
+		t.Fatalf("eta_seconds = nil, want a forecast from the surviving run")
+	}
+	// 9 points over 5 days -> 1.8/day, 56 left above empty -> ~31 days.
+	if days := *rows[0].ETASeconds / (24 * 60 * 60); days < 29 || days > 33 {
+		t.Errorf("eta = %.1f days, want ~31", days)
+	}
+}
+
+// TestBatteryLevelsSlowRechargeResets covers the charge that never jumps: a
+// pack topped up a couple of points at a time trips no single-step threshold,
+// but ten points above the run's low is a recharge however it got there.
+func TestBatteryLevelsSlowRechargeResets(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.vacuum_battery", State: "50",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Vacuum"}`),
+			LastChanged: now.Add(-time.Minute).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.vacuum_battery": []any{
+			sample(now.Add(-4*24*time.Hour), 60),
+			sample(now.Add(-2*24*time.Hour), 40),
+			sample(now.Add(-6*time.Hour), 42),
+			sample(now.Add(-4*time.Hour), 44),
+			sample(now.Add(-2*time.Hour), 46),
+			sample(now.Add(-time.Hour), 48),
+		},
+	}
+
+	rows := getBatteries(t, serveBatteryLevels(t, seed, series))
+	if len(rows) != 1 {
+		t.Fatalf("got %d batteries, want 1", len(rows))
+	}
+	if rows[0].Samples != 1 {
+		t.Errorf("samples = %d after a slow recharge, want the series restarted at 1", rows[0].Samples)
+	}
+	if rows[0].ETASeconds != nil {
+		t.Errorf("eta_seconds = %v across a slow recharge, want none", *rows[0].ETASeconds)
+	}
+}
+
 func TestBatteryLevelsIgnore(t *testing.T) {
 	now := time.Now()
 	seed := []ha.StateData{

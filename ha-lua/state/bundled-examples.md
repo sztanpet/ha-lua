@@ -82,7 +82,8 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   flat slope instead of forever predicting last month's rate.
   **SUPERSEDED 2026-08-09** — the fit and its guards are gone, see below.
 - A rise > RECHARGE_JUMP (2 points) wipes the series: a charge or a swap makes
-  every earlier sample worthless. Guards before any ETA is shown at all:
+  every earlier sample worthless. **SUPERSEDED 2026-08-09** — now 10 points
+  above the run's low, see below. Guards before any ETA is shown at all:
   >= 3 samples, >= 6 h span, >= 2% drop, negative slope. Otherwise the page
   says "measuring".
 - Discovery is configuration-free: `device_class: battery` (state IS the
@@ -159,6 +160,21 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   for any `state_class: measurement` sensor, which would have given months of
   real data on first run. It needs `resultMsg` (internal/ha/types.go) to carry
   the result payload and a new Lua binding. Revisit only on request.
+
+## battery_levels: recharge threshold is 10 from the low (2026-08-09)
+- `RECHARGE_JUMP` (> 2 points in one step) is GONE, replaced by
+  `RECHARGE_RISE = 10` measured against the LOWEST sample in the series.
+- The reported reason: real entities report levels that fluctuate by three or
+  more points a day. At a 2-point bar those wiped their series on nearly every
+  noisy uptick, so `series[1]` was never old enough for `MIN_SPAN` and the row
+  said "measuring" forever. Do not lower this back down.
+- Measuring from the run's low rather than from the newest sample also catches
+  the slow top-up (a phone climbing 1-2 points per 15 min scan), which no
+  per-step threshold sees at all. One rule covers both; the per-step check is
+  subsumed (low <= newest).
+- Tests: `TestBatteryLevelsNoisyLevelKeeps` (80/77/79/74/76 wobble keeps the run
+  and still forecasts ~31 days) and `TestBatteryLevelsSlowRechargeResets`
+  (60→40 then 42/44/46/48 → series restarted at one sample).
 
 ## service_api example (2026-08-06)
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA

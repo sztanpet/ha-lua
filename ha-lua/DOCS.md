@@ -414,8 +414,11 @@ having held one level for weeks does bound its lifetime. Those rows read
 batteries with a real measurement. A row only shows **measuring** when the level
 has neither moved nor held long enough to bound.
 
-A rise of more than 2 points is read as a charge or a battery swap and restarts
-the series, so an old slope never leaks into a fresh pack.
+A rise of 10 points above the run's low point is read as a charge or a battery
+swap and restarts the series, so an old slope never leaks into a fresh pack. The
+bar is that high because plenty of entities report a level that fluctuates a few
+points a day, and it is measured from the low point so that a slow top-up —
+which never steps 10 points at once — is caught as well.
 
 Levels are sampled every 15 minutes (and on every page load). The script only
 reads — it publishes no entities and sends no notifications.

@@ -36,9 +36,10 @@ local MIN_SPAN = 24 * time.hour
 -- true for the finer-grained ones too.
 local COARSEST_STEP = 10
 
--- A rise of more than this many points means the pack was charged or swapped,
--- which makes every earlier sample worthless for the new run.
-local RECHARGE_JUMP = 2
+-- A rise of this many points above the run's low point is a charge or a swap.
+-- Measured from the low, not the last sample: plenty of entities fluctuate a
+-- few points a day, and a slow top-up never steps far enough at once.
+local RECHARGE_RISE = 10
 
 -- Cap on stored samples per entity. At one row per percent step this covers a
 -- full 100→0 discharge; older rows fall off the front.
@@ -117,6 +118,14 @@ local function load_series(entity_id)
   return series
 end
 
+local function lowest_level(series)
+  local low = nil
+  for _, entry in ipairs(series) do
+    if low == nil or entry.level < low then low = entry.level end
+  end
+  return low
+end
+
 -- record appends a sample when the level actually moved, and returns the
 -- series. A flat reading is deliberately NOT stored: the dwell is implied by
 -- "the newest sample is old", and the fit adds the current instant itself.
@@ -125,7 +134,7 @@ local function record(entity_id, level, now_unix)
   local newest = series[#series]
   if newest ~= nil then
     if newest.level == level then return series end
-    if level > newest.level + RECHARGE_JUMP then series = {} end
+    if level >= lowest_level(series) + RECHARGE_RISE then series = {} end
   end
   series[#series + 1] = { at = now_unix, level = level }
   while #series > MAX_SAMPLES do table.remove(series, 1) end

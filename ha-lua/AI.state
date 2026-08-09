@@ -10,12 +10,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Batteries page forecasts from one level step** (2026-08-09, `6c26427` +
-`36bd760`, released in v4.4.0). Nearly every row said "measuring" because the
-ETA was gated behind two observed level steps, a 20% drop on a coarse sensor.
-Least squares is gone — the secant over the whole observation window is
-unbiased here and works from a single step — and a battery that has never
-stepped now gets a lifetime floor from its dwell instead of nothing. Detail:
+**Batteries: recharge threshold raised to 10 points above the run's low**
+(2026-08-09, unreleased). The old 2-point per-step bar was tripped by the
+entities that report a level fluctuating a few points a day, wiping their
+series before it was ever old enough to forecast from; measuring from the low
+also catches a slow top-up that no per-step bar sees. Detail:
 `state/bundled-examples.md`.
 
 ## State files (per spec)
