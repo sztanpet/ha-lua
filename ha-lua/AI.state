@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-09 (v4.4.1)
+Last updated: 2026-08-09 (v4.5.0)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,12 +10,12 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Batteries: recharge threshold raised to 10 points above the run's low**
-(2026-08-09, `832f11e`, released in v4.4.1). The old 2-point per-step bar was
-tripped by entities that report a level fluctuating a few points a day, wiping
-series before it was ever old enough to forecast from; measuring from the low
-also catches a slow top-up that no per-step bar sees. Detail:
-`state/bundled-examples.md`.
+**History questions, change attribution and durable reminders** (2026-08-09,
+`4489349`..`3fa0b9e`, released in v4.5.0). HA's change context is now decoded, persisted with history and resolved
+by `ha.who_changed`; `ha.duration_in_state` / `ha.count_changes` reduce the
+history we already keep; `state_history.keep` gives chosen globs a longer
+window; `lib/reminders.lua` makes handler-armed reminders survive a restart,
+which `ha.after` cannot. Detail: `state/insight.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -27,6 +27,8 @@ also catches a slow top-up that no per-step bar sees. Detail:
   Lovelace card.
 - `state/event-latency.md` — async call_service, memory mirror, write-behind.
 - `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page, web shell.
+- `state/insight.md` — change context + `who_changed`, history aggregates,
+  retention overrides, the reminders lib. COMPLETE.
 - `state/code-review.md` — review rounds 1 (v2.8.9) and 2 (v3.2.2), both CLOSED.
 - (sse-spec.md has no implementation and no state file.)
 
