@@ -63,7 +63,7 @@ jobs:
       matrix: ${{ fromJSON(needs.init.outputs.matrix) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build and push ${{ matrix.arch }}
         uses: home-assistant/builder/actions/build-image@2026.06.0
