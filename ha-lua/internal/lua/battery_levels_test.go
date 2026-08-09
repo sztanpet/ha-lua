@@ -78,7 +78,9 @@ type batteryRow struct {
 	ChangedAgo  *float64 `json:"changed_ago"`
 	DrainPerDay *float64 `json:"drain_per_day"`
 	ETASeconds  *float64 `json:"eta_seconds"`
+	ETAAtLeast  *float64 `json:"eta_at_least"`
 	Samples     int      `json:"samples"`
+	Steps       int      `json:"steps"`
 	Ignored     bool     `json:"ignored"`
 }
 
@@ -138,15 +140,90 @@ func TestBatteryLevelsRundown(t *testing.T) {
 	if err := closeTo(*attic.DrainPerDay, 2, 0.2); err != nil {
 		t.Errorf("attic drain: %v", err)
 	}
-	if err := closeTo(*attic.ETASeconds/86400, 40, 2); err != nil {
+	// Countdown runs to EMPTY_LEVEL (15%), not to zero: 65 points left at
+	// 2/day, and 15 left at 10/day.
+	if err := closeTo(*attic.ETASeconds/86400, 32.5, 2); err != nil {
 		t.Errorf("attic ETA days: %v", err)
 	}
-	if err := closeTo(*doorbell.ETASeconds/86400, 3, 0.5); err != nil {
+	if err := closeTo(*doorbell.ETASeconds/86400, 1.5, 0.5); err != nil {
 		t.Errorf("doorbell ETA days: %v", err)
 	}
 	// last_changed is reported from Home Assistant when the state IS the level.
 	if doorbell.ChangedAgo == nil || *doorbell.ChangedAgo < 2*3600-60 {
 		t.Errorf("doorbell changed_ago = %v, want ~2h", doorbell.ChangedAgo)
+	}
+}
+
+// TestBatteryLevelsSingleStepAndFloor pins the three things a row can say: a
+// forecast off one step, a floor for a battery that never stepped, and "due
+// now" below EMPTY_LEVEL. Tiers beat numbers, so the measured 450 days must
+// still outrank the 102-day floor.
+func TestBatteryLevelsSingleStepAndFloor(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.hall_battery", State: "90",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Hall"}`),
+			LastChanged: now.Add(-3 * 24 * time.Hour).UTC().Format(time.RFC3339)},
+		{EntityID: "sensor.shed_battery", State: "100",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Shed"}`),
+			LastChanged: now.Add(-12 * 24 * time.Hour).UTC().Format(time.RFC3339)},
+		{EntityID: "sensor.smoke_battery", State: "10",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Smoke"}`),
+			LastChanged: now.Add(-24 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		// One sighting at 100 sixty days ago; the state is 90 now, so the scan
+		// records the step and the window is 60 days wide.
+		"series:sensor.hall_battery": []any{sample(now.Add(-60*24*time.Hour), 100)},
+	}
+
+	rows := getBatteries(t, serveBatteryLevels(t, seed, series))
+	if len(rows) != 3 {
+		t.Fatalf("got %d batteries, want 3: %+v", len(rows), rows)
+	}
+	byID := map[string]batteryRow{}
+	var order []string
+	for _, row := range rows {
+		byID[row.EntityID] = row
+		order = append(order, row.EntityID)
+	}
+	want := []string{"sensor.smoke_battery", "sensor.hall_battery", "sensor.shed_battery"}
+	for i, id := range want {
+		if order[i] != id {
+			t.Fatalf("order = %v, want %v", order, want)
+		}
+	}
+
+	hall := byID["sensor.hall_battery"]
+	if hall.Steps != 1 || hall.Samples != 2 {
+		t.Errorf("hall = %d step(s)/%d sample(s), want 1/2", hall.Steps, hall.Samples)
+	}
+	if hall.ETASeconds == nil {
+		t.Fatalf("hall has no ETA from a single step: %+v", hall)
+	}
+	// 10 points over 60 days, 75 left above the 15% line.
+	if err := closeTo(*hall.DrainPerDay, 10.0/60, 0.02); err != nil {
+		t.Errorf("hall drain: %v", err)
+	}
+	if err := closeTo(*hall.ETASeconds/86400, 450, 10); err != nil {
+		t.Errorf("hall ETA days: %v", err)
+	}
+
+	shed := byID["sensor.shed_battery"]
+	if shed.ETASeconds != nil || shed.DrainPerDay != nil {
+		t.Errorf("shed = %+v, want no rate from a battery that never moved", shed)
+	}
+	if shed.ETAAtLeast == nil {
+		t.Fatalf("shed has no floor after 12 days at one level: %+v", shed)
+	}
+	// 85 points left, 12 days per assumed 10-point step.
+	if err := closeTo(*shed.ETAAtLeast/86400, 102, 1); err != nil {
+		t.Errorf("shed floor days: %v", err)
+	}
+
+	smoke := byID["sensor.smoke_battery"]
+	if smoke.ETASeconds == nil || *smoke.ETASeconds != 0 {
+		t.Errorf("smoke = %+v, want an ETA of 0 below EMPTY_LEVEL", smoke)
 	}
 }
 
@@ -175,6 +252,10 @@ func TestBatteryLevelsDiscovery(t *testing.T) {
 	}
 	if phone.ETASeconds != nil {
 		t.Errorf("eta_seconds = %v on a first sighting, want none", *phone.ETASeconds)
+	}
+	// No usable last-change either, so there is not even a floor to state.
+	if phone.ETAAtLeast != nil {
+		t.Errorf("eta_at_least = %v on a first sighting, want none", *phone.ETAAtLeast)
 	}
 	// The tracker's state changes whenever the phone moves, so its last_changed
 	// says nothing about the battery, and one sample is not a change either.
@@ -212,6 +293,10 @@ func TestBatteryLevelsRechargeResets(t *testing.T) {
 	}
 	if rows[0].ETASeconds != nil {
 		t.Errorf("eta_seconds = %v across a recharge, want none", *rows[0].ETASeconds)
+	}
+	// The level moved a minute ago, so the dwell is too short to floor either.
+	if rows[0].ETAAtLeast != nil {
+		t.Errorf("eta_at_least = %v across a recharge, want none", *rows[0].ETAAtLeast)
 	}
 }
 
@@ -326,7 +411,8 @@ func TestBatteryLevelsUIRendersRows(t *testing.T) {
 	if len(order) != 2 || order[0] != "Doorbell" {
 		t.Errorf("row order = %v, want the doorbell first", order)
 	}
-	for _, want := range []string{"30%", "3 d"} {
+	// 30% with 15 points left above the empty line, at 10 points/day.
+	for _, want := range []string{"30%", "36 h"} {
 		if !strings.Contains(firstRow, want) {
 			t.Errorf("first row %q missing %q", firstRow, want)
 		}

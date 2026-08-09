@@ -26,16 +26,15 @@
 -- samples on every load, so opening it never shows a stale reading.
 local SCAN_INTERVAL = "15m"
 
--- The level a device is considered dead at. Some hardware stops reporting well
--- above zero; raise this if your sensors go silent at, say, 5%.
-local EMPTY_LEVEL = 0
+-- Most hardware goes flaky well above zero, so "empty" is not 0%.
+local EMPTY_LEVEL = 15
 
--- Guards before an ETA is shown at all. A straight line through two readings an
--- hour apart is astrology, not a forecast: demand a few real steps, spread over
--- a real span, adding up to a real drop.
-local MIN_SAMPLES = 3
-local MIN_SPAN = 6 * time.hour
-local MIN_DROP = 2 -- percent
+-- Any shorter and one step extrapolates into a wild number.
+local MIN_SPAN = 24 * time.hour
+
+-- The coarsest granularity common hardware reports, so the floor below stays
+-- true for the finer-grained ones too.
+local COARSEST_STEP = 10
 
 -- A rise of more than this many points means the pack was charged or swapped,
 -- which makes every earlier sample worthless for the new run.
@@ -134,40 +133,26 @@ local function record(entity_id, level, now_unix)
   return series
 end
 
--- drain_rate fits a least-squares line through the samples and returns its
--- slope in percent per second (negative while draining), or nil when the run is
--- too short, too flat, or rising. The current instant is appended as a point so
--- a battery that has not moved for a week drags the slope towards flat instead
--- of forever predicting the rate it drained at last month.
+-- Ending the window at NOW rather than at the newest sample is what decays a
+-- battery that stopped moving towards flat. One step suffices because the
+-- oldest sample and the current level both start mid-dwell and those two errors
+-- cancel; demanding more meant a coarse sensor forecast nothing for a year.
 local function drain_rate(series, level, now_unix)
-  local points = {}
-  for _, sample in ipairs(series) do points[#points + 1] = sample end
-  local newest = points[#points]
-  if newest == nil then return nil end
-  if newest.at < now_unix then points[#points + 1] = { at = now_unix, level = level } end
+  local oldest = series[1]
+  if oldest == nil then return nil end
+  local drop = oldest.level - level
+  local span = now_unix - oldest.at
+  if drop <= 0 or span < MIN_SPAN then return nil end
+  return -drop / span
+end
 
-  if #points < MIN_SAMPLES then return nil end
-  if points[#points].at - points[1].at < MIN_SPAN then return nil end
-  if points[1].level - level < MIN_DROP then return nil end
-
-  local sum_at, sum_level = 0, 0
-  for _, point in ipairs(points) do
-    sum_at = sum_at + point.at
-    sum_level = sum_level + point.level
-  end
-  local mean_at, mean_level = sum_at / #points, sum_level / #points
-
-  local covariance, variance = 0, 0
-  for _, point in ipairs(points) do
-    local offset = point.at - mean_at
-    covariance = covariance + offset * (point.level - mean_level)
-    variance = variance + offset * offset
-  end
-  if variance == 0 then return nil end
-
-  local slope = covariance / variance
-  if slope >= 0 then return nil end -- flat or climbing: nothing to predict
-  return slope
+-- A battery that never stepped has no rate, but six weeks at one level still
+-- means it is not about to die.
+local function lifetime_floor(remaining, moved_at, now_unix)
+  if moved_at == nil then return nil end
+  local dwell = now_unix - moved_at
+  if dwell < MIN_SPAN then return nil end
+  return remaining / COARSEST_STEP * dwell
 end
 
 -- changed_at returns the unix time the battery reading last moved. Two sources
@@ -219,17 +204,21 @@ local function forget_removed(present, ignored)
   store.set(TRACKED_KEY, ids)
 end
 
--- Soonest to die first: entities with an ETA lead, ascending; the rest follow
--- by level, lowest first. Name breaks every tie so the order never wobbles
--- between polls. Ignored batteries sink below the lot regardless.
+-- Floors are systematically pessimistic, so one must never outrank a
+-- measurement even when its number is the smaller of the two.
+local function urgency_rank(row)
+  if row.eta_seconds ~= nil then return 1, row.eta_seconds end
+  if row.eta_at_least ~= nil then return 2, row.eta_at_least end
+  return 3, row.level
+end
+
+-- Name breaks every tie so the order never wobbles between polls.
 local function by_urgency(left, right)
   if not left.ignored ~= not right.ignored then return not left.ignored end
-  if (left.eta_seconds ~= nil) ~= (right.eta_seconds ~= nil) then
-    return left.eta_seconds ~= nil
-  end
-  if left.eta_seconds ~= nil and left.eta_seconds ~= right.eta_seconds then
-    return left.eta_seconds < right.eta_seconds
-  end
+  local left_tier, left_key = urgency_rank(left)
+  local right_tier, right_key = urgency_rank(right)
+  if left_tier ~= right_tier then return left_tier < right_tier end
+  if left_key ~= right_key then return left_key < right_key end
   if left.level ~= right.level then return left.level < right.level end
   return left.name < right.name
 end
@@ -256,11 +245,18 @@ local function scan()
       present[#present + 1] = battery.entity_id
       local series = record(battery.entity_id, battery.level, now_unix)
       local slope = drain_rate(series, battery.level, now_unix)
-      local eta_seconds
-      if slope ~= nil and battery.level > EMPTY_LEVEL then
-        eta_seconds = (battery.level - EMPTY_LEVEL) / -slope
-      end
       local moved_at = changed_at(battery, series)
+      local remaining = battery.level - EMPTY_LEVEL
+
+      local eta_seconds, eta_at_least
+      if remaining <= 0 then
+        eta_seconds = 0 -- due now, not unknown
+      elseif slope ~= nil then
+        eta_seconds = remaining / -slope
+      else
+        eta_at_least = lifetime_floor(remaining, moved_at, now_unix)
+      end
+
       rows[#rows + 1] = {
         entity_id = battery.entity_id,
         name = battery.name,
@@ -269,8 +265,10 @@ local function scan()
         changed_at = moved_at,
         drain_per_day = slope and -slope * time.day or nil,
         eta_seconds = eta_seconds,
+        eta_at_least = eta_at_least,
         empty_at = eta_seconds and now:add(eta_seconds):unix() or nil,
         samples = #series,
+        steps = #series - 1,
       }
     end
   end
