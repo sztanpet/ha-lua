@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -358,6 +359,108 @@ func (t *Tracker) GetHistory(ctx context.Context, entityID string, since time.Ti
 	}
 	defer rows.Close()
 	return scanStates(rows)
+}
+
+// Attribution answers "what produced this change". UserID is set when a person
+// acted through the UI or the API; CausedBy is the automation, script or scene
+// whose run shares the change's context. Both can be empty: a device reporting
+// in on its own is attributable to nobody, and that is a real answer.
+type Attribution struct {
+	EntityID  string
+	State     string
+	ChangedAt string
+	ContextID string
+	UserID    string
+	CausedBy  string
+}
+
+// WhoChanged attributes an entity's state change. With a zero `at` it explains
+// the current state from the memory mirror; otherwise it explains the newest
+// change at or before `at`, which is the interesting case — the question is
+// nearly always asked about something that happened hours ago.
+//
+// Returns nil when the entity is unknown, or (before `at`) has no history left
+// inside the retention window.
+func (t *Tracker) WhoChanged(ctx context.Context, entityID string, at time.Time) (*Attribution, error) {
+	var change ha.StateData
+	if at.IsZero() {
+		t.mu.RLock()
+		s, ok := t.mem[entityID]
+		t.mu.RUnlock()
+		if !ok {
+			return nil, nil
+		}
+		change = s
+	} else {
+		row := t.readDB.QueryRowContext(ctx, `
+			SELECT state, changed_at, context_id, context_parent_id, context_user_id
+			FROM state_history
+			WHERE entity_id = ? AND changed_at <= ?
+			ORDER BY changed_at DESC, id DESC
+			LIMIT 1`, entityID, at.UTC().Format(sinceLayout))
+		err := row.Scan(&change.State, &change.LastChanged,
+			&change.Context.ID, &change.Context.ParentID, &change.Context.UserID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("who_changed %s: %w", entityID, err)
+		}
+	}
+
+	attr := &Attribution{
+		EntityID:  entityID,
+		State:     change.State,
+		ChangedAt: change.LastChanged,
+		ContextID: change.Context.ID,
+		UserID:    change.Context.UserID,
+	}
+	if attr.ContextID == "" {
+		return attr, nil
+	}
+
+	// The cause shares the change's context. A service call an automation makes
+	// carries the run's id as its parent; a change the automation entity itself
+	// records (last_triggered) carries it as its own id — so look up the parent
+	// when there is one and the id otherwise.
+	lookup := change.Context.ParentID
+	if lookup == "" {
+		lookup = change.Context.ID
+	}
+	cause, causeUser, err := t.causeOfContext(ctx, lookup, entityID)
+	if err != nil {
+		return nil, err
+	}
+	attr.CausedBy = cause
+	if attr.UserID == "" {
+		// A person who started a script is the user behind everything it did.
+		attr.UserID = causeUser
+	}
+	return attr, nil
+}
+
+// causeOfContext finds the entity whose own change carries contextID, ignoring
+// exclude. Automations, scripts and scenes sort first: when one of them turns
+// on four lights, all five rows share the context and only the automation is
+// an answer worth giving.
+func (t *Tracker) causeOfContext(ctx context.Context, contextID, exclude string) (entityID, userID string, err error) {
+	row := t.readDB.QueryRowContext(ctx, `
+		SELECT entity_id, context_user_id
+		FROM state_history
+		WHERE context_id = ? AND entity_id != ?
+		ORDER BY CASE
+			WHEN entity_id GLOB 'automation.*' THEN 0
+			WHEN entity_id GLOB 'script.*'     THEN 0
+			WHEN entity_id GLOB 'scene.*'      THEN 0
+			ELSE 1 END, id
+		LIMIT 1`, contextID, exclude)
+	switch err := row.Scan(&entityID, &userID); {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", "", nil
+	case err != nil:
+		return "", "", fmt.Errorf("cause of context %s: %w", contextID, err)
+	}
+	return entityID, userID, nil
 }
 
 func scanStates(rows *sql.Rows) ([]ha.StateData, error) {

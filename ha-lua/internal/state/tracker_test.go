@@ -317,6 +317,105 @@ func TestStateHistoryKeepsContext(t *testing.T) {
 	}
 }
 
+// changed feeds one state_changed through the tracker with a context.
+func changed(t *testing.T, tr *Tracker, entityID, state, at, ctxID, parentID, userID string) {
+	t.Helper()
+	raw := `{"entity_id":"` + entityID + `","new_state":{` +
+		`"entity_id":"` + entityID + `","state":"` + state + `","attributes":{},` +
+		`"last_changed":"` + at + `","last_updated":"` + at + `",` +
+		`"context":{"id":"` + ctxID + `","parent_id":` + jsonStrOrNull(parentID) +
+		`,"user_id":` + jsonStrOrNull(userID) + `}}}`
+	if err := tr.HandleStateChanged(context.Background(), jsontext.Value(raw)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func jsonStrOrNull(s string) string {
+	if s == "" {
+		return "null"
+	}
+	return `"` + s + `"`
+}
+
+func TestWhoChanged(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	// A person flips a switch in the UI.
+	changed(t, tr, "light.hall", "on", "2026-01-01T03:00:00Z", "ctxUser", "", "alice")
+	// An automation runs and turns on two lights; its own last_triggered row
+	// carries the run's context, the lights carry it as their parent.
+	changed(t, tr, "automation.night", "on", "2026-01-01T04:00:00Z", "ctxRun", "", "")
+	changed(t, tr, "light.porch", "on", "2026-01-01T04:00:01Z", "ctxA", "ctxRun", "")
+	changed(t, tr, "light.path", "on", "2026-01-01T04:00:02Z", "ctxB", "ctxRun", "")
+	// A device reports in on its own.
+	changed(t, tr, "sensor.temp", "21", "2026-01-01T05:00:00Z", "ctxDev", "", "")
+	tr.Flush()
+
+	tests := []struct {
+		name             string
+		entity           string
+		wantUser, wantBy string
+	}{
+		{"user action", "light.hall", "alice", ""},
+		{"automation run", "light.porch", "", "automation.night"},
+		{"sibling light is not the cause", "light.path", "", "automation.night"},
+		{"device reporting in", "sensor.temp", "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			attr, err := tr.WhoChanged(ctx, tc.entity, time.Time{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if attr == nil {
+				t.Fatal("want an attribution, got nil")
+			}
+			if attr.UserID != tc.wantUser {
+				t.Errorf("user_id: want %q, got %q", tc.wantUser, attr.UserID)
+			}
+			if attr.CausedBy != tc.wantBy {
+				t.Errorf("caused_by: want %q, got %q", tc.wantBy, attr.CausedBy)
+			}
+		})
+	}
+
+	if attr, err := tr.WhoChanged(ctx, "light.nope", time.Time{}); err != nil || attr != nil {
+		t.Errorf("unknown entity: want nil, nil; got %+v, %v", attr, err)
+	}
+}
+
+// The whole point is asking hours later, about a change that has since been
+// overwritten: at a past instant the answer comes from history, not the mirror.
+func TestWhoChangedAtPastInstant(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	changed(t, tr, "light.hall", "on", "2026-01-01T03:00:00Z", "ctx1", "", "alice")
+	changed(t, tr, "light.hall", "off", "2026-01-01T09:00:00Z", "ctx2", "", "bob")
+	tr.Flush()
+
+	attr, err := tr.WhoChanged(ctx, "light.hall", time.Date(2026, 1, 1, 4, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attr == nil {
+		t.Fatal("want the 03:00 change, got nil")
+	}
+	if attr.State != "on" || attr.UserID != "alice" {
+		t.Errorf("want on/alice, got %s/%s", attr.State, attr.UserID)
+	}
+
+	// Before anything we recorded there is no answer to invent.
+	early, err := tr.WhoChanged(ctx, "light.hall", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if early != nil {
+		t.Errorf("before the first row: want nil, got %+v", early)
+	}
+}
+
 // A database written by a version without the context columns must gain them
 // rather than fail every insert.
 func TestMigrateAddsContextColumns(t *testing.T) {

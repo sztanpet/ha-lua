@@ -227,6 +227,42 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		return 1
 	}))
 
+	// ha.who_changed(entity_id [, at]) attributes a change to a user, an
+	// automation, or nobody. Without `at` it explains the current state.
+	L.SetField(haTable, "who_changed", L.NewFunction(func(L *lua.LState) int {
+		entityID := L.CheckString(1)
+		var at time.Time
+		if L.GetTop() >= 2 && L.Get(2) != lua.LNil {
+			at = getTime(L, 2)
+		}
+		attr, err := api.tracker.WhoChanged(L.Context(), entityID, at)
+		if err != nil {
+			L.RaiseError("who_changed: %v", err)
+			return 0
+		}
+		if attr == nil {
+			L.Push(lua.LNil)
+			return 1
+		}
+		tbl := L.NewTable()
+		tbl.RawSetString("entity_id", lua.LString(attr.EntityID))
+		tbl.RawSetString("state", lua.LString(attr.State))
+		tbl.RawSetString("changed_at", lua.LString(attr.ChangedAt))
+		// Absent, not empty: "nobody recorded" is a different answer from
+		// "a user with an empty id", and scripts branch on it.
+		if attr.ContextID != "" {
+			tbl.RawSetString("context_id", lua.LString(attr.ContextID))
+		}
+		if attr.UserID != "" {
+			tbl.RawSetString("user_id", lua.LString(attr.UserID))
+		}
+		if attr.CausedBy != "" {
+			tbl.RawSetString("caused_by", lua.LString(attr.CausedBy))
+		}
+		L.Push(tbl)
+		return 1
+	}))
+
 	L.SetField(haTable, "call_service", L.NewFunction(func(L *lua.LState) int {
 		domain := L.CheckString(1)
 		service := L.CheckString(2)

@@ -323,6 +323,51 @@ func TestGetStateContextOmitsEmptyFields(t *testing.T) {
 	}
 }
 
+func TestWhoChangedBinding(t *testing.T) {
+	L, _, tracker, _ := newHALState(t)
+	ctx := context.Background()
+	tracker.Start(t.Context()) // attribution reads history, so the writer must run
+
+	err := tracker.HandleStateChanged(ctx, jsontext.Value(`{
+		"entity_id": "automation.night",
+		"new_state": {"entity_id":"automation.night","state":"on","attributes":{},
+			"context":{"id":"ctxRun"}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tracker.HandleStateChanged(ctx, jsontext.Value(`{
+		"entity_id": "light.porch",
+		"new_state": {"entity_id":"light.porch","state":"on","attributes":{},
+			"context":{"id":"ctxA","parent_id":"ctxRun"}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker.Flush()
+
+	if err := L.DoString(`_w = ha.who_changed("light.porch")`); err != nil {
+		t.Fatal(err)
+	}
+	w, ok := L.GetGlobal("_w").(*lua.LTable)
+	if !ok {
+		t.Fatalf("want a table, got %v", L.GetGlobal("_w"))
+	}
+	if got := w.RawGetString("caused_by"); got != lua.LString("automation.night") {
+		t.Errorf("caused_by: %v", got)
+	}
+	if got := w.RawGetString("user_id"); got != lua.LNil {
+		t.Errorf("user_id: want nil, got %v", got)
+	}
+
+	if err := L.DoString(`_w = ha.who_changed("light.nope")`); err != nil {
+		t.Fatal(err)
+	}
+	if got := L.GetGlobal("_w"); got != lua.LNil {
+		t.Errorf("unknown entity: want nil, got %v", got)
+	}
+}
+
 func TestOnStateChangeRegistration(t *testing.T) {
 	L, api, _, _ := newHALState(t)
 
