@@ -40,6 +40,12 @@ timezone: ""
 state_history:
   retention_days: 2
   purge_interval: "1h"
+  # Per-glob retention overrides for the few entities a script asks
+  # ha.duration_in_state / ha.count_changes about. First match wins, so put
+  # the narrow patterns first.
+  keep: []
+  #  - pattern: "binary_sensor.*_door"
+  #    days: 30
 
 debug:
   # host:port for net/http/pprof + execution trace. Empty disables it.

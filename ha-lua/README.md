@@ -19,6 +19,15 @@ you a real language with real state: scripts react to entity changes and
 events, call services, and keep data across restarts — while the daemon
 handles the WebSocket session, reconnects, and bookkeeping.
 
+**Nothing here forgets when the box reboots.** HA has no global variables,
+and an automation parked in a `delay:` is killed by a restart, so the
+patterns that need memory — a counter, a cooldown, "warn me if it is still
+open in ten minutes" — are the ones that quietly fail. Scripts get two
+SQLite-backed key-value stores and timers that persist and catch up on
+start; `examples/lib/reminders.lua` builds restart-proof reminders on top.
+The daemon also keeps its own history, so a script can ask how long an
+entity has been in a state, how many times it changed, and who changed it.
+
 ## A script
 
 Scripts are plain Lua files. Drop one into the scripts directory and it

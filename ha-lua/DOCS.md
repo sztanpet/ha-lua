@@ -118,6 +118,29 @@ job. Default `2`.
 How often the purge job runs, as a Go duration (`30m`, `1h`, `6h`). A purge
 also runs once at startup. Default `1h`.
 
+### Option: `state_history.keep`
+
+Per-entity retention overrides: a list of `pattern` (an entity glob) and `days`.
+The short default keeps the database small, which is right for the two thousand
+entities a house reports and wrong for the handful a script asks
+`ha.duration_in_state` or `ha.count_changes` about — those need a window long
+enough to answer over.
+
+```yaml
+state_history:
+  retention_days: 2
+  keep:
+    - pattern: "binary_sensor.*_door"
+      days: 30
+    - pattern: "climate.*"
+      days: 30
+```
+
+**First match wins**, so put the narrow patterns first: with `sensor.boiler_*`
+before `sensor.*`, the boiler keeps its longer window. `days` may also be
+*shorter* than the default, to hold down one chatty entity. Default: empty (the
+default retention applies to everything).
+
 ### Option: `debug.pprof_addr`
 
 `host:port` to expose Go `net/http/pprof` and execution-trace endpoints for
@@ -134,6 +157,9 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.get_state(entity_id)` | Current state of one entity |
 | `ha.get_entities(pattern)` / `ha.get_entity_ids(pattern)` | Bulk lookup by glob |
 | `ha.get_history(entity_id, since, limit)` | History from the local mirror |
+| `ha.duration_in_state(entity_id, state, since)` | Seconds spent in a state, plus whether history reaches back that far |
+| `ha.count_changes(entity_id, since, state)` | Transitions in a window (into `state` if given), plus the same flag |
+| `ha.who_changed(entity_id, at)` | What produced a change: a user, an automation/script/scene, or nobody |
 | `ha.call_service(domain, service, data, opts)` | Call any Home Assistant service (`opts.wait = false` to not block the handler on HA's confirmation) |
 | `ha.fire_event(type, data)` | Fire a custom event |
 | `ha.set_state(entity_id, state, attrs)` / `ha.remove_state(entity_id)` | Publish or remove an entity through the core REST API (non-raising: returns `value\|nil, err`) |
@@ -489,6 +515,46 @@ Home Assistant login in front of it** — that is what the token is for, and
 since the builder page hands the token to whoever opens it, the token stops
 someone who guesses the URL rather than someone on your network. It is plain
 HTTP: fine for a script on your own network, not something to port-forward.
+
+## Durable reminders example
+
+"Tell me if the door is still open in ten minutes" is the automation that
+breaks in HA: an automation parked in a `delay:` is killed by a restart, so the
+reminder disappears exactly when the door has been open the whole time the box
+was rebooting. Even our own `ha.after` only survives a restart when it is
+registered at load time, and this one is armed from inside a handler.
+
+| File | Role |
+|------|------|
+| `lib/reminders.lua` | Deferred work kept in the script's store and driven by one load-time tick, so a restart loses nothing. Named actions, escalation ladders, and a throttle that also survives a restart. |
+| `door_reminders.lua` | Uses it end to end: nag at 10 min, then 20 min, then an hour, stop when the door closes, and say how long it has really been open (via `ha.duration_in_state`). |
+
+```lua
+local reminders = require "reminders"
+
+reminders.define("door_open", function(payload)
+  ha.call_service("notify", "persistent_notification", { message = payload.message })
+end)
+
+ha.on_state_change("binary_sensor.front_door", function(data)
+  if data.new_state.state == "on" then
+    reminders.schedule("front_door", "door_open", "10m", { message = "Front door is open" })
+  else
+    reminders.cancel("front_door")
+  end
+end)
+
+reminders.start()   -- last, after every define()
+```
+
+Actions are named rather than passed as functions because a closure cannot be
+stored in SQLite; `define()` them at load time and `schedule()` them by name
+from anywhere. Keys are the unit of cancellation — scheduling the same key
+twice replaces the pending reminder instead of stacking a second one.
+
+`reminders.throttle(key, window)` is the "do not spam me" gate, returning true
+at most once per window, and `reminders.escalate(key, action, steps, payload)`
+walks a ladder of delays until something cancels it.
 
 ## Notes
 

@@ -87,8 +87,18 @@ local s = ha.get_state("light.kitchen")
 --   attributes   = { brightness = 200, ... },  -- decoded from JSON
 --   last_changed = "2026-06-21T08:00:00+00:00",
 --   last_updated = "2026-06-21T08:00:00+00:00",
+--   context      = { id = "01J…", parent_id = "01J…", user_id = "…" },
 -- }
 ```
+
+**`context`** is HA's causal marker on the change: `user_id` is set when a
+person acted through the UI or the API, and `parent_id` links the change to the
+action that caused it (a service call an automation makes carries the
+automation run's id). Fields HA sends as null are **absent** from the table, so
+`if s.context.user_id then` distinguishes "a person did this" from "a device
+reported in". `context` itself is absent for a state the daemon has never seen
+change (the initial seed). [`ha.who_changed`](#hawho_changedentity_id--at)
+turns it into an answer.
 
 #### `ha.get_entities(pattern)`
 
@@ -116,6 +126,76 @@ History is persisted **write-behind**: a query made in the same instant an
 event is dispatched may not include that event's row yet (it lands milliseconds
 later). Current state via `ha.get_state` is never stale; only the history log
 trails by a beat.
+
+#### `ha.duration_in_state(entity_id, state, since)`
+
+Returns **two** values: how many seconds `entity_id` has spent in `state` since
+the `since` instant, and whether the window is **complete**. Raises on error.
+
+```lua
+local seconds, complete = ha.duration_in_state(
+  "climate.living_room", "heat", time.now():add(-24 * time.hour))
+```
+
+A state still in effect accrues time up to now, not up to its last recorded
+row. Repeated history rows carrying the same state (HA emits a `state_changed`
+for attribute-only updates too) do not break the stretch.
+
+`complete` is `false` when no row survives from before `since` — the window
+reaches further back than
+[retention](./DOCS.md#state-history) kept, and the number is a **lower bound**.
+Report it or widen retention; do not silently present a truncated answer as a
+total.
+
+#### `ha.count_changes(entity_id, since [, state])`
+
+Returns **two** values: how many times `entity_id` changed state since `since`,
+and the same completeness flag. With `state`, only transitions **into** that
+state are counted. Raises on error.
+
+```lua
+local opens = ha.count_changes(
+  "binary_sensor.front_door", time.now():add(-24 * time.hour), "on")
+```
+
+Attribute-only updates are not transitions: consecutive rows with the same
+state count once. When the window is incomplete the first change in it is
+counted, because an entity that appears mid-window did become what it is at
+some point that is no longer recorded.
+
+#### `ha.who_changed(entity_id [, at])`
+
+Answers "what turned this on". Returns a table, or `nil` when the entity is
+unknown (or, with `at`, has no history left that far back). Raises on error.
+
+```lua
+local who = ha.who_changed("light.hallway")
+-- who = {
+--   entity_id  = "light.hallway",
+--   state      = "on",
+--   changed_at = "2026-06-21T03:12:44+00:00",
+--   context_id = "01J…",
+--   user_id    = "e9c…",             -- a person acted, via UI or API
+--   caused_by  = "automation.night", -- the automation/script/scene behind it
+-- }
+```
+
+`user_id` and `caused_by` are **absent** when they do not apply: a device
+reporting in on its own is attributable to nobody, and that is a real answer
+rather than a failure. `caused_by` is found by looking the change's context up
+in reverse — automations, scripts and scenes win, so an automation that turns
+on four lights is reported as the cause of each rather than a sibling light.
+
+Without `at` the current state is explained. With `at` (a `time` value) it is
+the newest change at or before that instant — which is the question people
+actually ask, hours after the fact:
+
+```lua
+local who = ha.who_changed("light.hallway", time.now():add(-6 * time.hour))
+```
+
+The answer is only as good as what is still stored: attribution needs both the
+change and the causing entity's own row inside the retention window.
 
 ### Services and events
 
@@ -156,6 +236,53 @@ handler reads state it just changed or must react to a failure inline.
 
 Fires a custom Home Assistant event of the given `type`, with an optional `data`
 table (JSON-encoded). Raises on error.
+
+#### `ha.set_state(entity_id, state [, attributes])`
+
+Publishes an entity into Home Assistant through the core REST API, creating it
+if it does not exist. This is how a script becomes an integration: poll an API
+your hardware has no HA support for, `set_state` the result, and it is a normal
+entity — usable in dashboards, automations, and HA's own recorder.
+
+**Non-raising** (`value | nil, err`): returns `true` when the entity was
+created, `false` when an existing one was updated. It is meant to be called
+from a control loop every minute or so, and a transient HA outage must not spam
+the exception handler.
+
+```lua
+local created, err = ha.set_state("sensor.rain_gauge_mm", "3.4", {
+  unit_of_measurement = "mm",
+  friendly_name       = "Rain gauge",
+})
+if err then ha.log("warn", "publish failed: " .. err) end
+```
+
+Entities published this way live in HA's state machine, not its entity
+registry: they survive until HA restarts, so republish on a timer (and on
+load). Pick an id that cannot collide with a real integration's.
+
+#### `ha.remove_state(entity_id)`
+
+Removes an entity published with `ha.set_state`. Non-raising like it: returns
+`true`, or `nil, err`.
+
+#### `ha.on_command(fn)`
+
+Load-time sugar over `ha.on_event("ha_lua_command", …)`: keeps only the
+commands addressed to this script (`data.script == <script id>`) and calls
+`fn(action, data)` with the command's action string and payload. One event type
+carries every card-driven command, which is what the bundled Lovelace card
+sends.
+
+```lua
+ha.on_command(function(action, data)
+  if action == "set_temp" then
+    ha.call_service("climate", "set_temperature", {
+      entity_id = data.entity_id, temperature = data.value,
+    })
+  end
+end)
+```
 
 ### Callbacks (load-time registration)
 
@@ -444,6 +571,11 @@ layer via `os.Root`). Any other module path raises an error.
 ```lua
 local zones = require "zones"   -- scripts/lib/zones.lua
 ```
+
+The bundled examples ship modules worth copying into your own `scripts/lib/`:
+`reminders.lua` (durable reminders, escalation, throttling — see
+[DOCS.md](./DOCS.md#durable-reminders-example)), `zones.lua`, `schedule.lua`,
+`control.lua`, and `card.lua`.
 
 ## Standard library
 
