@@ -162,6 +162,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   the result payload and a new Lua binding. Revisit only on request.
 
 ## battery_levels: recharge threshold is 10 from the low (2026-08-09)
+- Commit `832f11e`. RELEASED in **v4.4.1** (2026-08-09, tag on `9c42c08`).
 - `RECHARGE_JUMP` (> 2 points in one step) is GONE, replaced by
   `RECHARGE_RISE = 10` measured against the LOWEST sample in the series.
 - The reported reason: real entities report levels that fluctuate by three or

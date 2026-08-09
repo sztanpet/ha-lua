@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-09 (v4.4.0)
+Last updated: 2026-08-09 (v4.4.1)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -11,8 +11,8 @@ and only that one.
 
 ## Latest
 **Batteries: recharge threshold raised to 10 points above the run's low**
-(2026-08-09, unreleased). The old 2-point per-step bar was tripped by the
-entities that report a level fluctuating a few points a day, wiping their
+(2026-08-09, `832f11e`, released in v4.4.1). The old 2-point per-step bar was
+tripped by entities that report a level fluctuating a few points a day, wiping
 series before it was ever old enough to forecast from; measuring from the low
 also catches a slow top-up that no per-step bar sees. Detail:
 `state/bundled-examples.md`.
