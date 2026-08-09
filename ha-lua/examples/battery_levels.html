@@ -171,19 +171,32 @@ function etaCell(battery) {
       h("span", { class: "pill unknown",
         title: "ignored: no samples are kept and no forecast is made" }, "ignored"));
   }
-  if (battery.eta_seconds == null) {
-    // No fit yet: say why in the title so the blank cell isn't a mystery.
-    const samples = battery.samples || 0;
+  if (battery.eta_seconds != null) {
+    const when = battery.empty_at ? dateFmt.format(battery.empty_at * 1000) : null;
+    // A rate off one step is wide open; it tightens as the battery sits.
+    const rough = (battery.steps || 0) < 2;
+    return h("div", { class: "cell eta", "data-label": "Empty in" },
+      h("span", { class: "pill " + etaClass(battery.eta_seconds),
+                  title: rough
+                    ? "one level step observed so far — rough, and it settles "
+                      + "as more steps land"
+                    : battery.steps + " level steps observed" },
+        (rough ? "~" : "") + fmtDuration(battery.eta_seconds)),
+      when && h("span", { class: "when" }, when));
+  }
+  if (battery.eta_at_least != null) {
+    // Uncoloured on purpose: an amber bound would read as a prediction.
     return h("div", { class: "cell eta", "data-label": "Empty in" },
       h("span", { class: "pill unknown",
-        title: samples + " sample(s) recorded — an estimate needs a few "
-             + "percent of drop spread over hours" }, "measuring"));
+        title: "the level has not moved once since tracking started, so there "
+             + "is no drain rate — this is a floor from how long it has held "
+             + battery.level + "%, not a forecast" },
+        "> " + fmtDuration(battery.eta_at_least)));
   }
-  const when = battery.empty_at ? dateFmt.format(battery.empty_at * 1000) : null;
   return h("div", { class: "cell eta", "data-label": "Empty in" },
-    h("span", { class: "pill " + etaClass(battery.eta_seconds) },
-      fmtDuration(battery.eta_seconds)),
-    when && h("span", { class: "when" }, when));
+    h("span", { class: "pill unknown",
+      title: "the level has not moved and has not held long enough to bound — "
+           + "give it a day" }, "measuring"));
 }
 
 function row(battery) {

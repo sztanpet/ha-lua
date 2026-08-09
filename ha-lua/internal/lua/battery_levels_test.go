@@ -446,6 +446,42 @@ func TestBatteryLevelsUIRendersRows(t *testing.T) {
 	}
 }
 
+// TestBatteryLevelsUIRendersBounds: a floor and a measured ETA must not read as
+// the same kind of number. The floor keeps its ">" and stays uncoloured; a rate
+// read off a single step is hedged with a "~".
+func TestBatteryLevelsUIRendersBounds(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.hall_battery", State: "90",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Hall"}`),
+			LastChanged: now.Add(-3 * 24 * time.Hour).UTC().Format(time.RFC3339)},
+		{EntityID: "sensor.shed_battery", State: "100",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Shed"}`),
+			LastChanged: now.Add(-12 * 24 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.hall_battery": []any{sample(now.Add(-60*24*time.Hour), 100)},
+	}
+	srv := httptest.NewServer(serveBatteryLevels(t, seed, series))
+	t.Cleanup(srv.Close)
+
+	const pills = `Array.from(document.querySelectorAll(".row .eta .pill")).map(node => node.textContent)`
+	var texts []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/s/battery_levels/"),
+		chromedp.WaitVisible(".row .eta .pill", chromedp.ByQuery),
+		chromedp.Evaluate(pills, &texts),
+	); err != nil {
+		t.Fatal(err)
+	}
+	// Hall: 75 points left at 10/60 per day. Shed: 85 left, 12 days per step.
+	want := []string{"~15 mo", "> 3 mo"}
+	if len(texts) != 2 || texts[0] != want[0] || texts[1] != want[1] {
+		t.Errorf("eta pills = %v, want %v", texts, want)
+	}
+}
+
 func closeTo(got, want, tolerance float64) error {
 	if diff := got - want; diff < -tolerance || diff > tolerance {
 		return fmt.Errorf("got %.3f, want %.3f ±%.3f", got, want, tolerance)
