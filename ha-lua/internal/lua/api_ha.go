@@ -530,6 +530,19 @@ func stateToLua(L *lua.LState, s *ha.StateData) *lua.LTable {
 	tbl.RawSetString("attributes", luaUnmarshalOrEmpty(L, []byte(s.Attributes)))
 	tbl.RawSetString("last_changed", lua.LString(s.LastChanged))
 	tbl.RawSetString("last_updated", lua.LString(s.LastUpdated))
+	// Absent rather than empty when unknown: a script asking "who did this"
+	// must be able to tell "nobody recorded it" from "a context with no user".
+	if s.Context.ID != "" {
+		ctx := L.NewTable()
+		ctx.RawSetString("id", lua.LString(s.Context.ID))
+		if s.Context.ParentID != "" {
+			ctx.RawSetString("parent_id", lua.LString(s.Context.ParentID))
+		}
+		if s.Context.UserID != "" {
+			ctx.RawSetString("user_id", lua.LString(s.Context.UserID))
+		}
+		tbl.RawSetString("context", ctx)
+	}
 	return tbl
 }
 

@@ -264,6 +264,65 @@ func TestGetState(t *testing.T) {
 	}
 }
 
+// The change context is what answers "who turned this on"; it must survive
+// the trip from the wire through the mirror into Lua.
+func TestGetStateExposesContext(t *testing.T) {
+	L, _, tracker, _ := newHALState(t)
+
+	err := tracker.HandleStateChanged(context.Background(), jsontext.Value(`{
+		"entity_id": "light.test",
+		"new_state": {
+			"entity_id": "light.test", "state": "on", "attributes": {},
+			"last_changed": "2026-01-01T00:00:00Z", "last_updated": "2026-01-01T00:00:00Z",
+			"context": {"id": "ctx1", "parent_id": "ctx0", "user_id": "alice"}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := L.DoString(`_c = ha.get_state("light.test").context`); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := L.GetGlobal("_c").(*lua.LTable)
+	if !ok {
+		t.Fatalf("context: want a table, got %v", L.GetGlobal("_c"))
+	}
+	for field, want := range map[string]string{"id": "ctx1", "parent_id": "ctx0", "user_id": "alice"} {
+		if got := c.RawGetString(field); got != lua.LString(want) {
+			t.Errorf("context.%s: want %q, got %v", field, want, got)
+		}
+	}
+}
+
+// A context with no user (a device reporting in) must leave user_id absent
+// rather than empty — scripts branch on it.
+func TestGetStateContextOmitsEmptyFields(t *testing.T) {
+	L, _, tracker, _ := newHALState(t)
+
+	err := tracker.HandleStateChanged(context.Background(), jsontext.Value(`{
+		"entity_id": "light.test",
+		"new_state": {
+			"entity_id": "light.test", "state": "on", "attributes": {},
+			"context": {"id": "ctx1", "parent_id": null, "user_id": null}
+		}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := L.DoString(`_c = ha.get_state("light.test").context`); err != nil {
+		t.Fatal(err)
+	}
+	c := L.GetGlobal("_c").(*lua.LTable)
+	if got := c.RawGetString("user_id"); got != lua.LNil {
+		t.Errorf("user_id: want nil, got %v", got)
+	}
+	if got := c.RawGetString("parent_id"); got != lua.LNil {
+		t.Errorf("parent_id: want nil, got %v", got)
+	}
+}
+
 func TestOnStateChangeRegistration(t *testing.T) {
 	L, api, _, _ := newHALState(t)
 

@@ -54,6 +54,18 @@ type StateData struct {
 	Attributes  jsontext.Value `json:"attributes"`
 	LastChanged string         `json:"last_changed"`
 	LastUpdated string         `json:"last_updated"`
+	Context     Context        `json:"context"`
+}
+
+// Context is HA's causal marker on a state change: which action produced it.
+// UserID is set when a person acted through the UI or the API; ParentID links
+// a change to the action that caused it (the service call an automation made
+// carries the automation run's ID as its parent). Everything else — a device
+// reporting in, an integration poll — arrives with an ID and nothing else.
+type Context struct {
+	ID       string `json:"id"`
+	ParentID string `json:"parent_id"`
+	UserID   string `json:"user_id"`
 }
 
 // Event is the parsed event envelope delivered to consumers
