@@ -4,6 +4,19 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.4.1 - 2026-08-09
+
+### Fixed
+- **Batteries whose level fluctuates no longer lose their history every day.**
+  The Batteries page threw a battery's whole sample series away on any rise of
+  more than two points, reading it as a charge or a swap. Plenty of entities
+  report a level that wobbles by three or more points a day, so those restarted
+  on nearly every uptick and never accumulated the 24 hours of history a
+  forecast needs — they read **measuring** forever. A recharge now means a rise
+  of 10 points above the run's low point, which also catches a pack topped up
+  gradually: that climbs a point or two per scan and tripped no per-step
+  threshold at all, while its pre-charge samples went on anchoring the forecast.
+
 ## 4.4.0 - 2026-08-09
 
 ### Added
