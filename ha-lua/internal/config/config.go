@@ -58,11 +58,23 @@ type Config struct {
 	StateHistory struct {
 		RetentionDays int    `json:"retention_days" yaml:"retention_days"`
 		PurgeInterval string `json:"purge_interval"  yaml:"purge_interval"`
+		// Keep overrides RetentionDays for entities matching a glob. A short
+		// default keeps the database small, but the handful of entities a
+		// script asks "how long today" about need a window long enough to
+		// answer over. First matching rule wins.
+		Keep []KeepRule `json:"keep" yaml:"keep"`
 	} `json:"state_history" yaml:"state_history"`
 
 	Debug struct {
 		PprofAddr string `json:"pprof_addr" yaml:"pprof_addr"`
 	} `json:"debug" yaml:"debug"`
+}
+
+// KeepRule holds history for entities matching Pattern (a SQLite GLOB, the
+// same `light.*` shape scripts use) for Days instead of the default.
+type KeepRule struct {
+	Pattern string `json:"pattern" yaml:"pattern"`
+	Days    int    `json:"days"    yaml:"days"`
 }
 
 // PurgeInterval parses and returns the purge interval duration.

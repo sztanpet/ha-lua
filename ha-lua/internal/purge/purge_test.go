@@ -95,6 +95,60 @@ func TestRunOnceSameDayCutoff(t *testing.T) {
 	}
 }
 
+func TestRunOnceKeepRules(t *testing.T) {
+	db := newPurgeDB(t)
+	old := time.Now().UTC().Add(-72 * time.Hour)
+
+	insertHistory(t, db, "binary_sensor.front_door", old) // kept 30 days
+	insertHistory(t, db, "binary_sensor.motion", old)     // kept 30 days
+	insertHistory(t, db, "sensor.chatty", old)            // rule says 1 day
+	insertHistory(t, db, "light.hall", old)               // default 2 days
+
+	p := New(db, 2, time.Hour,
+		Rule{Pattern: "binary_sensor.*", Days: 30},
+		Rule{Pattern: "sensor.*", Days: 1},
+	)
+	if err := p.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	for entity, want := range map[string]bool{
+		"binary_sensor.front_door": true,
+		"binary_sensor.motion":     true,
+		"sensor.chatty":            false,
+		"light.hall":               false,
+	} {
+		var n int
+		err := db.QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM state_history WHERE entity_id = ?`, entity).Scan(&n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if kept := n == 1; kept != want {
+			t.Errorf("%s: kept=%v, want %v", entity, kept, want)
+		}
+	}
+}
+
+// Overlapping globs: the first rule wins, so a later, more aggressive rule
+// cannot delete what an earlier one promised to keep.
+func TestRunOnceFirstRuleWins(t *testing.T) {
+	db := newPurgeDB(t)
+	old := time.Now().UTC().Add(-72 * time.Hour)
+	insertHistory(t, db, "sensor.boiler_runtime", old)
+
+	p := New(db, 2, time.Hour,
+		Rule{Pattern: "sensor.boiler_*", Days: 30},
+		Rule{Pattern: "sensor.*", Days: 1},
+	)
+	if err := p.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := countHistory(t, db); n != 1 {
+		t.Errorf("the later sensor.* rule deleted a row sensor.boiler_* kept")
+	}
+}
+
 func TestRunOnceEmptyTable(t *testing.T) {
 	db := newPurgeDB(t)
 	p := New(db, 2, time.Hour)

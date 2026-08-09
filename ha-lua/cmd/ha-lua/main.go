@@ -130,7 +130,11 @@ func main() {
 		slog.Error("bad purge_interval", "err", err)
 		os.Exit(1)
 	}
-	purge.New(writeDB, cfg.StateHistory.RetentionDays, purgeInterval).Start(ctx)
+	keep := make([]purge.Rule, 0, len(cfg.StateHistory.Keep))
+	for _, rule := range cfg.StateHistory.Keep {
+		keep = append(keep, purge.Rule{Pattern: rule.Pattern, Days: rule.Days})
+	}
+	purge.New(writeDB, cfg.StateHistory.RetentionDays, purgeInterval, keep...).Start(ctx)
 
 	// Drop the bundled reference examples beside the scripts dir, refreshed to
 	// this build on every boot. Read-only reference, never loaded or run; the

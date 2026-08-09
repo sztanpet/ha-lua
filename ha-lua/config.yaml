@@ -40,6 +40,7 @@ options:
   state_history:
     retention_days: 2
     purge_interval: "1h"
+    keep: []
   debug:
     pprof_addr: ""
 schema:
@@ -49,5 +50,10 @@ schema:
   state_history:
     retention_days: "int"
     purge_interval: "str"
+    # Per-glob retention overrides, e.g. keep the door sensors for a month so
+    # ha.duration_in_state has a month to answer over. First match wins.
+    keep:
+      - pattern: "str"
+        days: "int"
   debug:
     pprof_addr: "str?"

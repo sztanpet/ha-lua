@@ -146,6 +146,42 @@ database: "./ha-lua.db"
 	}
 }
 
+// The keep rules arrive as a list of dicts from the Supervisor's options.json
+// and from a dev YAML; both parse paths must produce the same rules.
+func TestLoadKeepRules(t *testing.T) {
+	t.Setenv("SUPERVISOR_TOKEN", "super-secret")
+	jsonPath := writeFile(t, "options.json", `{
+		"state_history": {"keep": [{"pattern": "binary_sensor.*", "days": 30}]}
+	}`)
+	yamlPath := writeFile(t, "config.yaml", `
+state_history:
+  keep:
+    - pattern: "binary_sensor.*"
+      days: 30
+`)
+
+	for name, tc := range map[string]struct {
+		path  string
+		addon bool
+	}{
+		"options.json": {jsonPath, true},
+		"dev yaml":     {yamlPath, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := load(tc.path, tc.addon)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(cfg.StateHistory.Keep) != 1 {
+				t.Fatalf("want 1 keep rule, got %+v", cfg.StateHistory.Keep)
+			}
+			if got := cfg.StateHistory.Keep[0]; got.Pattern != "binary_sensor.*" || got.Days != 30 {
+				t.Errorf("keep rule: %+v", got)
+			}
+		})
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	if _, err := load(filepath.Join(t.TempDir(), "nope.json"), false); err == nil {
 		t.Fatal("expected error for missing config file")
