@@ -4,6 +4,41 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.5.0 - 2026-08-09
+
+### Added
+- **`ha.who_changed(entity_id [, at])` — what turned this on.** Every state
+  change HA sends carries a context: the action behind it, and the user when a
+  person acted through the UI or the API. It is now decoded (`state.context`),
+  stored with each history row, and resolved into an answer — a user id, or the
+  automation, script or scene whose run shares the context. With a `time`
+  argument it answers for a past instant, which is when the question is
+  actually asked.
+- **`ha.duration_in_state(entity_id, state, since)` and
+  `ha.count_changes(entity_id, since [, state])`.** How long the heating ran,
+  how many times the door opened — read straight from the recorded history
+  instead of one `history_stats` sensor per question. Both return a
+  completeness flag alongside the number, so a window reaching past what
+  retention kept is reported as a lower bound rather than a confident zero.
+  Attribute-only updates are not counted as transitions.
+- **`state_history.keep`** — per-glob retention overrides
+  (`[{pattern, days}]`), so the handful of entities the two calls above ask
+  about can keep a month of history while everything else keeps the default
+  two days. First matching rule wins.
+- **`lib/reminders.lua` and `door_reminders.lua`** — durable reminders. HA
+  kills an automation parked in a `delay:` on restart, and `ha.after` only
+  persists when registered at load time, which the useful case ("warn me if the
+  door is still open in ten minutes") never is. Pending work lives in the
+  script's store and is driven by one load-time tick, so a restart loses
+  nothing. Includes escalation ladders and a throttle that survives a restart
+  loop.
+
+### Fixed
+- `ha.set_state`, `ha.remove_state` and `ha.on_command` are documented in
+  `lua_api.md`. They have shipped since 3.x, and the reference that calls
+  itself complete never mentioned the binding that lets a script publish its
+  own entity.
+
 ## 4.4.1 - 2026-08-09
 
 ### Fixed
