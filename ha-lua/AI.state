@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-08 (v4.3.2)
+Last updated: 2026-08-09 (v4.4.0)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -11,8 +11,8 @@ and only that one.
 
 ## Latest
 **Batteries page forecasts from one level step** (2026-08-09, `6c26427` +
-`36bd760`, unreleased). Nearly every row said "measuring" because the ETA was
-gated behind two observed level steps, which on a coarse sensor is a 20% drop.
+`36bd760`, released in v4.4.0). Nearly every row said "measuring" because the
+ETA was gated behind two observed level steps, a 20% drop on a coarse sensor.
 Least squares is gone — the secant over the whole observation window is
 unbiased here and works from a single step — and a battery that has never
 stepped now gets a lifetime floor from its dwell instead of nothing. Detail:

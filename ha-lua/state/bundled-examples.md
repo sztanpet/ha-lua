@@ -5,7 +5,7 @@ Working state for the read-only bundled examples tree. Spec:
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
 growing on top; newest: the Batteries page forecasting from one level step
-(2026-08-09, `6c26427` + `36bd760`, unreleased).
+(2026-08-09, `6c26427` + `36bd760`, v4.4.0).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -122,7 +122,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 
 ## battery_levels: forecast from one step (2026-08-09)
 - Commits `6c26427` (script + Lua-side tests), `36bd760` (page + chromedp).
-  UNRELEASED at the time of writing.
+  RELEASED in **v4.4.0** (2026-08-09, tag on `abf14e9`).
 - The reported bug: nearly every row said "measuring". `MIN_SAMPLES = 3` meant
   **two observed level steps** (a sample is only written when the level moves),
   which on a 10%-granularity sensor is a 20% drop. The forecast was only ever
