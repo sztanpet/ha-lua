@@ -4,6 +4,34 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.4.0 - 2026-08-09
+
+### Added
+- **A battery that has never moved now shows a lower bound rather than
+  nothing.** There is no drain rate to be had from a level that has not budged,
+  but a battery sitting at the same reading for six weeks is demonstrably not
+  about to die, so those rows read **> 3 mo**. A bound is not a forecast: it
+  stays uncoloured, keeps its `>`, and always sorts below every battery with a
+  real measurement behind it.
+
+### Changed
+- **A battery counts down to 15%, not 0%.** Plenty of hardware goes flaky or
+  drops off the network well before it reports zero, and the question the page
+  answers is when to replace a cell. Anything already below the line reads as
+  due now instead of showing no estimate at all.
+- Forecasts built from a single level step are marked **~** to show they are
+  still coarse. They tighten on their own as the battery drains.
+
+### Fixed
+- **The Batteries tab said "measuring" for nearly every battery.** An estimate
+  needed three stored samples, and a sample is only written when the level
+  actually moves — so it really needed two observed level steps. On a sensor
+  that reports in whole 10% jumps that is a 20% drop, which on a battery meant
+  to last a year simply never arrived. The forecast was only ever visible on the
+  batteries draining fast enough that nobody needed to be told. One observed
+  step is now enough, so a coarse sensor gets an estimate the first time it
+  drops instead of some time next year.
+
 ## 4.3.2 - 2026-08-08
 
 ### Fixed
