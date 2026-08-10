@@ -207,6 +207,37 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   events whose `drop` alternates (a level wobbling 1-3 points gives the secant
   huge relative variance, which would swing the ETA by the same factor).
 
+## battery_levels: the drain rate is a median (2026-08-10)
+- Commits `18b7852` (estimator + tests), `bd33ee5` (DOCS.md). NOT yet released.
+- The inspector from v4.6.0 did its job on the first dump. Real series off a
+  live sensor: `27 28 27 28 27 26 27 26 27 26 27` — a ~0.25 %/day drain under a
+  ±1 diurnal swing (high ~10:08, low ~02:08, i.e. temperature). The secant read
+  the rate off two single readings, so the answer was decided by which side of
+  the swing each endpoint was caught on. Fixture is kept as `wobbleSeries()` in
+  the test file; it is REAL user data, do not "tidy" it into round numbers.
+- Chosen by measuring variance, not by argument: sliding the poll instant across
+  two days of a simulated sensor matched to this one gave secant 2.6x spread and
+  silent on 10% of polls, plain Theil-Sen 2.9x, **Theil-Sen with a 12 h minimum
+  pair span 1.4x and never silent**, least squares 1.5x but -10.9% biased at the
+  4-day window. Scratch programs are gone; rerun by simulating if ever doubted.
+- **MIN_PAIR_SPAN is load-bearing, not a refinement.** Without it plain
+  Theil-Sen returns exactly 0.0000 on the real series: only three distinct
+  levels appear, so 19 of the 55 pairs have Δlevel = 0 and the median lands in
+  the pile of zeros. Pair census was 27 negative / 19 zero / 9 positive — the
+  trend is in the counts, which a median cannot see. Do not remove it, and do
+  not assume "robust estimator" implies robust to *quantization*.
+- Fallback when no pair is wide enough (a battery stepping twice within 12 h)
+  is to use every pair, otherwise a fast drain would forecast nothing.
+- The median only ever describes COMPLETED steps — every pair ends at a sample.
+  So `dwell_cap` handles the step in progress: one granularity step (smallest
+  observed |Δlevel|) per dwell. It is what replaces v4.4.0's "window ends at
+  now" trick. Appending `(now, level)` as a 12th point does NOT work: it
+  contributes 11 of 66 pairs and the median stays pinned to the old slope, so a
+  60-day stall would still predict last month's rate. Verified, not assumed.
+- `TestBatteryLevelsNoisyLevelKeeps` expected 31 days; that was the endpoint
+  bias (its endpoints are a high and a low). Median says 1.50 %/day, least
+  squares 1.51 independently → 37 days. The old number was wrong, not the new.
+
 ## service_api example (2026-08-06)
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA
   service, aimed at shell scripts. Commit 26f0acd (script + tests), ea7f320

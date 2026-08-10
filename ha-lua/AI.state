@@ -10,14 +10,12 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Battery forecast inspector** (2026-08-10, `b51a2b2`..`9fc49e0`, v4.6.0).
-The user reports the Batteries ETA swinging between polls; nothing is diagnosed
-yet. `battery_levels.lua` now keeps a capped per-entity event trail
-(`events:<id>`) written whenever the series changes, the answer changes kind, or
-the ETA moves >10% unexplained, and serves it with the series and the whole
-computation from a read-only `GET /api/detail`; clicking a row on the page opens
-it. Waiting on real data from the user's install. Detail:
-`state/bundled-examples.md`.
+**Battery drain rate is a median** (2026-08-10, `18b7852`, `bd33ee5`,
+UNRELEASED). The v4.6.0 inspector found the swinging-ETA cause on its first
+dump: a ±1 diurnal wobble, with the rate read off two single endpoint samples.
+Replaced by Theil-Sen over pairs at least 12 h apart, plus a dwell bound for the
+step in progress. Chosen by measuring ETA spread across poll phase, not by
+argument. Detail: `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
