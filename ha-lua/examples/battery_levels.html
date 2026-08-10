@@ -45,7 +45,8 @@
   .head { padding:0 14px 6px; color:var(--muted); font-size:.78rem;
           font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
   .row { background:var(--card); border-radius:12px; padding:12px 14px;
-         margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+         margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,.08);
+         cursor:pointer; }
   .name { font-weight:600; min-width:0; overflow-wrap:anywhere; }
   .eid { display:block; color:var(--muted); font-size:.78rem; font-weight:400;
          overflow-wrap:anywhere; }
@@ -79,6 +80,31 @@
   .row.ignored .pct { color:var(--muted); }
   .empty, .err { padding:16px; color:var(--muted); text-align:center; }
   .err { color:var(--bad); }
+  /* The inspector. Its own block below the row rather than inside it, so the
+     row grid stays a row grid. */
+  .row.open { margin-bottom:0; border-bottom-left-radius:0;
+              border-bottom-right-radius:0; }
+  .detail { background:var(--surface); border:1px solid var(--line);
+            border-top:none; border-radius:0 0 12px 12px; padding:12px 14px;
+            margin-bottom:8px; font-size:.86rem; }
+  .verdict { margin:0 0 10px; }
+  .detail dl { display:grid; grid-template-columns:max-content minmax(0,1fr);
+               gap:3px 12px; margin:0 0 12px; }
+  .detail dt { color:var(--muted); }
+  .detail dd { margin:0; font-variant-numeric:tabular-nums;
+               overflow-wrap:anywhere; }
+  .trail { display:grid; gap:12px; grid-template-columns:1fr 1fr; }
+  .trail h3 { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;
+              color:var(--muted); font-weight:600; margin:0; }
+  .trail ul { list-style:none; margin:0; padding:0; }
+  .trail li { padding:4px 0; border-top:1px solid var(--line);
+              font-variant-numeric:tabular-nums; }
+  .trail .at { color:var(--muted); margin-right:6px; }
+  .trail .why { font-weight:600; }
+  .trail .why.reset { color:var(--bad); }
+  .trail .note { display:block; color:var(--muted); }
+  .detail .err { padding:0; text-align:left; }
+  @media (max-width:680px) { .trail { grid-template-columns:1fr; } }
   /* One column per line below the table breakpoint; each cell grows a label so
      the numbers stay readable without a header row to align against. */
   @media (max-width:680px) {
@@ -122,6 +148,8 @@ const URGENT_DAYS = 2;     // red ETA
 const POLL_MS = 60000;
 
 let lastState = null;
+let openEntity = null;  // entity id whose inspector is expanded
+let openDetail = null;  // its last /api/detail payload
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
@@ -199,12 +227,170 @@ function etaCell(battery) {
            + "give it a day" }, "measuring"));
 }
 
+const atFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" });
+
+function fmtAt(unix) { return atFmt.format(unix * 1000); }
+function fmtLevel(level) { return level == null ? "—" : level + "%"; }
+function fmtSigned(delta) { return (delta > 0 ? "+" : "−") + Math.abs(delta); }
+
+// The line worth reading first: which of the three answers this row got, and
+// what decided it. When there is no forecast it names the guard that failed —
+// a bare "measuring" is exactly what makes the page impossible to trust.
+function verdict(detail) {
+  const math = detail.math;
+  if (math.tier === "eta") {
+    if (math.remaining <= 0) {
+      return "At or below the " + math.empty_level + "% replace line already.";
+    }
+    return "Forecast from " + math.steps + (math.steps === 1 ? " step" : " steps")
+      + " across " + fmtDuration(math.span) + ": " + math.drop + " points down, "
+      + math.per_day.toFixed(2) + " %/day.";
+  }
+  if (math.tier === "floor") {
+    return "No step observed yet — a floor from how long it has held "
+      + detail.level + "%, not a forecast.";
+  }
+  if (!math.samples) return "No samples stored yet; the next scan writes the first.";
+  if (math.drop <= 0) {
+    return "No drop: the level is not below the oldest sample ("
+      + math.oldest_level + "%), so there is no rate to extrapolate.";
+  }
+  if (math.span < math.min_span) {
+    return "The window is only " + fmtDuration(math.span) + " — a rate needs "
+      + fmtDuration(math.min_span) + ", and a wiped run starts it over.";
+  }
+  return "No forecast and no floor.";
+}
+
+function field(label, value) {
+  return [h("dt", null, label), h("dd", null, value)];
+}
+
+function seriesList(series) {
+  if (!series.length) return h("p", { class: "note" }, "No samples yet.");
+  const items = series.map((entry, index) => {
+    const previous = index > 0 ? series[index - 1] : null;
+    return h("li", null,
+      h("span", { class: "at" }, fmtAt(entry.at)),
+      fmtLevel(entry.level),
+      previous && h("span", { class: "note" },
+        fmtSigned(entry.level - previous.level) + " after "
+        + fmtDuration(entry.at - previous.at)));
+  });
+  return h("ul", null, items.reverse());
+}
+
+const WHY = {
+  first: "first sample", sample: "level stepped", reset: "run wiped",
+  load: "script loaded", tier: "answer changed", drift: "forecast moved",
+};
+
+function eventNote(event) {
+  const parts = [];
+  if (event.why === "reset") {
+    parts.push("rose to " + event.level + "% from a run low of " + event.low
+      + "%, discarding " + event.wiped + " samples");
+  } else if (event.from != null) {
+    parts.push(event.from + "% → " + event.level + "%");
+  }
+  if (event.from_tier) parts.push("was " + event.from_tier);
+  if (event.from_eta != null) parts.push("was " + fmtDuration(event.from_eta));
+  if (event.drop != null && event.span != null) {
+    parts.push(event.drop + " over " + fmtDuration(event.span));
+  }
+  if (event.trimmed) parts.push("oldest sample trimmed");
+  parts.push(event.eta != null ? "→ " + fmtDuration(event.eta)
+    : event.floor != null ? "→ floor " + fmtDuration(event.floor)
+    : "→ no forecast");
+  return parts.join(" · ");
+}
+
+function eventList(events) {
+  if (!events.length) return h("p", { class: "note" }, "Nothing recorded yet.");
+  const items = events.map(event => h("li", null,
+    h("span", { class: "at" }, fmtAt(event.at)),
+    h("span", { class: "why " + event.why }, WHY[event.why] || event.why),
+    h("span", { class: "note" }, eventNote(event))));
+  return h("ul", null, items.reverse());
+}
+
+function detailPanel(detail) {
+  if (detail == null) return h("div", { class: "detail" }, "Loading…");
+  if (detail.error) {
+    return h("div", { class: "detail" }, h("div", { class: "err" }, detail.error));
+  }
+  const math = detail.math;
+  const windowText = math.oldest_at
+    ? fmtLevel(math.oldest_level) + " at " + fmtAt(math.oldest_at) + "  →  "
+      + fmtLevel(detail.level) + " now, " + fmtDuration(math.span)
+    : "—";
+  const rate = math.per_day != null
+    ? math.drop + " points · " + math.per_day.toFixed(2) + " %/day"
+    : "—";
+  const answer = math.eta_seconds != null
+    ? fmtDuration(math.eta_seconds) + " (" + math.remaining + " points above "
+      + math.empty_level + "%)"
+    : math.eta_at_least != null ? "at least " + fmtDuration(math.eta_at_least)
+    : "none";
+
+  return h("div", { class: "detail" },
+    h("p", { class: "verdict" }, verdict(detail)),
+    h("dl", null,
+      field("Window", windowText),
+      field("Drop", rate),
+      field("Empty in", answer),
+      // The threshold that silently destroys a run, in the units it is judged
+      // in: what the level has to reach for the samples to be thrown away.
+      field("Wipes at", math.resets_at != null
+        ? math.resets_at + "% (run low " + math.low + "% + " + math.recharge_rise + ")"
+        : "—"),
+      field("Samples", math.samples + " of " + math.max_samples
+        + " · " + math.steps + " steps"),
+      field("Last change", detail.changed_at ? fmtAt(detail.changed_at)
+        + (detail.level_is_state ? "" : " (attribute only — no last_changed)")
+        : "unknown")),
+    h("div", { class: "trail" },
+      h("div", null, h("h3", null, "Samples"), seriesList(detail.series)),
+      h("div", null, h("h3", null, "Events"), eventList(detail.events))));
+}
+
+async function toggleDetail(entityID) {
+  if (openEntity === entityID) {
+    openEntity = null;
+    openDetail = null;
+    render(lastState);
+    return;
+  }
+  openEntity = entityID;
+  openDetail = null;
+  render(lastState);
+  await loadDetail(entityID);
+}
+
+async function loadDetail(entityID) {
+  let payload;
+  try {
+    const resp = await fetch("./api/detail?entity_id=" + encodeURIComponent(entityID));
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    payload = await resp.json();
+  } catch (err) {
+    payload = { error: "Cannot read the detail: " + err.message };
+  }
+  if (openEntity !== entityID) return; // closed or switched while in flight
+  openDetail = payload;
+  render(lastState);
+}
+
 function row(battery) {
   const level = Number(battery.level);
   const drain = battery.drain_per_day != null
     ? battery.drain_per_day.toFixed(1) + " %/day"
     : "";
-  return h("div", { class: "row " + (battery.ignored ? "ignored " : "") + levelClass(level) },
+  const open = openEntity === battery.entity_id;
+  return h("div", { class: "row " + (battery.ignored ? "ignored " : "")
+                           + (open ? "open " : "") + levelClass(level),
+                    title: "Show how this forecast was computed",
+                    onclick: () => toggleDetail(battery.entity_id) },
     h("div", { class: "cell name" },
       battery.name,
       h("span", { class: "eid" }, battery.entity_id)),
@@ -222,7 +408,10 @@ function row(battery) {
         title: battery.ignored
           ? "Track this battery again"
           : "Stop sampling this battery and sort it last",
-        onclick: event => setIgnored(battery, !battery.ignored, event.currentTarget)
+        onclick: event => {
+          event.stopPropagation(); // the row itself opens the inspector
+          setIgnored(battery, !battery.ignored, event.currentTarget);
+        }
       }, battery.ignored ? "Track" : "Ignore")));
 }
 
@@ -271,7 +460,10 @@ function render(state) {
       + "\"battery\" and entities carrying a battery_level attribute."));
     return;
   }
-  sorted(batteries).forEach(battery => app.append(row(battery)));
+  sorted(batteries).forEach(battery => {
+    app.append(row(battery));
+    if (openEntity === battery.entity_id) app.append(detailPanel(openDetail));
+  });
 }
 
 async function poll() {
@@ -280,6 +472,8 @@ async function poll() {
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     lastState = await resp.json();
     render(lastState);
+    // The scan behind that poll may have moved the very thing being inspected.
+    if (openEntity) await loadDetail(openEntity);
   } catch (err) {
     if (!lastState) {
       document.getElementById("app").innerHTML = "";

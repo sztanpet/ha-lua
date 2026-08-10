@@ -767,6 +767,73 @@ func TestBatteryLevelsUIRendersBounds(t *testing.T) {
 	}
 }
 
+// TestBatteryLevelsUIInspector: a row that says "measuring" has to be able to
+// say why. Opening it must name the guard that failed and show the recharge
+// that threw the run away — that wipe is why the number vanished, and it is
+// invisible everywhere else on the page.
+func TestBatteryLevelsUIInspector(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.vacuum_battery", State: "95",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Vacuum"}`),
+			LastChanged: now.Add(-time.Minute).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.vacuum_battery": []any{
+			sample(now.Add(-4*24*time.Hour), 60),
+			sample(now.Add(-2*24*time.Hour), 40),
+			sample(now.Add(-24*time.Hour), 20),
+		},
+	}
+	srv := httptest.NewServer(serveBatteryLevels(t, seed, series))
+	t.Cleanup(srv.Close)
+
+	const panelCount = `document.querySelectorAll(".detail").length`
+	var pill, panel string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/s/battery_levels/"),
+		chromedp.WaitVisible(".row .eta .pill", chromedp.ByQuery),
+		chromedp.Text(".row .eta .pill", &pill, chromedp.ByQuery),
+		chromedp.Click(".row .name", chromedp.ByQuery),
+		chromedp.WaitVisible(".detail .trail", chromedp.ByQuery),
+		chromedp.Text(".detail", &panel, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if pill != "measuring" {
+		t.Fatalf("eta pill = %q, want the unexplained %q this panel exists for", pill, "measuring")
+	}
+	for _, want := range []string{"No drop", "run wiped", "run low of 20%", "discarding 3 samples"} {
+		if !strings.Contains(panel, want) {
+			t.Errorf("inspector %q missing %q", panel, want)
+		}
+	}
+
+	var panels int
+	if err := chromedp.Run(ctx,
+		chromedp.Click(".row .name", chromedp.ByQuery),
+		chromedp.Evaluate(panelCount, &panels),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if panels != 0 {
+		t.Errorf("%d panels after clicking the row again, want it closed", panels)
+	}
+
+	// Ignoring is a button inside the row: it must not also open the inspector.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(".row .act button", chromedp.ByQuery),
+		chromedp.WaitVisible(".row.ignored", chromedp.ByQuery),
+		chromedp.Evaluate(panelCount, &panels),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if panels != 0 {
+		t.Errorf("%d panels after clicking Ignore, want none", panels)
+	}
+}
+
 func closeTo(got, want, tolerance float64) error {
 	if diff := got - want; diff < -tolerance || diff > tolerance {
 		return fmt.Errorf("got %.3f, want %.3f ±%.3f", got, want, tolerance)
