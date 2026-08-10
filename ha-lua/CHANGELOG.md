@@ -4,6 +4,26 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.6.1 - 2026-08-10
+
+### Fixed
+- **The Batteries forecast no longer swings between polls.** The drain rate was
+  the drop from the oldest stored sample to the current level, over the time
+  between them — two single readings. Plenty of sensors report a level that
+  swings a point either way with the daily temperature, and the answer then
+  depended on which side of that swing each of the two endpoints happened to be
+  caught on: the same battery reporting nothing, then a month, then a fortnight,
+  twice a day. The rate is now the median of the slopes between every pair of
+  samples, ignoring pairs less than 12 hours apart (over half a day a slow drain
+  moves a fraction of a point, so a closer pair describes the weather rather
+  than the battery). Measured against a simulated sensor polled repeatedly, the
+  reported ETA now spans 1.4x instead of 2.6x, and never disappears.
+- **A battery that stops draining stops predicting.** Every sample pair ends at
+  a sample, so the rate above describes completed steps only. A level that has
+  held for a while now bounds the answer — it cannot be draining faster than one
+  reported step per that dwell — which keeps a pack sitting at one level for
+  months from forecasting the rate it drained at before.
+
 ## 4.6.0 - 2026-08-10
 
 ### Added
