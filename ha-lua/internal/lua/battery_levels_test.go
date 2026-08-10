@@ -132,20 +132,25 @@ type batteryDetail struct {
 	} `json:"series"`
 	Events []batteryEvent `json:"events"`
 	Math   struct {
-		MinSpan     float64  `json:"min_span"`
-		Remaining   float64  `json:"remaining"`
-		OldestAt    *float64 `json:"oldest_at"`
-		OldestLevel *float64 `json:"oldest_level"`
-		Span        *float64 `json:"span"`
-		Drop        *float64 `json:"drop"`
-		Low         *float64 `json:"low"`
-		ResetsAt    *float64 `json:"resets_at"`
-		PerDay      *float64 `json:"per_day"`
-		ETASeconds  *float64 `json:"eta_seconds"`
-		ETAAtLeast  *float64 `json:"eta_at_least"`
-		Tier        string   `json:"tier"`
-		Samples     int      `json:"samples"`
-		Steps       int      `json:"steps"`
+		MinSpan        float64  `json:"min_span"`
+		Remaining      float64  `json:"remaining"`
+		OldestAt       *float64 `json:"oldest_at"`
+		OldestLevel    *float64 `json:"oldest_level"`
+		Span           *float64 `json:"span"`
+		Drop           *float64 `json:"drop"`
+		Low            *float64 `json:"low"`
+		ResetsAt       *float64 `json:"resets_at"`
+		MeasuredPerDay *float64 `json:"measured_per_day"`
+		CapPerDay      *float64 `json:"cap_per_day"`
+		Capped         bool     `json:"capped"`
+		Dwell          *float64 `json:"dwell"`
+		Pairs          int      `json:"pairs"`
+		PerDay         *float64 `json:"per_day"`
+		ETASeconds     *float64 `json:"eta_seconds"`
+		ETAAtLeast     *float64 `json:"eta_at_least"`
+		Tier           string   `json:"tier"`
+		Samples        int      `json:"samples"`
+		Steps          int      `json:"steps"`
 	} `json:"math"`
 }
 
@@ -394,9 +399,12 @@ func TestBatteryLevelsNoisyLevelKeeps(t *testing.T) {
 	if rows[0].ETASeconds == nil {
 		t.Fatalf("eta_seconds = nil, want a forecast from the surviving run")
 	}
-	// 9 points over 5 days -> 1.8/day, 56 left above empty -> ~31 days.
-	if days := *rows[0].ETASeconds / (24 * 60 * 60); days < 29 || days > 33 {
-		t.Errorf("eta = %.1f days, want ~31", days)
+	// ~1.5 %/day, 56 left above empty -> ~37 days. Reading the endpoints alone
+	// said 1.8 (80 down to 71 over five days), but those two happen to be a
+	// high and a low of the wobble; the median across the pairs — and a least
+	// squares fit, independently — both put the trend at 1.51.
+	if days := *rows[0].ETASeconds / (24 * 60 * 60); days < 34 || days > 40 {
+		t.Errorf("eta = %.1f days, want ~37", days)
 	}
 }
 
@@ -430,6 +438,106 @@ func TestBatteryLevelsSlowRechargeResets(t *testing.T) {
 	}
 	if rows[0].ETASeconds != nil {
 		t.Errorf("eta_seconds = %v across a slow recharge, want none", *rows[0].ETASeconds)
+	}
+}
+
+// wobbleSeries is a real 11-sample series off a live sensor, reconstructed from
+// its inspector dump: a ~0.25 %/day drain buried under a ±1 point swing that
+// tracks the day/night temperature (high around 10:08, low around 02:08). The
+// secant that read the rate off two single readings could not see through it —
+// with both endpoints at 27 it reported nothing at all, and each time the
+// wobble moved an endpoint the answer jumped between nothing, ~44 d and ~22 d.
+func wobbleSeries(now time.Time) []any {
+	minutes := []int{100 * 60, 93*60 + 15, 81*60 + 15, 65*60 + 15, 61*60 + 15,
+		53*60 + 15, 49*60 + 15, 33*60 + 15, 25*60 + 15, 9*60 + 15, 75}
+	levels := []float64{27, 28, 27, 28, 27, 26, 27, 26, 27, 26, 27}
+	series := make([]any, len(levels))
+	for index, level := range levels {
+		series[index] = sample(now.Add(-time.Duration(minutes[index])*time.Minute), level)
+	}
+	return series
+}
+
+// TestBatteryLevelsWobbleForecasts: a level that breathes a point either way
+// must still yield a rate, and the same rate whichever side of the wobble the
+// endpoints are caught on. This is the case the median estimator exists for.
+func TestBatteryLevelsWobbleForecasts(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.attic_battery", State: "27",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Attic"}`),
+			LastChanged: now.Add(-75 * time.Minute).UTC().Format(time.RFC3339)},
+	}
+	rows := getBatteries(t, serveBatteryLevels(t, seed,
+		map[string]any{"series:sensor.attic_battery": wobbleSeries(now)}))
+	if rows[0].ETASeconds == nil || rows[0].DrainPerDay == nil {
+		t.Fatalf("row = %+v, want a forecast through the wobble", rows[0])
+	}
+	// The envelope drops a point every four days: peaks 28,28,27,27,27 and
+	// troughs 27,27,26,26,26.
+	if err := closeTo(*rows[0].DrainPerDay, 0.25, 0.15); err != nil {
+		t.Errorf("drain rate: %v", err)
+	}
+
+	// The next wobble sample lands, on the other side. Under the secant this
+	// swung the answer by a factor of two or lost it entirely; the median must
+	// barely notice.
+	later := now.Add(8 * time.Hour)
+	series := append(wobbleSeries(now), sample(later.Add(-time.Minute), 26))
+	seed[0].State = "26"
+	seed[0].LastChanged = later.Add(-time.Minute).UTC().Format(time.RFC3339)
+	next := getBatteries(t, serveBatteryLevels(t, seed,
+		map[string]any{"series:sensor.attic_battery": series}))
+	if next[0].DrainPerDay == nil {
+		t.Fatalf("row = %+v, want the forecast kept across the wobble", next[0])
+	}
+	if swing := *next[0].DrainPerDay / *rows[0].DrainPerDay; swing > 1.3 || swing < 0.77 {
+		t.Errorf("rate moved %.2fx across one wobble sample (%.3f -> %.3f), want it steady",
+			swing, *rows[0].DrainPerDay, *next[0].DrainPerDay)
+	}
+}
+
+// TestBatteryLevelsStalledDecays: every pair the median is taken over ends at a
+// sample, so on its own it would keep reporting the rate of a discharge that
+// has since stopped. The dwell bound is what makes a pack sitting at one level
+// for two months stop predicting last month's rate.
+func TestBatteryLevelsStalledDecays(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.shed_battery", State: "17",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Shed"}`),
+			LastChanged: now.Add(-60 * 24 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	// 27 down to 17 over four days, then not a flicker for sixty.
+	series := make([]any, 0, 11)
+	for step := 0; step <= 10; step++ {
+		at := now.Add(-64*24*time.Hour + time.Duration(step)*10*time.Hour)
+		series = append(series, sample(at, float64(27-step)))
+	}
+	router := serveBatteryLevels(t, seed,
+		map[string]any{"series:sensor.shed_battery": series})
+
+	rows := getBatteries(t, router)
+	if rows[0].DrainPerDay == nil {
+		t.Fatalf("row = %+v, want a rate", rows[0])
+	}
+	// The discharge itself ran at ~2.4 %/day, which would have emptied this
+	// pack seven weeks ago. One point per sixty days is what it has shown since.
+	if *rows[0].DrainPerDay > 0.1 {
+		t.Errorf("drain = %.3f %%/day after sixty days at one level, want it bounded near %.3f",
+			*rows[0].DrainPerDay, 1.0/60)
+	}
+	if days := *rows[0].ETASeconds / 86400; days < 60 {
+		t.Errorf("eta = %.0f days, want the stall to have stretched it well out", days)
+	}
+
+	detail := getDetail(t, router, "sensor.shed_battery")
+	if !detail.Math.Capped {
+		t.Errorf("math = %+v, want the answer marked as the bound, not the measurement", detail.Math)
+	}
+	if detail.Math.MeasuredPerDay == nil || *detail.Math.MeasuredPerDay < 1 {
+		t.Errorf("measured_per_day = %v, want the real discharge rate still reported alongside",
+			detail.Math.MeasuredPerDay)
 	}
 }
 
@@ -804,7 +912,7 @@ func TestBatteryLevelsUIInspector(t *testing.T) {
 	if pill != "measuring" {
 		t.Fatalf("eta pill = %q, want the unexplained %q this panel exists for", pill, "measuring")
 	}
-	for _, want := range []string{"No drop", "run wiped", "run low of 20%", "discarding 3 samples"} {
+	for _, want := range []string{"a rate needs 24 h", "run wiped", "run low of 20%", "discarding 3 samples"} {
 		if !strings.Contains(panel, want) {
 			t.Errorf("inspector %q missing %q", panel, want)
 		}

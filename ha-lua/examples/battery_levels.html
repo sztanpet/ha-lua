@@ -242,22 +242,27 @@ function verdict(detail) {
     if (math.remaining <= 0) {
       return "At or below the " + math.empty_level + "% replace line already.";
     }
-    return "Forecast from " + math.steps + (math.steps === 1 ? " step" : " steps")
-      + " across " + fmtDuration(math.span) + ": " + math.drop + " points down, "
-      + math.per_day.toFixed(2) + " %/day.";
+    if (math.capped) {
+      return "Held " + detail.level + "% for " + fmtDuration(math.dwell)
+        + ", so whatever it drained at before (" + math.measured_per_day.toFixed(2)
+        + " %/day), it is not draining faster than " + math.per_day.toFixed(2)
+        + " %/day now.";
+    }
+    return "Median of " + math.pairs + " sample pairs across "
+      + fmtDuration(math.span) + ": " + math.per_day.toFixed(2) + " %/day.";
   }
   if (math.tier === "floor") {
     return "No step observed yet — a floor from how long it has held "
       + detail.level + "%, not a forecast.";
   }
   if (!math.samples) return "No samples stored yet; the next scan writes the first.";
-  if (math.drop <= 0) {
-    return "No drop: the level is not below the oldest sample ("
-      + math.oldest_level + "%), so there is no rate to extrapolate.";
-  }
   if (math.span < math.min_span) {
     return "The window is only " + fmtDuration(math.span) + " — a rate needs "
       + fmtDuration(math.min_span) + ", and a wiped run starts it over.";
+  }
+  if (math.measured_per_day != null && math.measured_per_day <= 0) {
+    return "Across " + math.pairs + " sample pairs the level is not trending "
+      + "down, so there is nothing to extrapolate.";
   }
   return "No forecast and no floor.";
 }
@@ -325,7 +330,11 @@ function detailPanel(detail) {
       + fmtLevel(detail.level) + " now, " + fmtDuration(math.span)
     : "—";
   const rate = math.per_day != null
-    ? math.drop + " points · " + math.per_day.toFixed(2) + " %/day"
+    ? math.per_day.toFixed(2) + " %/day"
+      + (math.capped
+          ? " — bounded by the " + fmtDuration(math.dwell) + " at this level, "
+            + "down from a measured " + math.measured_per_day.toFixed(2)
+          : " across " + math.pairs + " sample pairs")
     : "—";
   const answer = math.eta_seconds != null
     ? fmtDuration(math.eta_seconds) + " (" + math.remaining + " points above "
@@ -337,7 +346,7 @@ function detailPanel(detail) {
     h("p", { class: "verdict" }, verdict(detail)),
     h("dl", null,
       field("Window", windowText),
-      field("Drop", rate),
+      field("Rate", rate),
       field("Empty in", answer),
       // The threshold that silently destroys a run, in the units it is judged
       // in: what the level has to reach for the samples to be thrown away.

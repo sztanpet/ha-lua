@@ -183,17 +183,90 @@ local function note(entity_id, entry)
   store.set(events_key(entity_id), events)
 end
 
--- Ending the window at NOW rather than at the newest sample is what decays a
--- battery that stopped moving towards flat. One step suffices because the
--- oldest sample and the current level both start mid-dwell and those two errors
--- cancel; demanding more meant a coarse sensor forecast nothing for a year.
-local function drain_rate(series, level, now_unix)
+-- The drain rate is the MEDIAN of the slopes between every pair of samples
+-- (Theil-Sen). The secant this replaces read the rate off two single readings,
+-- which is exact for a staircase and worthless for a real sensor: plenty report
+-- a level that breathes a point either way with temperature, and then the
+-- answer depended on which side of the wobble each endpoint happened to be
+-- caught on — the same battery forecasting nothing, then a month, then a
+-- fortnight, twice a day. A median has to see better than a quarter of the
+-- pairs disagree before it moves at all.
+--
+-- Cost is one pair per two samples, so MAX_SAMPLES bounds it; real series are a
+-- few dozen samples.
+-- ...but only over pairs far enough apart to carry a trend. Half a day of a
+-- 0.25 %/day drain is an eighth of a point, well under the one-point
+-- granularity a sensor reports, so a closer pair describes the day's
+-- temperature and nothing else. Those pairs are also what defeats the median
+-- outright: with three distinct levels in the data most of them sit at exactly
+-- zero slope, and on a real series 19 of 55 pairs did — enough for the median
+-- to land in the pile of zeros and report a battery that never drains.
+local MIN_PAIR_SPAN = 12 * time.hour
+
+local function pairwise_rate(series)
+  local slopes, every = {}, {}
+  for older = 1, #series - 1 do
+    for newer = older + 1, #series do
+      local span = series[newer].at - series[older].at
+      if span > 0 then
+        local slope = (series[newer].level - series[older].level) / span
+        every[#every + 1] = slope
+        if span >= MIN_PAIR_SPAN then slopes[#slopes + 1] = slope end
+      end
+    end
+  end
+  -- A battery draining fast enough to step twice inside half a day has no wide
+  -- pair yet and would otherwise get nothing at all.
+  if #slopes == 0 then slopes = every end
+  if #slopes == 0 then return nil end
+
+  table.sort(slopes)
+  local middle = math.floor(#slopes / 2)
+  if #slopes % 2 == 1 then return slopes[middle + 1] end
+  return (slopes[middle] + slopes[middle + 1]) / 2
+end
+
+-- Every pair above ends at a sample, so the rate only ever describes steps that
+-- have already completed — it says nothing about the step in progress. That is
+-- what this bounds: the level has held for `dwell`, so it cannot still be
+-- draining faster than one granularity step per dwell, whatever it did before.
+-- The bound is loose right after a step, meets the measured rate exactly when
+-- the next step falls due, and tightens from there, which is what stops a pack
+-- that stopped moving from forecasting last month's rate forever.
+local function dwell_cap(series, now_unix)
+  local newest = series[#series]
+  if newest == nil then return nil end
+  local dwell = now_unix - newest.at
+  if dwell <= 0 then return nil end
+
+  -- The smallest step the sensor has actually taken is its granularity: 1 point
+  -- for a phone, 10 for the coarse hardware the floor below is written around.
+  local step = nil
+  for index = 2, #series do
+    local delta = math.abs(series[index].level - series[index - 1].level)
+    if delta > 0 and (step == nil or delta < step) then step = delta end
+  end
+  if step == nil then return nil end
+  return -step / dwell
+end
+
+-- MIN_SPAN is measured to NOW, not to the newest sample: the question it asks
+-- is how long we have been watching, which keeps its meaning when the level has
+-- been sitting still for a week.
+-- Returns the rate to use, plus the two numbers it was chosen between, so the
+-- inspector can say which one the answer came from.
+local function drain_rate(series, now_unix)
   local oldest = series[1]
-  if oldest == nil then return nil end
-  local drop = oldest.level - level
-  local span = now_unix - oldest.at
-  if drop <= 0 or span < MIN_SPAN then return nil end
-  return -drop / span
+  local measured = pairwise_rate(series)
+  local cap = dwell_cap(series, now_unix)
+
+  local rate = nil
+  if oldest ~= nil and now_unix - oldest.at >= MIN_SPAN
+      and measured ~= nil and measured < 0 then
+    rate = measured
+    if cap ~= nil and cap > rate then rate = cap end -- both negative; flatter wins
+  end
+  return rate, measured, cap
 end
 
 -- A battery that never stepped has no rate, but six weeks at one level still
@@ -278,7 +351,7 @@ end
 -- must arrive at the same numbers from the same series, or the inspector is
 -- describing a calculation nobody ran.
 local function forecast(battery, series, now_unix)
-  local slope = drain_rate(series, battery.level, now_unix)
+  local slope, measured, cap = drain_rate(series, now_unix)
   local moved_at = changed_at(battery, series)
   local remaining = battery.level - EMPTY_LEVEL
 
@@ -291,7 +364,9 @@ local function forecast(battery, series, now_unix)
     eta_at_least = lifetime_floor(remaining, moved_at, now_unix)
   end
 
-  return { slope = slope, moved_at = moved_at, remaining = remaining,
+  return { slope = slope, measured = measured, cap = cap,
+           capped = slope ~= nil and cap ~= nil and measured ~= nil and cap > measured,
+           moved_at = moved_at, remaining = remaining,
            eta_seconds = eta_seconds, eta_at_least = eta_at_least }
 end
 
@@ -344,6 +419,7 @@ local function trace(battery, series, change, fit, now_unix)
     span = oldest and (now_unix - oldest.at) or nil,
     drop = oldest and (oldest.level - battery.level) or nil,
     per_day = fit.slope and -fit.slope * time.day or nil,
+    capped = fit.capped,
     eta = fit.eta_seconds,
     floor = fit.eta_at_least,
   })
@@ -448,7 +524,7 @@ ha.serve("GET", "/api/detail", function(req)
     last_changed = state.last_changed,
   }
   local fit = forecast(battery, series, now_unix)
-  local oldest = series[1]
+  local oldest, newest = series[1], series[#series]
   local low = lowest_level(series)
 
   return 200, json.encode({
@@ -476,6 +552,14 @@ ha.serve("GET", "/api/detail", function(req)
       drop = oldest and (oldest.level - level) or nil,
       low = low,
       resets_at = low and low + RECHARGE_RISE or nil,
+      -- The measured rate and the bound on it, separately: the page can only
+      -- explain a forecast that stopped tracking the samples if it can see
+      -- which of the two the answer came from.
+      measured_per_day = fit.measured and -fit.measured * time.day or nil,
+      cap_per_day = fit.cap and -fit.cap * time.day or nil,
+      capped = fit.capped,
+      dwell = newest and (now_unix - newest.at) or nil,
+      pairs = #series * (#series - 1) / 2,
       per_day = fit.slope and -fit.slope * time.day or nil,
       eta_seconds = fit.eta_seconds,
       eta_at_least = fit.eta_at_least,
