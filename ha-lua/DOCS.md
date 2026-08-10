@@ -423,11 +423,27 @@ survives restarts and reloads.
 **How the estimate works.** A rundown forecast needs weeks of history, and the
 daemon purges state history after `retention_days` (2 by default), so the script
 keeps its own series in its KV store — one sample per observed level change,
-which is a handful of rows a month per battery. The drain rate is the drop from
-the oldest sample to the level right now, divided by the time between them, and
-the level divided by that rate gives the ETA. The countdown ends at **15%**, not
-0: most hardware goes flaky well before it stops reporting, and the question
-here is when to replace a cell.
+which is a handful of rows a month per battery. The drain rate is the **median
+of the slopes between every pair of samples**, and the level divided by that
+rate gives the ETA. The countdown ends at **15%**, not 0: most hardware goes
+flaky well before it stops reporting, and the question here is when to replace a
+cell.
+
+A median rather than the obvious drop-between-the-endpoints because real sensors
+do not report a clean staircase. Plenty of them swing a point either way with
+the daily temperature, and reading the rate off two single samples then made the
+answer depend on which side of that swing each one was caught on — the same
+battery forecasting nothing, then a month, then a fortnight, twice a day. Pairs
+closer together than 12 hours are left out: over half a day a slow drain moves
+a fraction of a point, far under what the sensor can report, so those pairs
+describe the weather rather than the battery.
+
+Every pair ends at a sample, so the rate only describes steps that have already
+finished. The step in progress is handled separately: a level that has held for
+a while cannot still be draining faster than one reported step per that dwell,
+and that bound is used when it is the smaller of the two. It is loose right
+after a step and tightens from there, which is what stops a pack that has sat at
+one level for two months from still predicting the rate it drained at before.
 
 A single observed level step is enough, so a coarse 10%-granularity sensor gets
 a forecast on its first step rather than after its second. Such an estimate is
