@@ -4,8 +4,8 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: the Batteries page forecasting from one level step
-(2026-08-09, `6c26427` + `36bd760`, v4.4.0).
+growing on top; newest: the Batteries forecast inspector (2026-08-10,
+`b51a2b2`..`9fc49e0`, unreleased).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -176,6 +176,36 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - Tests: `TestBatteryLevelsNoisyLevelKeeps` (80/77/79/74/76 wobble keeps the run
   and still forecasts ~31 days) and `TestBatteryLevelsSlowRechargeResets`
   (60→40 then 42/44/46/48 → series restarted at one sample).
+
+## battery_levels: the forecast inspector (2026-08-10)
+- Commits `b51a2b2` (trail + `/api/detail` + tests), `4f86ce5` (page + chromedp),
+  `9fc49e0` (DOCS.md). NOT yet released.
+- Reported symptom, asked for and answered before anything was written: the ETA
+  **swings between polls**. Nothing was diagnosed — this is instrumentation to
+  find out, not a fix.
+- Why a trail and not a log line: the forecast is a pure function of `series[1]`,
+  the current level and now, so a swing means the series moved — and both ways
+  that happens (a wobbling level appending samples, a `RECHARGE_RISE` wipe)
+  destroy the evidence that would explain it. It has to be recording BEFORE
+  anyone looks, hence always-on and capped rather than a debug switch.
+- `events:<entity_id>`, 40 lines, written only when the series changed, the tier
+  changed, or the ETA moved > `ETA_DRIFT` (10%) with no sample behind it. That
+  last case is the reported symptom caught in the act. A quiet poll writes
+  nothing. Last-reported tier/eta live in an in-memory `reported` table, so the
+  suppression check costs no KV read; a reload just re-baselines one line.
+- `GET /api/detail?entity_id=` returns the series, the trail and the math,
+  read-only ON PURPOSE — inspecting must not sample, or looking at a suspect row
+  alters it. `forget_removed` deletes the trail with the series.
+- `forecast()` was extracted so `/api/state` and `/api/detail` cannot diverge:
+  an inspector that computes the number its own way is worse than none.
+- Page: clicking a row expands a panel (a SIBLING of `.row` — the row is a grid
+  aligned to the header, nesting a block breaks it). The lead line names the
+  guard that failed for a "measuring" row (no samples / no drop / span short of
+  MIN_SPAN), which is the single most useful thing on the panel.
+- Next time this comes up, the two things to read first: the `wiped`/`low` fields
+  on any `reset` event (a run thrown away on noise) and consecutive `sample`
+  events whose `drop` alternates (a level wobbling 1-3 points gives the secant
+  huge relative variance, which would swing the ETA by the same factor).
 
 ## service_api example (2026-08-06)
 - New bundled example: `service_api.lua`, one endpoint that calls ANY HA

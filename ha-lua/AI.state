@@ -10,12 +10,14 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**History questions, change attribution and durable reminders** (2026-08-09,
-`4489349`..`3fa0b9e`, released in v4.5.0). HA's change context is now decoded, persisted with history and resolved
-by `ha.who_changed`; `ha.duration_in_state` / `ha.count_changes` reduce the
-history we already keep; `state_history.keep` gives chosen globs a longer
-window; `lib/reminders.lua` makes handler-armed reminders survive a restart,
-which `ha.after` cannot. Detail: `state/insight.md`.
+**Battery forecast inspector** (2026-08-10, `b51a2b2`..`9fc49e0`, UNRELEASED).
+The user reports the Batteries ETA swinging between polls; nothing is diagnosed
+yet. `battery_levels.lua` now keeps a capped per-entity event trail
+(`events:<id>`) written whenever the series changes, the answer changes kind, or
+the ETA moves >10% unexplained, and serves it with the series and the whole
+computation from a read-only `GET /api/detail`; clicking a row on the page opens
+it. Waiting on real data from the user's install. Detail:
+`state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
