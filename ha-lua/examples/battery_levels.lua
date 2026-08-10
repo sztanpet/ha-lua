@@ -45,6 +45,17 @@ local RECHARGE_RISE = 10
 -- full 100→0 discharge; older rows fall off the front.
 local MAX_SAMPLES = 120
 
+-- Debug trail: events kept per entity. The forecast is a pure function of the
+-- oldest sample and the current level, so every jump in it has a cause — but
+-- the cause is a mutation of the series, which by the time anyone opens the
+-- page has already overwritten the evidence. Hence a trail that is always
+-- recording rather than a switch nobody flips until after the fact.
+local MAX_EVENTS = 40
+
+-- Log a forecast that moved by more than this fraction with no sample behind
+-- it. Below that it is just the window growing under a fixed drop.
+local ETA_DRIFT = 0.10
+
 -- Key holding the list of entity ids we have a series for, so series of
 -- entities that leave Home Assistant can be cleaned up.
 local TRACKED_KEY = "tracked"
@@ -53,6 +64,12 @@ local TRACKED_KEY = "tracked"
 local IGNORED_KEY = "ignored"
 
 local function series_key(entity_id) return "series:" .. entity_id end
+local function events_key(entity_id) return "events:" .. entity_id end
+
+-- Last forecast reported per entity, in memory only: it exists to decide
+-- whether the next one is worth writing down, and a restart re-baselining it
+-- costs one extra event.
+local reported = {}
 
 local function ignored_set()
   local ids = store.get(IGNORED_KEY)
@@ -126,20 +143,44 @@ local function lowest_level(series)
   return low
 end
 
--- record appends a sample when the level actually moved, and returns the
--- series. A flat reading is deliberately NOT stored: the dwell is implied by
--- "the newest sample is old", and the fit adds the current instant itself.
+-- record appends a sample when the level actually moved, and returns the series
+-- plus a description of what it did to it (nil when nothing moved). A flat
+-- reading is deliberately NOT stored: the dwell is implied by "the newest
+-- sample is old", and the fit adds the current instant itself.
 local function record(entity_id, level, now_unix)
   local series = load_series(entity_id)
   local newest = series[#series]
+  local change = { why = "first" }
   if newest ~= nil then
-    if newest.level == level then return series end
-    if level >= lowest_level(series) + RECHARGE_RISE then series = {} end
+    if newest.level == level then return series, nil end
+    local low = lowest_level(series)
+    if level >= low + RECHARGE_RISE then
+      change = { why = "reset", from = newest.level, low = low, wiped = #series }
+      series = {}
+    else
+      change = { why = "sample", from = newest.level }
+    end
   end
   series[#series + 1] = { at = now_unix, level = level }
-  while #series > MAX_SAMPLES do table.remove(series, 1) end
+  while #series > MAX_SAMPLES do
+    table.remove(series, 1)
+    change.trimmed = true
+  end
   store.set(series_key(entity_id), series)
-  return series
+  return series, change
+end
+
+-- note appends one line to an entity's debug trail. Every line carries the
+-- whole computation — the endpoints, the span, the drop, the rate it implied —
+-- so a forecast can be checked against its own inputs long after the scan that
+-- produced it. Only real events are written; a scan that changes nothing must
+-- not fill the ring with copies of itself.
+local function note(entity_id, entry)
+  local events = store.get(events_key(entity_id))
+  if type(events) ~= "table" then events = {} end
+  events[#events + 1] = entry
+  while #events > MAX_EVENTS do table.remove(events, 1) end
+  store.set(events_key(entity_id), events)
 end
 
 -- Ending the window at NOW rather than at the newest sample is what decays a
@@ -200,6 +241,7 @@ local function forget_removed(present, ignored)
       if not tracked[entity_id] then
         if ignored[entity_id] or ha.get_state(entity_id) == nil then
           store.delete(series_key(entity_id))
+          store.delete(events_key(entity_id))
         else
           tracked[entity_id] = true
         end
@@ -232,6 +274,81 @@ local function by_urgency(left, right)
   return left.name < right.name
 end
 
+-- forecast is the whole derivation in one place. The page and the inspector
+-- must arrive at the same numbers from the same series, or the inspector is
+-- describing a calculation nobody ran.
+local function forecast(battery, series, now_unix)
+  local slope = drain_rate(series, battery.level, now_unix)
+  local moved_at = changed_at(battery, series)
+  local remaining = battery.level - EMPTY_LEVEL
+
+  local eta_seconds, eta_at_least
+  if remaining <= 0 then
+    eta_seconds = 0 -- due now, not unknown
+  elseif slope ~= nil then
+    eta_seconds = remaining / -slope
+  else
+    eta_at_least = lifetime_floor(remaining, moved_at, now_unix)
+  end
+
+  return { slope = slope, moved_at = moved_at, remaining = remaining,
+           eta_seconds = eta_seconds, eta_at_least = eta_at_least }
+end
+
+-- Which of the three answers the page is about to show. A forecast crossing
+-- between these is the loudest thing that can happen to a row, and it can
+-- happen with no sample behind it — a span that finally reaches MIN_SPAN turns
+-- "measuring" into a number on its own.
+local function tier_of(eta_seconds, eta_at_least)
+  if eta_seconds ~= nil then return "eta" end
+  if eta_at_least ~= nil then return "floor" end
+  return "none"
+end
+
+-- trace writes the debug trail. Three things earn a line: the series changed,
+-- the answer changed kind, or the forecast moved further than the window's own
+-- growth explains. The last one is the interesting case — it means the number
+-- on the page swung while nothing visible happened.
+local function trace(battery, series, change, fit, now_unix)
+  local tier = tier_of(fit.eta_seconds, fit.eta_at_least)
+  local previous = reported[battery.entity_id]
+  reported[battery.entity_id] = { tier = tier, eta = fit.eta_seconds }
+
+  if change == nil then
+    if previous == nil then
+      change = { why = "load" }
+    elseif previous.tier ~= tier then
+      change = { why = "tier", from_tier = previous.tier }
+    elseif previous.eta ~= nil and fit.eta_seconds ~= nil
+        and math.abs(fit.eta_seconds - previous.eta) > previous.eta * ETA_DRIFT then
+      change = { why = "drift", from_eta = previous.eta }
+    else
+      return
+    end
+  end
+
+  local oldest = series[1]
+  note(battery.entity_id, {
+    at = now_unix,
+    why = change.why,
+    from = change.from,
+    from_tier = change.from_tier,
+    from_eta = change.from_eta,
+    low = change.low,
+    wiped = change.wiped,
+    trimmed = change.trimmed,
+    level = battery.level,
+    samples = #series,
+    oldest_at = oldest and oldest.at or nil,
+    oldest_level = oldest and oldest.level or nil,
+    span = oldest and (now_unix - oldest.at) or nil,
+    drop = oldest and (oldest.level - battery.level) or nil,
+    per_day = fit.slope and -fit.slope * time.day or nil,
+    eta = fit.eta_seconds,
+    floor = fit.eta_at_least,
+  })
+end
+
 -- scan samples every battery and builds the page payload. It is both the timer
 -- job and the API handler: sampling is idempotent (record only appends on a
 -- real change), so an impatient browser refreshing the page costs nothing.
@@ -243,6 +360,7 @@ local function scan()
 
   for _, battery in ipairs(batteries()) do
     if ignored[battery.entity_id] then
+      reported[battery.entity_id] = nil -- tracking it again starts a fresh trail
       rows[#rows + 1] = {
         entity_id = battery.entity_id,
         name = battery.name,
@@ -252,30 +370,20 @@ local function scan()
       }
     else
       present[#present + 1] = battery.entity_id
-      local series = record(battery.entity_id, battery.level, now_unix)
-      local slope = drain_rate(series, battery.level, now_unix)
-      local moved_at = changed_at(battery, series)
-      local remaining = battery.level - EMPTY_LEVEL
-
-      local eta_seconds, eta_at_least
-      if remaining <= 0 then
-        eta_seconds = 0 -- due now, not unknown
-      elseif slope ~= nil then
-        eta_seconds = remaining / -slope
-      else
-        eta_at_least = lifetime_floor(remaining, moved_at, now_unix)
-      end
+      local series, change = record(battery.entity_id, battery.level, now_unix)
+      local fit = forecast(battery, series, now_unix)
+      trace(battery, series, change, fit, now_unix)
 
       rows[#rows + 1] = {
         entity_id = battery.entity_id,
         name = battery.name,
         level = battery.level,
-        changed_ago = moved_at and (now_unix - moved_at) or nil,
-        changed_at = moved_at,
-        drain_per_day = slope and -slope * time.day or nil,
-        eta_seconds = eta_seconds,
-        eta_at_least = eta_at_least,
-        empty_at = eta_seconds and now:add(eta_seconds):unix() or nil,
+        changed_ago = fit.moved_at and (now_unix - fit.moved_at) or nil,
+        changed_at = fit.moved_at,
+        drain_per_day = fit.slope and -fit.slope * time.day or nil,
+        eta_seconds = fit.eta_seconds,
+        eta_at_least = fit.eta_at_least,
+        empty_at = fit.eta_seconds and now:add(fit.eta_seconds):unix() or nil,
         samples = #series,
         steps = #series - 1,
       }
@@ -308,6 +416,74 @@ ha.serve("POST", "/api/ignore", function(req)
   set[body.entity_id] = body.ignored and true or nil
   save_ignored(set)
   return 200, json.encode(scan()), JSON_HDR
+end)
+
+-- Everything behind one battery's forecast: the stored samples it was computed
+-- from, the arithmetic between them and the answer, and the trail of every
+-- earlier change. Read-only on purpose — inspecting a battery must not sample
+-- it, or looking at a suspect row would alter the thing being looked at.
+ha.serve("GET", "/api/detail", function(req)
+  local entity_id = (req.query or {}).entity_id
+  if type(entity_id) ~= "string" or entity_id == "" then
+    return 400, json.encode({ error = "entity_id required" }), JSON_HDR
+  end
+  local state = ha.get_state(entity_id)
+  if state == nil then
+    return 404, json.encode({ error = "unknown entity" }), JSON_HDR
+  end
+  local level, level_is_state = battery_level(state)
+  if level == nil then
+    return 404, json.encode({ error = "not a battery" }), JSON_HDR
+  end
+
+  local now_unix = time.now():unix()
+  local series = load_series(entity_id)
+  local events = store.get(events_key(entity_id))
+  if type(events) ~= "table" then events = {} end
+
+  local battery = {
+    entity_id = entity_id,
+    level = level,
+    level_is_state = level_is_state,
+    last_changed = state.last_changed,
+  }
+  local fit = forecast(battery, series, now_unix)
+  local oldest = series[1]
+  local low = lowest_level(series)
+
+  return 200, json.encode({
+    entity_id = entity_id,
+    now = now_unix,
+    level = level,
+    level_is_state = level_is_state,
+    ignored = ignored_set()[entity_id] or false,
+    last_changed = state.last_changed,
+    changed_at = fit.moved_at,
+    series = series,
+    events = events,
+    -- Named after the constants they are compared against, so a row that says
+    -- "measuring" can be read straight off: which guard failed, and by how much.
+    math = {
+      empty_level = EMPTY_LEVEL,
+      min_span = MIN_SPAN,
+      recharge_rise = RECHARGE_RISE,
+      coarsest_step = COARSEST_STEP,
+      max_samples = MAX_SAMPLES,
+      remaining = fit.remaining,
+      oldest_at = oldest and oldest.at or nil,
+      oldest_level = oldest and oldest.level or nil,
+      span = oldest and (now_unix - oldest.at) or nil,
+      drop = oldest and (oldest.level - level) or nil,
+      low = low,
+      resets_at = low and low + RECHARGE_RISE or nil,
+      per_day = fit.slope and -fit.slope * time.day or nil,
+      eta_seconds = fit.eta_seconds,
+      eta_at_least = fit.eta_at_least,
+      tier = tier_of(fit.eta_seconds, fit.eta_at_least),
+      samples = #series,
+      steps = #series > 0 and #series - 1 or 0,
+    },
+  }), JSON_HDR
 end)
 
 -- The page lives in battery_levels.html next to this script and is read once at

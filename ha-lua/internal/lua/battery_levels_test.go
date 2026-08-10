@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,6 +98,69 @@ func getBatteries(t *testing.T, router *Router) []batteryRow {
 		t.Fatalf("decode %q: %v", rec.Body.String(), err)
 	}
 	return payload.Batteries
+}
+
+// batteryEvent is one line of an entity's debug trail.
+type batteryEvent struct {
+	At          float64  `json:"at"`
+	Why         string   `json:"why"`
+	From        *float64 `json:"from"`
+	FromTier    string   `json:"from_tier"`
+	FromETA     *float64 `json:"from_eta"`
+	Low         *float64 `json:"low"`
+	Wiped       *float64 `json:"wiped"`
+	Trimmed     bool     `json:"trimmed"`
+	Level       float64  `json:"level"`
+	Samples     int      `json:"samples"`
+	OldestAt    *float64 `json:"oldest_at"`
+	OldestLevel *float64 `json:"oldest_level"`
+	Span        *float64 `json:"span"`
+	Drop        *float64 `json:"drop"`
+	PerDay      *float64 `json:"per_day"`
+	ETA         *float64 `json:"eta"`
+	Floor       *float64 `json:"floor"`
+}
+
+type batteryDetail struct {
+	EntityID string  `json:"entity_id"`
+	Now      float64 `json:"now"`
+	Level    float64 `json:"level"`
+	Ignored  bool    `json:"ignored"`
+	Series   []struct {
+		At    float64 `json:"at"`
+		Level float64 `json:"level"`
+	} `json:"series"`
+	Events []batteryEvent `json:"events"`
+	Math   struct {
+		MinSpan     float64  `json:"min_span"`
+		Remaining   float64  `json:"remaining"`
+		OldestAt    *float64 `json:"oldest_at"`
+		OldestLevel *float64 `json:"oldest_level"`
+		Span        *float64 `json:"span"`
+		Drop        *float64 `json:"drop"`
+		Low         *float64 `json:"low"`
+		ResetsAt    *float64 `json:"resets_at"`
+		PerDay      *float64 `json:"per_day"`
+		ETASeconds  *float64 `json:"eta_seconds"`
+		ETAAtLeast  *float64 `json:"eta_at_least"`
+		Tier        string   `json:"tier"`
+		Samples     int      `json:"samples"`
+		Steps       int      `json:"steps"`
+	} `json:"math"`
+}
+
+func getDetail(t *testing.T, router *Router, entityID string) batteryDetail {
+	t.Helper()
+	target := "/api/detail?entity_id=" + url.QueryEscape(entityID)
+	rec := doReqID(router, "battery_levels", "GET", target, "")
+	if rec.Code != 200 {
+		t.Fatalf("GET %s status %d body %q", target, rec.Code, rec.Body.String())
+	}
+	var detail batteryDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	return detail
 }
 
 // TestBatteryLevelsRundown checks the forecast and the ordering that is the
@@ -366,6 +430,158 @@ func TestBatteryLevelsSlowRechargeResets(t *testing.T) {
 	}
 	if rows[0].ETASeconds != nil {
 		t.Errorf("eta_seconds = %v across a slow recharge, want none", *rows[0].ETASeconds)
+	}
+}
+
+// TestBatteryLevelsDetailExposesMath pins the inspector: every input the
+// forecast was derived from comes back with it, the numbers agree with the ones
+// on the page, and asking does not sample — inspecting a suspect row must not
+// alter the thing being inspected.
+func TestBatteryLevelsDetailExposesMath(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.attic_battery", State: "71",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Attic"}`),
+			LastChanged: now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)},
+		{EntityID: "light.kitchen", State: "on",
+			Attributes:  jsontext.Value(`{"friendly_name":"Kitchen"}`),
+			LastChanged: now.Add(-time.Hour).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.attic_battery": []any{
+			sample(now.Add(-5*24*time.Hour), 80),
+			sample(now.Add(-4*24*time.Hour), 77),
+			sample(now.Add(-3*24*time.Hour), 79),
+			sample(now.Add(-2*24*time.Hour), 74),
+			sample(now.Add(-24*time.Hour), 76),
+		},
+	}
+	router := serveBatteryLevels(t, seed, series)
+
+	rows := getBatteries(t, router)
+	if rows[0].ETASeconds == nil {
+		t.Fatalf("row = %+v, want a forecast to inspect", rows[0])
+	}
+	// A second scan changes nothing: a quiet poll must not fill the trail.
+	getBatteries(t, router)
+
+	detail := getDetail(t, router, "sensor.attic_battery")
+	if len(detail.Series) != 6 {
+		t.Fatalf("series = %d samples, want the stored 5 plus the scanned one", len(detail.Series))
+	}
+	if detail.Math.Tier != "eta" {
+		t.Errorf("tier = %q, want %q", detail.Math.Tier, "eta")
+	}
+	// The whole forecast is these two numbers: 80 down to 71 over five days.
+	if detail.Math.Drop == nil || *detail.Math.Drop != 9 {
+		t.Errorf("drop = %v, want 9", detail.Math.Drop)
+	}
+	if detail.Math.OldestLevel == nil || *detail.Math.OldestLevel != 80 {
+		t.Errorf("oldest_level = %v, want 80", detail.Math.OldestLevel)
+	}
+	if detail.Math.Span == nil || *detail.Math.Span < 5*24*3600-60 {
+		t.Errorf("span = %v, want ~5 days", detail.Math.Span)
+	}
+	// The wipe threshold is measured from the run's low, which is now the
+	// newest sample — the one number that explains a series vanishing.
+	if detail.Math.Low == nil || *detail.Math.Low != 71 {
+		t.Errorf("low = %v, want 71", detail.Math.Low)
+	}
+	if detail.Math.ResetsAt == nil || *detail.Math.ResetsAt != 81 {
+		t.Errorf("resets_at = %v, want 81", detail.Math.ResetsAt)
+	}
+	if detail.Math.Remaining != 56 {
+		t.Errorf("remaining = %v, want 56 above empty", detail.Math.Remaining)
+	}
+	if detail.Math.ETASeconds == nil {
+		t.Fatalf("detail eta = nil, want the page's forecast")
+	}
+	if delta := *detail.Math.ETASeconds - *rows[0].ETASeconds; delta > 1 || delta < -1 {
+		t.Errorf("detail eta %v disagrees with the page's %v", *detail.Math.ETASeconds, *rows[0].ETASeconds)
+	}
+
+	if len(detail.Events) != 1 {
+		t.Fatalf("events = %d, want one for the sample the scan appended: %+v", len(detail.Events), detail.Events)
+	}
+	event := detail.Events[0]
+	if event.Why != "sample" || event.From == nil || *event.From != 76 {
+		t.Errorf("event = %+v, want a sample stepping down from 76", event)
+	}
+	if event.Samples != 6 || event.Drop == nil || *event.Drop != 9 {
+		t.Errorf("event = %+v, want the whole computation recorded with it", event)
+	}
+
+	again := getDetail(t, router, "sensor.attic_battery")
+	if len(again.Series) != 6 || len(again.Events) != 1 {
+		t.Errorf("inspecting sampled: %d samples / %d events, want 6 / 1",
+			len(again.Series), len(again.Events))
+	}
+
+	for _, tc := range []struct {
+		target string
+		want   int
+	}{
+		{"/api/detail", 400},
+		{"/api/detail?entity_id=", 400},
+		{"/api/detail?entity_id=sensor.nonexistent", 404},
+		{"/api/detail?entity_id=light.kitchen", 404},
+	} {
+		if rec := doReqID(router, "battery_levels", "GET", tc.target, ""); rec.Code != tc.want {
+			t.Errorf("GET %s = %d, want %d", tc.target, rec.Code, tc.want)
+		}
+	}
+}
+
+// TestBatteryLevelsTrailExplainsReset is the case the trail exists for: a
+// recharge silently throws away the run behind a forecast, so the page loses
+// its number with nothing on it to say why. The event survives the series.
+func TestBatteryLevelsTrailExplainsReset(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.vacuum_battery", State: "95",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Vacuum"}`),
+			LastChanged: now.Add(-time.Minute).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.vacuum_battery": []any{
+			sample(now.Add(-4*24*time.Hour), 60),
+			sample(now.Add(-2*24*time.Hour), 40),
+			sample(now.Add(-24*time.Hour), 20),
+		},
+	}
+	router := serveBatteryLevels(t, seed, series)
+
+	if rows := getBatteries(t, router); rows[0].ETASeconds != nil {
+		t.Fatalf("eta = %v across a recharge, want the forecast gone", *rows[0].ETASeconds)
+	}
+
+	detail := getDetail(t, router, "sensor.vacuum_battery")
+	if len(detail.Series) != 1 {
+		t.Fatalf("series = %d samples, want the run restarted", len(detail.Series))
+	}
+	if len(detail.Events) != 1 {
+		t.Fatalf("events = %d, want the reset recorded: %+v", len(detail.Events), detail.Events)
+	}
+	event := detail.Events[0]
+	if event.Why != "reset" {
+		t.Errorf("why = %q, want %q", event.Why, "reset")
+	}
+	if event.Wiped == nil || *event.Wiped != 3 {
+		t.Errorf("wiped = %v, want the 3 discarded samples counted", event.Wiped)
+	}
+	// 20 was the run's low and 95 cleared it by more than RECHARGE_RISE: the
+	// two numbers that decided it, kept where they can still be read.
+	if event.Low == nil || *event.Low != 20 {
+		t.Errorf("low = %v, want 20", event.Low)
+	}
+	if event.Level != 95 {
+		t.Errorf("level = %v, want the 95 that tripped it", event.Level)
+	}
+	if event.ETA != nil {
+		t.Errorf("eta = %v, want none left after the wipe", *event.ETA)
+	}
+	if detail.Math.Tier != "none" {
+		t.Errorf("tier = %q, want %q", detail.Math.Tier, "none")
 	}
 }
 
