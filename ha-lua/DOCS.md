@@ -449,6 +449,30 @@ which never steps 10 points at once — is caught as well.
 Levels are sampled every 15 minutes (and on every page load). The script only
 reads — it publishes no entities and sends no notifications.
 
+**When a forecast looks wrong.** Click any row to open its inspector. The
+forecast is a pure function of the oldest stored sample and the current level,
+so the panel shows exactly that: the window it was measured over, the drop and
+the rate, the level at which a rise would wipe the run, every stored sample with
+its step and the gap before it, and a trail of the changes behind the number.
+
+That trail is the part worth reading. Each line records what the series did and
+what the forecast became — a level stepping, a run wiped by a recharge, the
+answer changing kind, or a forecast that moved further than the growing window
+explains. Forty lines are kept per battery and they are written as things
+happen, not when you go looking, which is the point: a number that swings
+between polls is caused by a change to the series that has already overwritten
+its own evidence by the time the page is open. A row stuck on **measuring** gets
+a plain sentence naming the guard that failed rather than leaving you to guess.
+
+The same thing is available as JSON for a battery you want to watch over time:
+
+```sh
+curl -s 'http://homeassistant.local:8100/s/battery_levels/api/detail?entity_id=sensor.attic_battery'
+```
+
+Inspecting is read-only — it never samples, so looking at a suspect battery
+cannot change it.
+
 ## Service API example
 
 `service_api.lua` is one HTTP endpoint that calls **any** Home Assistant
