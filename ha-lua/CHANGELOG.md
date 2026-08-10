@@ -4,6 +4,29 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.6.0 - 2026-08-10
+
+### Added
+- **The Batteries example can explain its own forecast.** Clicking a row opens
+  an inspector: the window the drain rate was measured over, the drop and the
+  rate it implied, the level at which a rise would be read as a recharge and
+  wipe the run, every stored sample with its step and the gap before it, and a
+  trail of the changes behind the number. A row reading **measuring** now says
+  which guard rejected it — no samples, no drop below the oldest one, or a
+  window still short of 24 hours — instead of leaving you to guess.
+- **`GET /api/detail?entity_id=` on the Batteries page** returns the same
+  thing as JSON, for watching one battery over time. Inspecting is read-only:
+  it never samples, so looking at a suspect battery cannot change it.
+
+### Changed
+- `battery_levels.lua` keeps a capped event trail per battery
+  (`events:<entity_id>`, 40 lines) alongside its samples. A line is written
+  when the series changes, when the answer changes kind, or when the forecast
+  moves further than the growing window explains; a scan that changes nothing
+  writes nothing. The trail is what makes a forecast that swings between polls
+  explainable after the fact — the changes that cause it otherwise overwrite
+  their own evidence.
+
 ## 4.5.0 - 2026-08-09
 
 ### Added
