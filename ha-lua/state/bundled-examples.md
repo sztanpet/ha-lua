@@ -5,7 +5,7 @@ Working state for the read-only bundled examples tree. Spec:
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
 growing on top; newest: the Batteries forecast inspector (2026-08-10,
-`b51a2b2`..`9fc49e0`, unreleased).
+`b51a2b2`..`9fc49e0`, v4.6.0).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -179,7 +179,7 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 
 ## battery_levels: the forecast inspector (2026-08-10)
 - Commits `b51a2b2` (trail + `/api/detail` + tests), `4f86ce5` (page + chromedp),
-  `9fc49e0` (DOCS.md). NOT yet released.
+  `9fc49e0` (DOCS.md). RELEASED in **v4.6.0** (2026-08-10, tag on `363d8d9`).
 - Reported symptom, asked for and answered before anything was written: the ETA
   **swings between polls**. Nothing was diagnosed — this is instrumentation to
   find out, not a fix.
