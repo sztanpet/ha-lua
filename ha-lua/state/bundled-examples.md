@@ -4,8 +4,8 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: the Batteries forecast inspector (2026-08-10,
-`b51a2b2`..`9fc49e0`, v4.6.0).
+growing on top; newest: the Batteries drain rate as a median (2026-08-10,
+`18b7852` + `bd33ee5`, v4.6.1).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -208,7 +208,8 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   huge relative variance, which would swing the ETA by the same factor).
 
 ## battery_levels: the drain rate is a median (2026-08-10)
-- Commits `18b7852` (estimator + tests), `bd33ee5` (DOCS.md). NOT yet released.
+- Commits `18b7852` (estimator + tests), `bd33ee5` (DOCS.md). RELEASED in
+  **v4.6.1** (2026-08-10, tag on `9a6d28e`).
 - The inspector from v4.6.0 did its job on the first dump. Real series off a
   live sensor: `27 28 27 28 27 26 27 26 27 26 27` — a ~0.25 %/day drain under a
   ±1 diurnal swing (high ~10:08, low ~02:08, i.e. temperature). The secant read

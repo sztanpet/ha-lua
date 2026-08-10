@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-10 (v4.6.0)
+Last updated: 2026-08-10 (v4.6.1)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -11,7 +11,7 @@ and only that one.
 
 ## Latest
 **Battery drain rate is a median** (2026-08-10, `18b7852`, `bd33ee5`,
-UNRELEASED). The v4.6.0 inspector found the swinging-ETA cause on its first
+v4.6.1). The v4.6.0 inspector found the swinging-ETA cause on its first
 dump: a ±1 diurnal wobble, with the rate read off two single endpoint samples.
 Replaced by Theil-Sen over pairs at least 12 h apart, plus a dwell bound for the
 step in progress. Chosen by measuring ETA spread across poll phase, not by
