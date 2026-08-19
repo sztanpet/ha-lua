@@ -3,6 +3,8 @@ package state
 import (
 	"context"
 	"database/sql"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,8 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 	"github.com/sztanpet/ha-lua/internal/ha"
 )
 

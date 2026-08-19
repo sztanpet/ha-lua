@@ -2,10 +2,9 @@ package lua
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"testing"
 	"time"
-
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 )

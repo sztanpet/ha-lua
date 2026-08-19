@@ -8,6 +8,12 @@ been stable since. Later tracks (thermostat UI, fs plugin, bundled examples,
 enhanced climate) build on it — see their own state files.
 
 ## Go 1.27 toolchain (2026-08-19)
+- **JSON moved to the stdlib.** `github.com/go-json-experiment/json` ->
+  `encoding/json/v2`, `.../json/jsontext` -> `encoding/json/jsontext`. In 1.27
+  these are real stdlib packages, no GOEXPERIMENT needed. Pure import swap
+  across 28 files; the API is identical and no call site changed. The module
+  still shows up as an *indirect* dep because chromedp pulls it in — that is
+  chromedp's problem, not ours.
 - go.mod `go 1.27.0`, Dockerfile builder `golang:1.27-bookworm`, Woodpecker
   `golang:1.27`. No source changes needed — build, vet and `-race` tests were
   clean on the new toolchain as-is.

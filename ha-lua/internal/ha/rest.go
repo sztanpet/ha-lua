@@ -3,13 +3,12 @@ package ha
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 )
 
 // restTimeout bounds a single core-REST request. State publishing rides the

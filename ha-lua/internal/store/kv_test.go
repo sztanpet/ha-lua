@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	jjson "github.com/go-json-experiment/json"
+	jjson "encoding/json/v2"
+
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )

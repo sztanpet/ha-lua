@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"os"
@@ -8,8 +9,6 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"time"
-
-	"github.com/go-json-experiment/json"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/logbuf"

@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"net/http/httptest"
 	"net/url"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/scheduler"

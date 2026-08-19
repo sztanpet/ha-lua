@@ -2,10 +2,10 @@ package state
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"testing"
 	"time"
 
-	"github.com/go-json-experiment/json/jsontext"
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )

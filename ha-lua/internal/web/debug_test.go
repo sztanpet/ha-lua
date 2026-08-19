@@ -1,14 +1,13 @@
 package web
 
 import (
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/go-json-experiment/json"
 
 	"github.com/sztanpet/ha-lua/internal/logbuf"
 )

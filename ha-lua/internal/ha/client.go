@@ -4,6 +4,7 @@ package ha
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/go-json-experiment/json"
 )
 
 // readLimit caps the size of a single inbound WebSocket message. get_states

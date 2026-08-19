@@ -2,12 +2,11 @@ package lua
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"

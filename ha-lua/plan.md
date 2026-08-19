@@ -36,7 +36,7 @@ Key invariant: **one `LState` per script, owned exclusively by that script's gor
 | SQLite | `modernc.org/sqlite` (pure Go, no cgo) |
 | File watching | `github.com/fsnotify/fsnotify` |
 | Config | `gopkg.in/yaml.v3` |
-| JSON | `github.com/go-json-experiment/json` (json/v2 — will become `encoding/json/v2` in stdlib once the Go proposal lands; import path swap only when that happens) |
+| JSON | `encoding/json/v2` + `encoding/json/jsontext` (stdlib as of Go 1.27; was `github.com/go-json-experiment/json` before) |
 
 ---
 
@@ -63,7 +63,7 @@ ha-lua/
 │   │   ├── api_ha.go         # ha.* API (get_state, call_service, on_exception, exceptions.*)
 │   │   ├── api_store.go      # store.* and global.* API
 │   │   ├── registry.go       # event routing table
-│   │   ├── json.go           # luaToJSON / jsonToLua helpers (uses go-json-experiment/json)
+│   │   ├── json.go           # luaToJSON / jsonToLua helpers (uses encoding/json/v2)
 │   │   ├── stdlib.go         # RegisterStdlib entry point + sandboxing
 │   │   ├── stdlib_time.go    # time module + time userdata metatable
 │   │   ├── stdlib_strings.go # strings module
@@ -945,9 +945,9 @@ if elapsed > 30 * time.minute then
 end
 ```
 
-#### `json` — backed by `github.com/go-json-experiment/json` (json/v2)
+#### `json` — backed by the stdlib `encoding/json/v2`
 
-All JSON work in the project — `store.state()` proxy, attribute parsing, and this Lua module — uses `github.com/go-json-experiment/json` throughout. Key v2 properties relied on:
+All JSON work in the project — `store.state()` proxy, attribute parsing, and this Lua module — uses `encoding/json/v2` throughout. Key v2 properties relied on:
 
 - **Deterministic map key order** — via the `json.Deterministic(true)` marshal option. v2 marshals map keys in **random** order by default; every marshal site must pass the option so encoded output is stable across runs (useful for hashing payloads).
 - **Strict UTF-8 and no duplicate keys** — fails fast on malformed input rather than silently ignoring it.

@@ -5,9 +5,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json/v2"
 	"fmt"
-
-	"github.com/go-json-experiment/json"
 )
 
 // Store handles per-script key-value persistence over SQLite.

@@ -67,7 +67,7 @@ curl -s "https://pkg.go.dev/v1beta/package/github.com/yuin/gopher-lua" | jq .
 curl -s "https://pkg.go.dev/v1beta/package/modernc.org/sqlite?version=v1.29.0" | jq .
 
 # All exported symbols (types, funcs, consts, vars)
-curl -s "https://pkg.go.dev/v1beta/symbols/github.com/go-json-experiment/json" | jq .
+curl -s "https://pkg.go.dev/v1beta/symbols/github.com/coder/websocket" | jq .
 
 # Available versions for a module
 curl -s "https://pkg.go.dev/v1beta/versions/nhooyr.io/websocket" | jq .
@@ -118,7 +118,7 @@ See `ha-lua/plan.md` for the full design. Short version:
 - **Two `*sql.DB` handles per DB file.** Write handle: `SetMaxOpenConns(1)` — serializes all writes, eliminates SQLITE_BUSY. Read handle: default pool — concurrent history/KV reads proceed in parallel. WAL makes this safe.
 - **WAL mode** is enabled on every DB open.
 - The WS reader goroutine feeds two consumers: the state tracker (fast, synchronous) and the event router (fans out to per-script channels, non-blocking, drops + warns on full).
-- Script KV values round-trip via `github.com/go-json-experiment/json` (json/v2) so types (number, boolean, string, table) are preserved.
+- Script KV values round-trip via the stdlib `encoding/json/v2` (Go 1.27+) so types (number, boolean, string, table) are preserved.
 - Timer IDs are stable across reloads: `script_id|type|spec|N` where N is registration order.
 - Every callback dispatch is wrapped in `pcall`; errors are routed to the script's `ha.on_exception` handler, with `slog.Error` as fallback.
 

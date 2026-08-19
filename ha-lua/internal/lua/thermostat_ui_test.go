@@ -2,6 +2,7 @@ package lua
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/scheduler"

@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-json-experiment/json/jsontext"
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/ha"

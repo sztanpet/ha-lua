@@ -7,7 +7,6 @@ require (
 	github.com/chromedp/chromedp v0.16.0
 	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68
 	github.com/yuin/gopher-lua v1.1.2
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.57.0
@@ -81,6 +80,7 @@ require (
 	github.com/fzipp/gocyclo v0.6.0 // indirect
 	github.com/ghostiam/protogetter v0.3.20 // indirect
 	github.com/go-critic/go-critic v0.14.3 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260819210203-93dd53efdd9e // indirect
 	github.com/go-toolsmith/astcast v1.1.0 // indirect
 	github.com/go-toolsmith/astcopy v1.1.0 // indirect
 	github.com/go-toolsmith/astequal v1.2.0 // indirect

@@ -164,7 +164,7 @@ module proxy guarantees availability, so vendoring would buy nothing but a
 bloated repository and unreviewable dependency-bump diffs. If a hermetic
 offline build is ever needed, `go mod vendor` is one command away.
 
-**JSON via json/v2** (`github.com/go-json-experiment/json`): strict UTF-8
+**JSON via json/v2** (stdlib `encoding/json/v2`): strict UTF-8
 handling, and the import path swaps to `encoding/json/v2` when it lands in
 the standard library. Note: deterministic key order is *opt-in*
 (`json.Deterministic(true)`) — every marshal site that needs stable output

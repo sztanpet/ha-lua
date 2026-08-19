@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"flag"
 	"fmt"
 	"io"
@@ -12,9 +14,6 @@ import (
 	"runtime/pprof"
 	"syscall"
 	"time"
-
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/cards"
 	bundled "github.com/sztanpet/ha-lua/examples"

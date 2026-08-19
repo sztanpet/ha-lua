@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,8 +16,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	luapkg "github.com/sztanpet/ha-lua/internal/lua"

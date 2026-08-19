@@ -2,11 +2,10 @@ package web
 
 import (
 	"embed"
+	"encoding/json/v2"
 	"io/fs"
 	"net/http"
 	"sort"
-
-	"github.com/go-json-experiment/json"
 
 	"github.com/sztanpet/ha-lua/internal/lua"
 )

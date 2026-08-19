@@ -14,7 +14,9 @@ and only that one.
 Woodpecker image moved to 1.27; no source change was required. The one snag was
 static analysis: honnef.co/go/tools v0.7.0 panics building IR for the 1.27
 stdlib, and golangci-lint vendors the same pass, so both had to be unblocked by
-bumping honnef to v0.8.0-rc.1. Detail: `state/core-daemon.md`.
+bumping honnef to v0.8.0-rc.1. Direct deps bumped on top, and JSON moved off
+`github.com/go-json-experiment/json` onto the stdlib `encoding/json/v2` —
+plan.md had predicted that swap since day one. Detail: `state/core-daemon.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

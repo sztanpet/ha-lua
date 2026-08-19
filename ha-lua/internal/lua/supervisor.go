@@ -2,6 +2,7 @@ package lua
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -11,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"

@@ -1,9 +1,8 @@
 package ha
 
 import (
+	"encoding/json/jsontext"
 	"time"
-
-	"github.com/go-json-experiment/json/jsontext"
 )
 
 // Outgoing message types
