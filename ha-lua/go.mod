@@ -3,8 +3,8 @@ module github.com/sztanpet/ha-lua
 go 1.27.0
 
 require (
-	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
-	github.com/chromedp/chromedp v0.15.1
+	github.com/chromedp/cdproto v0.0.0-20260804232424-e85f50dbfd32
+	github.com/chromedp/chromedp v0.16.0
 	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68
