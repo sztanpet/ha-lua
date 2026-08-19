@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-10 (v4.6.1)
+Last updated: 2026-08-19 (Go 1.27 toolchain)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,12 +10,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Battery drain rate is a median** (2026-08-10, `18b7852`, `bd33ee5`,
-v4.6.1). The v4.6.0 inspector found the swinging-ETA cause on its first
-dump: a ±1 diurnal wobble, with the rate read off two single endpoint samples.
-Replaced by Theil-Sen over pairs at least 12 h apart, plus a dwell bound for the
-step in progress. Chosen by measuring ETA spread across poll phase, not by
-argument. Detail: `state/bundled-examples.md`.
+**Go 1.27 toolchain** (2026-08-19). go.mod, Dockerfile builder and the
+Woodpecker image moved to 1.27; no source change was required. The one snag was
+static analysis: honnef.co/go/tools v0.7.0 panics building IR for the 1.27
+stdlib, and golangci-lint vendors the same pass, so both had to be unblocked by
+bumping honnef to v0.8.0-rc.1. Detail: `state/core-daemon.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

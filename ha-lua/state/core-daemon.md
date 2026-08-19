@@ -7,6 +7,16 @@ Status: **COMPLETE — milestones 1–12.** Released as add-on 1.0.0; the daemon
 been stable since. Later tracks (thermostat UI, fs plugin, bundled examples,
 enhanced climate) build on it — see their own state files.
 
+## Go 1.27 toolchain (2026-08-19)
+- go.mod `go 1.27.0`, Dockerfile builder `golang:1.27-bookworm`, Woodpecker
+  `golang:1.27`. No source changes needed — build, vet and `-race` tests were
+  clean on the new toolchain as-is.
+- honnef.co/go/tools had to go to **v0.8.0-rc.1** first (own commit). v0.7.0's
+  IR builder panics on the 1.27 stdlib (`unexpected expr: *ast.KeyValueExpr`
+  in internal/poll), taking down `make staticcheck` AND `make lint` —
+  golangci-lint v2.12.2 (latest) vendors the same buildir pass, so bumping the
+  shared honnef dep fixes both. Drop the `-rc` suffix once v0.8.0 is out.
+
 ## Post-1.0 daemon changes (released v2.8.0, 2026-06-26)
 - **Bounded daemon log** (internal/logwriter): ha-lua.log capped at 5 MiB total
   (active file + one `.1` backup, each ≤ budget/2 so the sum stays under budget,
@@ -54,8 +64,8 @@ enhanced climate) build on it — see their own state files.
   homeassistant.url + token (dev mode reads them straight from YAML; only
   add-on mode injects them from the Supervisor). Keys mirror config.go yaml
   tags exactly; verified it round-trips through config.Load.
-- Dockerfile: multi-stage golang:1.26-bookworm builder (NOT 1.24 — go.mod
-  requires 1.26.4) → base-debian. No GOARCH mapping: home-assistant/builder
+- Dockerfile: multi-stage golang:1.27-bookworm builder (NOT 1.24 — go.mod
+  requires 1.27.0) → base-debian. No GOARCH mapping: home-assistant/builder
   runs the build emulated under the target arch, so plain `go build` is
   correct; mapping HA's aarch64→Go's arm64 by hand is the classic broken-image
   trap. CGO_ENABLED=0 static, ca-certificates for TLS. Built clean and the

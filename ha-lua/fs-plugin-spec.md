@@ -16,7 +16,7 @@ giant `[[ ... ]]` long string inside the `.lua` file (see
 `scripts/thermostat.lua`, a ~260-line `PAGE` literal). That is the motivating
 problem; this plugin is the fix.
 
-The sandbox is Go's `os.Root` (Go 1.24+, we run 1.26.4). `os.Root` confines
+The sandbox is Go's `os.Root` (Go 1.24+, we run 1.27.0). `os.Root` confines
 every operation to a single directory tree and — unlike the hand-rolled
 `filepath.Clean` + `strings.HasPrefix` containment in
 `installRestrictedRequire` (`stdlib.go:75-88`) — correctly rejects symlink

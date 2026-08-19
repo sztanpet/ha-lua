@@ -5,7 +5,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:latest
 # produces the right binary for that arch. Don't map TARGETARCH to GOARCH: the
 # HA arch names (aarch64) are not Go's (arm64), and the naive mapping ships a
 # broken image.
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.27-bookworm AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download

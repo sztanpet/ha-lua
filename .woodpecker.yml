@@ -12,7 +12,7 @@
 # go.mod, so `go tool <name>` builds them at the pinned version -- there is no
 # separate tool-install step.
 #
-# golang:1.26 ships go1.26.5, satisfying the go1.26.4 line in go.mod, plus make,
+# golang:1.27 ships go1.27.0, satisfying the go1.27.0 line in go.mod, plus make,
 # git and gcc -- gcc matters because `make test` uses -race, which needs cgo.
 #
 # The chromedp browser UI tests (internal/lua) skip cleanly when no Chrome is on
@@ -23,7 +23,7 @@
 # the analyzers from source. The first run after the cache is cleared is cold.
 
 variables:
-  - &golang_image golang:1.26
+  - &golang_image golang:1.27
   - &go_cache
     GOCACHE: /cache/go-build
     GOPATH: /cache/gopath
