@@ -155,7 +155,8 @@ automation makes ha-lua look slow. That comparison is measuring the
 default, not the architecture: `ha.immediate_events()` opts a script out,
 and the remaining floor (two WebSocket hops plus a WAL write) is a few
 milliseconds. Latency-sensitive scripts — anything a human is waiting on —
-should opt out; `examples/mirrored_switches.lua` shows how.
+should opt out; `examples/mirrored_switches.lua` and
+`examples/ikea_dimmer.lua` show how.
 
 **No vendoring.** A `vendor/` tree for this project measures **241 MB** —
 226 MB of it is `modernc.org` (pure-Go SQLite is a machine-translated C
