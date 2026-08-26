@@ -21,10 +21,14 @@ import (
 const (
 	dimmerActionTopic  = "zigbee2mqtt/ikea dimmer 1/action"
 	dimmerLight        = "light.konyha_konyha_led"
-	dimmerStep         = 16
 	dimmerMin          = 3
 	dimmerOnBrightness = 255
 )
+
+// The example's ramp is geometric: each step multiplies the level by
+// (255/3)^(0.15/4) ≈ 1.1813, so the steps below are the levels a hold from
+// the seeded brightness actually walks through. A linear step is what made
+// the ramp visibly staircase at the dim end.
 
 // dimmerHarness runs the real examples/ikea_dimmer.lua against a spy call
 // service, the production tracker and a live scheduler — the ramp is a chain
@@ -124,6 +128,23 @@ func (h *dimmerHarness) expectCmd(want string) {
 
 // expectSilence outlasts one ramp step, so a step that should have been
 // cancelled has time to fire and fail the test.
+// expectUntil drains commands until want arrives, so a test can assert where
+// a ramp ends up without pinning every level on the way.
+func (h *dimmerHarness) expectUntil(want string) {
+	h.t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case got := <-h.cmds:
+			if got == want {
+				return
+			}
+		case <-deadline:
+			h.t.Fatalf("ramp never reached %q", want)
+		}
+	}
+}
+
 func (h *dimmerHarness) expectSilence() {
 	h.t.Helper()
 	select {
@@ -151,8 +172,8 @@ func TestIkeaDimmerHoldRamps(t *testing.T) {
 	h := newDimmerHarness(t, "on", `{"brightness":100}`)
 
 	h.press("brightness_move_up")
-	h.expectCmd(fmt.Sprintf("turn_on %d", 100+dimmerStep))
-	h.expectCmd(fmt.Sprintf("turn_on %d", 100+2*dimmerStep))
+	h.expectCmd("turn_on 118")
+	h.expectCmd("turn_on 139")
 
 	h.press("brightness_stop")
 	h.expectSilence()
@@ -165,8 +186,11 @@ func TestIkeaDimmerHoldDownStopsAtMinimum(t *testing.T) {
 	h := newDimmerHarness(t, "on", `{"brightness":20}`)
 
 	h.press("brightness_move_down")
-	h.expectCmd(fmt.Sprintf("turn_on %d", 20-dimmerStep))
-	h.expectCmd(fmt.Sprintf("turn_on %d", dimmerMin))
+	h.expectCmd("turn_on 17")
+	h.expectCmd("turn_on 14")
+	// Down to the floor: near the bottom a multiplicative step rounds back to
+	// where it started, so the ramp steps by 1 rather than stalling.
+	h.expectUntil(fmt.Sprintf("turn_on %d", dimmerMin))
 	h.expectSilence()
 }
 
@@ -180,7 +204,7 @@ func TestIkeaDimmerHoldUpFromOff(t *testing.T) {
 
 	h.press("brightness_move_up")
 	h.expectCmd(fmt.Sprintf("turn_on %d", dimmerMin))
-	h.expectCmd(fmt.Sprintf("turn_on %d", dimmerMin+dimmerStep))
+	h.expectCmd("turn_on 4")
 }
 
 // TestIkeaDimmerIgnoresUnknownActions guards the dispatch table: a STYRBAR-ish

@@ -46,14 +46,19 @@ local ACTION_TOPIC = "zigbee2mqtt/" .. DIMMER .. "/action"
 local LIGHT = "light.konyha_konyha_led"
 
 local ON_BRIGHTNESS = 255 -- what a click on the on button sets; nil = the bulb's own last level
-local RAMP_STEP_SPEC = "250ms"
-local RAMP_STEP_SECS = 0.25
+local RAMP_STEP_SPEC = "150ms"
+local RAMP_STEP_SECS = 0.15
 local RAMP_FULL_SECS = 4 -- seconds a hold takes to cross the whole range
 local MIN_BRIGHTNESS = 3 -- a hold down dims to the bottom, it never switches off
 local MAX_BRIGHTNESS = 255
 local COMMAND_FRESH_SECS = 5
 
-local STEP = math.ceil((MAX_BRIGHTNESS - MIN_BRIGHTNESS) * RAMP_STEP_SECS / RAMP_FULL_SECS)
+-- The ramp is geometric, not linear, because the eye is: brightness 20 -> 36
+-- is an obvious jump while 200 -> 216 is invisible, yet both are +16. Each
+-- step multiplies (or divides) the level by STEP_FACTOR, so every step looks
+-- the same size and the whole range still takes RAMP_FULL_SECS. A linear step
+-- is exactly what makes a ramp look like a staircase at the dim end.
+local STEP_FACTOR = (MAX_BRIGHTNESS / MIN_BRIGHTNESS) ^ (RAMP_STEP_SECS / RAMP_FULL_SECS)
 
 local ramp = { generation = 0, level = nil }
 local commanded = { level = nil, at = 0 }
@@ -103,6 +108,16 @@ local function current_level()
   return brightness
 end
 
+-- scale moves one geometric step. The +/-1 floor matters at the bottom of the
+-- range, where a multiplicative step rounds back to the level it started from
+-- and the ramp would stall instead of reaching the minimum.
+local function scale(level, direction)
+  if direction > 0 then
+    return math.max(math.floor(level * STEP_FACTOR + 0.5), level + 1)
+  end
+  return math.min(math.floor(level / STEP_FACTOR + 0.5), level - 1)
+end
+
 local function clamp(level)
   if level < MIN_BRIGHTNESS then
     return MIN_BRIGHTNESS
@@ -118,7 +133,7 @@ ramp_tick = function(generation, direction)
     trace(string.format("step %d cancelled (generation is %d)", generation, ramp.generation))
     return -- released, or reversed, before this step got its turn
   end
-  local next_level = clamp(ramp.level + direction * STEP)
+  local next_level = clamp(scale(ramp.level, direction))
   if next_level == ramp.level then
     trace(string.format("ramp %d pinned at %d, stopping", generation, next_level))
     return -- at the end of the range; stop rather than resend the same level
@@ -190,3 +205,21 @@ mqtt.subscribe(ACTION_TOPIC, function(_, action)
 end)
 
 ha.log("info", DIMMER .. ": watching " .. ACTION_TOPIC .. " for " .. LIGHT)
+
+-- Whether the light honours `transition` decides how smooth a ramp can be:
+-- with it, each step glides into the next; without it, every step is an
+-- instant jump and the only cure is smaller steps. HA's TRANSITION feature
+-- bit (32) is what says which, and it is worth one line at load rather than
+-- a guess.
+local light = ha.get_state(LIGHT)
+if not light then
+  ha.log("warn", LIGHT .. " is unknown to the daemon — is that the right entity id?")
+else
+  local features = tonumber(light.attributes and light.attributes.supported_features) or 0
+  local supports_transition = features % 64 >= 32
+  ha.log("info", string.format(
+    "%s: supported_features=%d transition=%s color_modes=%s brightness=%s",
+    LIGHT, features, tostring(supports_transition),
+    table.concat(light.attributes.supported_color_modes or {}, ","),
+    tostring(light.attributes.brightness)))
+end
