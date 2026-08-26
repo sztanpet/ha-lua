@@ -47,6 +47,8 @@ type haAPI struct {
 	stateChangeHandlers []stateChangeHandler
 	// eventHandlers registered during load time.
 	eventHandlers []eventHandler
+	// mqttHandlers registered during load time via mqtt.subscribe.
+	mqttHandlers []mqttHandler
 	// timerFns registered during load time or from callbacks.
 	timerFns map[string]*lua.LFunction
 	// keepIDs tracks every registered timer's ID so PruneScript does not

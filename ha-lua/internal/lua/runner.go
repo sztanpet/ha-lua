@@ -17,6 +17,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/mqtt"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
@@ -24,8 +25,9 @@ import (
 
 // Event is the union type delivered to script goroutines.
 type Event struct {
-	HAEvent    *ha.Event
-	TimerFired *TimerFiredEvent
+	HAEvent     *ha.Event
+	TimerFired  *TimerFiredEvent
+	MQTTMessage *mqtt.Message
 }
 
 // TimerFiredEvent is sent to a script goroutine when a timer fires.
@@ -100,6 +102,7 @@ type Runner struct {
 	cachedUITitle string
 	// Set with the other cached fields, before LoadedCh closes.
 	cachedStateHandlers int
+	cachedMQTTHandlers  []mqttHandler
 	cachedImmediate     bool
 
 	// Read from other goroutines, so never behind the LState.
@@ -117,8 +120,12 @@ type Runner struct {
 	// yields HA's verdict on the returned channel; backs { wait = false }.
 	callServiceAsync func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error)
 	fireEvent        func(ctx context.Context, eventType string, data jsontext.Value) error
-	setState         func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
-	removeState      func(ctx context.Context, entityID string) error
+	// mqttSubscribe and mqttPublish back the Lua mqtt module; nil when no
+	// broker is configured, which makes every mqtt.* call raise.
+	mqttSubscribe func(filter string) error
+	mqttPublish   func(topic string, payload []byte, qos byte, retain bool) error
+	setState      func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
+	removeState   func(ctx context.Context, entityID string) error
 }
 
 // NewRunner creates a Runner. Call Start to load and run the script.
@@ -152,6 +159,14 @@ func (r *Runner) SetCallService(fn func(ctx context.Context, domain, service str
 // ha.call_service{ wait = false }. Must be called before Start.
 func (r *Runner) SetCallServiceAsync(fn func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error)) {
 	r.callServiceAsync = fn
+}
+
+// SetMQTT wires the broker functions behind the Lua mqtt module. Must be
+// called before Start; leaving it unset makes mqtt.* raise, which is what a
+// script written for a broker that is not configured deserves.
+func (r *Runner) SetMQTT(subscribe func(filter string) error,
+	publish func(topic string, payload []byte, qos byte, retain bool) error) {
+	r.mqttSubscribe, r.mqttPublish = subscribe, publish
 }
 
 // SetFireEvent wires the fire_event function. Must be called before Start.
@@ -225,11 +240,17 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		recordError:      r.recordError,
 	}
 	r.registerHaAPI(L, api)
+	r.registerMQTTAPI(L, api)
 	registerStoreAPI(L, r.kv, r.global)
 
 	loadErr := L.DoFile(scriptPath)
 	if loadErr != nil {
 		slog.Error("lua: script load error", "script", r.scriptID, "err", loadErr)
+		// Record it like a callback exception: a load error is the one a user
+		// most needs to see, and it was reaching the log but never the debug
+		// page's per-script error.
+		msg, traceback := luaErrParts(loadErr)
+		r.recordError("load", msg, traceback)
 	}
 
 	// Persist timer functions for dispatch and prune old rows.
@@ -249,6 +270,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	// Cache event handlers and routes for the supervisor/router, then signal
 	// loaded. Both are safe to read once LoadedCh is closed.
 	r.cachedEventHandlers = api.eventHandlers
+	r.cachedMQTTHandlers = api.mqttHandlers
 	r.cachedRoutes = api.routeSpecs()
 	r.cachedUITitle = api.uiTitle
 	r.cachedStateHandlers = len(api.stateChangeHandlers)
@@ -266,6 +288,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		slog.Info("lua: script loaded", "script", r.scriptID,
 			"state_handlers", r.cachedStateHandlers,
 			"event_handlers", len(r.cachedEventHandlers),
+			"mqtt_filters", len(r.cachedMQTTHandlers),
 			"routes", len(r.cachedRoutes),
 			"timers", len(r.timerFns),
 			"immediate_events", r.cachedImmediate)
@@ -309,7 +332,10 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			// Timers fire on a precise schedule, and immediate mode wants no
 			// delay; both bypass batching. Drain any pending window first so a
 			// batched event never overtakes one delivered immediately.
-			if immediate || ev.TimerFired != nil {
+			// MQTT joins timers in bypassing the batch window: coalescing a
+			// button press with the release that follows it would break
+			// every button on the broker.
+			if immediate || ev.TimerFired != nil || ev.MQTTMessage != nil {
 				flush()
 				r.handleEvent(L, api, ev)
 				continue
@@ -355,6 +381,7 @@ type RunnerStats struct {
 	Routes        []RouteSpec  `json:"routes"`
 	EventHandlers int          `json:"event_handlers"`
 	StateHandlers int          `json:"state_handlers"`
+	MQTTFilters   []string     `json:"mqtt_filters,omitempty"`
 	Immediate     bool         `json:"immediate_events"`
 	QueueLen      int          `json:"queue_len"`
 	QueueCap      int          `json:"queue_cap"`
@@ -371,6 +398,7 @@ func (r *Runner) Stats() RunnerStats {
 		Routes:        r.cachedRoutes,
 		EventHandlers: len(r.cachedEventHandlers),
 		StateHandlers: r.cachedStateHandlers,
+		MQTTFilters:   r.MQTTFilters(),
 		Immediate:     r.cachedImmediate,
 		QueueLen:      len(r.ch),
 		QueueCap:      cap(r.ch),
@@ -433,6 +461,9 @@ func (r *Runner) handleEvent(L *lua.LState, api *haAPI, ev Event) {
 	}
 	if ev.TimerFired != nil {
 		r.handleTimerFired(L, api, ev.TimerFired.TimerID)
+	}
+	if ev.MQTTMessage != nil {
+		r.handleMQTTMessage(L, api, *ev.MQTTMessage)
 	}
 }
 

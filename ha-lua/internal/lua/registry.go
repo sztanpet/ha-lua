@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/mqtt"
 )
 
 // Registry manages all running script runners and routes events to them.
@@ -62,6 +63,22 @@ func (reg *Registry) Dispatch(ev ha.Event) {
 	defer reg.mu.RUnlock()
 	for _, r := range reg.runners {
 		r.SendHAEvent(ev)
+	}
+}
+
+// DispatchMQTT sends an MQTT message to every script subscribed to a filter
+// that matches its topic. Matching here rather than in the runner keeps a
+// broker-wide subscription from waking every script for every message.
+func (reg *Registry) DispatchMQTT(msg mqtt.Message) {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	for _, r := range reg.runners {
+		for _, filter := range r.MQTTFilters() {
+			if mqtt.Match(filter, msg.Topic) {
+				r.Send(Event{MQTTMessage: &msg})
+				break
+			}
+		}
 	}
 }
 
