@@ -4,7 +4,7 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: `ikea_dimmer.lua` (2026-08-26, `07b56dd` + `2514b30`,
+growing on top; newest: `ikea_dimmer.lua` (2026-08-26, `07b56dd`..`89fcc2a`,
 unreleased).
 
 ## Bundled reference examples (2026-06-22)
@@ -342,3 +342,26 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   two-step ramp then a release that must silence the next step, the dim-down
   clamp at MIN, hold-up-from-off lighting at MIN first, and unknown/empty
   actions being ignored.
+
+## ikea_dimmer.lua input path (2026-08-26, `88c88eb`)
+- Field report: the script did nothing. Cause: on the author's Zigbee2MQTT 2.x
+  the dimmer is published as an **MQTT device trigger**
+  (`device_automation` discovery, `discovery_id: 0x… action_on`). That is NOT
+  an entity and NOT a bus event — HA's mqtt device_trigger subscribes to the
+  topic and calls the automation directly, so nothing on the WebSocket API
+  can observe it. No amount of entity-name guessing would ever have worked.
+- Fix: the press is bridged by ONE HA automation firing `ha_lua_command`
+  (`script: ikea_dimmer`, `action: "{{ trigger.payload }}"`), consumed with
+  `ha.on_command`. Deliberately did NOT invent a new event type: on_command
+  already does the addressed-to-this-script filtering. `trigger.payload` is
+  the action string — confirmed from the author's existing automation.
+- The action-entity path is kept for installs that have one, resolved by
+  scanning `*_action` (event domain before sensor) instead of assuming the
+  id; the chosen input is logged at info, since "does nothing" is this
+  script's failure mode.
+- If ha-lua ever wants these presses without an HA automation in the middle,
+  the only real answer is an MQTT client in the daemon. Not worth it for one
+  bridging automation.
+- Found while wiring it: `ha.on_event` handlers are called with the event's
+  DATA table, not the {event_type, time_fired, data} envelope lua_api.md
+  showed (runner.go:446). Docs fixed in `89fcc2a`.

@@ -11,13 +11,13 @@ and only that one.
 
 ## Latest
 **IKEA dimmer example** (2026-08-26, unreleased). `examples/ikea_dimmer.lua`:
-an E1743/RODRET two-button dimmer driving one light over Zigbee2MQTT, with the
-hold-to-dim ramp run in the daemon as a chain of `ha.after` steps. Two things
-worth remembering beyond the code: there is no timer-cancel API, so a released
-ramp disarms its pending step through a generation counter, and Z2M's legacy
-`sensor.<name>_action` silently loses repeated identical presses (HA skips
-`state_changed` when state and attributes are both unchanged) — the event
-entity is the one to watch. Detail: `state/bundled-examples.md`.
+an E1743/RODRET two-button dimmer driving one light, with the hold-to-dim ramp
+run in the daemon as a chain of `ha.after` steps (no timer-cancel API exists,
+so a released ramp disarms its pending step via a generation counter). The
+lesson worth keeping: a Zigbee2MQTT **MQTT device trigger** produces no entity
+and no bus event, so no script can see it — it must be bridged by an HA
+automation firing `ha_lua_command`, which `ha.on_command` then consumes.
+Detail: `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
