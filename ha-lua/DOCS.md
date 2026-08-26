@@ -141,6 +141,26 @@ before `sensor.*`, the boiler keeps its longer window. `days` may also be
 *shorter* than the default, to hold down one chatty entity. Default: empty (the
 default retention applies to everything).
 
+### Option: `mqtt`
+
+Direct MQTT, which is how scripts see devices Home Assistant cannot show them
+— a Zigbee2MQTT button published as a device trigger produces no entity and no
+bus event, so the broker is the only place the press exists.
+
+| Field | Meaning |
+|-------|---------|
+| `broker` | `core-mosquitto`, `192.168.1.5:1883`, or a full URL (`ssl://host:8883`). A bare host gets `tcp://` and `:1883` filled in. |
+| `username` / `password` | Broker credentials. |
+| `client_id` | Defaults to `ha-lua-<hostname>`. |
+
+**Leave `broker` empty and the add-on uses the Supervisor's MQTT service** —
+the credentials of the broker Home Assistant already knows about — so the
+usual install needs nothing here. With no broker at all the `mqtt` module is
+still installed but every call raises, so a script that needs MQTT fails
+loudly instead of silently doing nothing.
+
+The Debug tab shows the connection state and the subscribed filters.
+
 ### Option: `debug.pprof_addr`
 
 `host:port` to expose Go `net/http/pprof` and execution-trace endpoints for
@@ -570,49 +590,28 @@ steps (250 ms apart, 4 seconds for the whole range by default), so it works on
 any dimmable light rather than only on bulbs that implement the Zigbee
 level-move command.
 
-### Getting the presses into the daemon
+### How the presses get here
 
-Zigbee2MQTT surfaces a button in one of three ways, and the script accepts all
-of them. **Check which one you have first — this is what decides whether the
-script does anything at all.**
+Zigbee2MQTT 2.x publishes a button as an MQTT **device trigger**: it produces
+no entity at all, and Home Assistant consumes the press inside its automation
+engine, so it never reaches the event bus and nothing on the HA WebSocket API
+can see it. The broker is the only place that press exists — which is why this
+script subscribes to it directly:
 
-**MQTT device trigger** (the Zigbee2MQTT 2.x default). The press produces *no
-entity*: it exists only as an automation trigger inside Home Assistant, which
-means no script and no WebSocket client can see it. Bridge it with one HA
-automation that re-fires the press onto the event bus:
-
-```yaml
-alias: ikea dimmer 1 -> ha-lua
-mode: queued
-triggers:
-  - trigger: device
-    domain: mqtt
-    device_id: <your dimmer's device id>
-    type: action
-    subtype: 'on'
-  # …one more trigger per subtype: off, brightness_move_up,
-  # brightness_move_down, brightness_stop
-actions:
-  - event: ha_lua_command
-    event_data:
-      script: ikea_dimmer          # the script's id = its filename
-      action: "{{ trigger.payload }}"
+```lua
+mqtt.subscribe("zigbee2mqtt/ikea dimmer 1/action", function(_, action) … end)
 ```
 
-`ha.on_command` picks those up. This is the reliable path — every press fires,
-including two identical presses in a row — and it is worth using even when an
-action entity exists.
+**The topic carries the friendly name verbatim, spaces and all** — it is not
+the underscored entity id Home Assistant would show you. Find yours with:
 
-**`event.<name>_action`** — state is a timestamp, the action sits in the
-`event_type` attribute. Watched automatically if present.
+```sh
+mosquitto_sub -h <broker> -t 'zigbee2mqtt/#' -v
+```
 
-**`sensor.<name>_action`** (the legacy action sensor, off by default in
-Zigbee2MQTT 2.x). Its state *is* the action. Also watched, but it is lossy:
-Home Assistant does not fire `state_changed` when neither the state nor the
-attributes changed, so a second identical press in a row is never delivered.
-
-At load the script logs which entity it found, or that it is running on
-`ha_lua_command` events alone — the first place to look when nothing happens.
+then press the button; the line that appears is the topic to use. Set the
+broker under the add-on's MQTT options, or leave them empty to use the
+Mosquitto add-on's own credentials.
 
 ### Installing it
 
@@ -626,7 +625,13 @@ top. `ON_BRIGHTNESS` is what a click on the on button sets (`nil` restores the
 bulb's own last level) and `RAMP_FULL_SECS` is how fast a hold crosses the
 range.
 
-One detail worth knowing if you change the ramp: the light's reported
+If your light is itself a Zigbee2MQTT device, there is a better ramp than the
+one this example ships: publish `{"brightness_move": ±rate}` to its `/set`
+topic and `0` to stop, and the **bulb** ramps itself — the step chain
+disappears. The example steps brightness through Home Assistant because the
+light it drives is not on the broker.
+
+One detail worth knowing if you keep the stepped ramp: the light's reported
 brightness lags the command by the Zigbee round trip, so a ramp started right
 after the previous one ended would seed from a stale brightness and jump
 backwards. The script seeds from its own last commanded level while that is

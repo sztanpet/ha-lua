@@ -110,6 +110,11 @@ The rules that keep this simple:
   re-subscribes. Scripts keep running through it.
 - **Stops are drains, not kills.** Reloading a script lets queued events
   finish; only a script stuck for 5 seconds gets its VM aborted.
+- **MQTT is a second input, not a dependency.** Scripts can subscribe and
+  publish directly (`mqtt.subscribe` / `mqtt.publish`), which is the only way
+  to see a device Home Assistant never turns into an entity — a Zigbee2MQTT
+  button published as a device trigger. An unconfigured broker disables the
+  module and nothing else.
 
 ## Design decisions
 

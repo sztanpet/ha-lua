@@ -520,6 +520,58 @@ on a bad `cooldown` string or a send error.
 > }))
 > ```
 
+## `mqtt` — the broker
+
+Direct access to the MQTT broker, for devices Home Assistant cannot show a
+script. A Zigbee2MQTT button is the motivating case: version 2.x publishes it
+as an MQTT **device trigger**, which produces no entity and never reaches the
+HA event bus, so the broker is the only place the press exists.
+
+Configured in the add-on options (`mqtt.broker`, `username`, `password`,
+`client_id`). Leave the broker empty and the add-on uses the Supervisor's own
+MQTT service — the Mosquitto add-on's credentials — so the usual install needs
+no configuration at all. **With no broker configured every `mqtt.*` call
+raises**, deliberately: a script written for MQTT that silently does nothing
+is the worst failure mode there is.
+
+### `mqtt.subscribe(filter, fn)`
+
+Load-time only, like `ha.on_state_change`. `filter` is a topic filter with the
+usual wildcards — `+` for one level, `#` for the rest — validated at load, so a
+`#` in the middle raises immediately instead of never firing.
+
+```lua
+mqtt.subscribe("zigbee2mqtt/ikea dimmer 1/action", function(topic, payload, decoded)
+  -- topic   — the concrete topic, useful under a wildcard
+  -- payload — the raw payload as a string
+  -- decoded — the payload decoded, when it is a JSON object or array; else nil
+end)
+```
+
+Topics carry the device's Zigbee2MQTT **friendly name verbatim, spaces
+included** (`zigbee2mqtt/ikea dimmer 1/action`) — not the underscored entity id
+Home Assistant shows. Check yours with `mosquitto_sub -t 'zigbee2mqtt/#' -v`.
+
+Zigbee2MQTT publishes each press twice: a bare word on `<device>/action` and
+the whole state object on `<device>`. Subscribe to one of them, not both.
+
+Messages **bypass the 100 ms batch window**, like timers: coalescing a button
+press with the release that follows it would break every button.
+
+### `mqtt.publish(topic, payload [, opts])`
+
+`payload` is a string, number, boolean or table. **Strings are sent verbatim**
+(an action topic carries a bare word, and quoting it into JSON would break the
+device); everything else is JSON-encoded. `opts.qos` is 0–2 (default 0) and
+`opts.retain` defaults to false. Raises on a send failure or a down broker.
+
+```lua
+-- Let the bulb ramp its own brightness, the way a dimmer bound directly to it
+-- would: rate in units/second, 0 to stop.
+mqtt.publish("zigbee2mqtt/light1/set", { brightness_move = -40 })
+mqtt.publish("zigbee2mqtt/light1/set", { brightness_move = 0 })
+```
+
 ## `store` — per-script storage
 
 A persistent key-value store scoped to this script. Values round-trip through
