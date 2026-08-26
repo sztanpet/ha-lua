@@ -23,6 +23,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/logbuf"
 	"github.com/sztanpet/ha-lua/internal/logwriter"
 	luapkg "github.com/sztanpet/ha-lua/internal/lua"
+	"github.com/sztanpet/ha-lua/internal/mqtt"
 	"github.com/sztanpet/ha-lua/internal/purge"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
@@ -216,6 +217,12 @@ func main() {
 		}
 	}
 
+	// MQTT is optional and independent of HA: it is how scripts see devices
+	// Home Assistant cannot show them (a Zigbee2MQTT button published as a
+	// device trigger produces no entity and no bus event). An unconfigured or
+	// unreachable broker only disables the mqtt module.
+	mqttClient := startMQTT(ctx, cfg, reg)
+
 	sup := luapkg.NewSupervisor(reg, cfg.ScriptsDir, luapkg.Deps{
 		Tracker:   tracker,
 		Scheduler: sched,
@@ -275,8 +282,12 @@ func main() {
 		// Entity publish/remove ride the core REST API; the bindings are
 		// non-raising so the per-minute publish doesn't spam on_exception
 		// during a transient outage.
-		SetState:    client.SetState,
-		RemoveState: client.RemoveState,
+		SetState:      client.SetState,
+		RemoveState:   client.RemoveState,
+		MQTTSubscribe: func(filter string) error { return mqttClient.Subscribe(filter) },
+		MQTTPublish: func(topic string, payload []byte, qos byte, retain bool) error {
+			return mqttClient.Publish(topic, payload, qos, retain)
+		},
 		// AddEventType dedups and subscribes on the live connection, so
 		// scripts loaded or reloaded at any time get their events.
 		OnLoaded: func(r *luapkg.Runner) {
@@ -379,4 +390,40 @@ type fireEventMsg struct {
 	Type      string         `json:"type"`
 	EventType string         `json:"event_type"`
 	EventData jsontext.Value `json:"event_data"`
+}
+
+// startMQTT builds the broker client. Configuration comes from the add-on
+// options; an empty broker there falls back to the Supervisor's own MQTT
+// service, which is why the common add-on install needs no MQTT settings at
+// all. A client with no broker is still returned, not nil: its methods fail
+// with a clear error, which is what mqtt.* in a script should report.
+func startMQTT(ctx context.Context, cfg *config.Config, reg *luapkg.Registry) *mqtt.Client {
+	mcfg := mqtt.Config{
+		Broker:   cfg.MQTT.Broker,
+		Username: cfg.MQTT.Username,
+		Password: cfg.MQTT.Password,
+		ClientID: cfg.MQTT.ClientID,
+	}
+	if mcfg.Broker == "" {
+		if discovered, err := mqtt.Discover(ctx); err != nil {
+			slog.Debug("mqtt: no supervisor service", "err", err)
+		} else if discovered.Broker != "" {
+			slog.Info("mqtt: using the supervisor's mqtt service", "broker", discovered.Broker)
+			mcfg = discovered
+		}
+	}
+
+	client := mqtt.New(mcfg, func(msg mqtt.Message) {
+		reg.DispatchMQTT(msg)
+	})
+	if !client.Enabled() {
+		slog.Info("mqtt: no broker configured, the lua mqtt module is disabled")
+		return client
+	}
+	if err := client.Start(ctx); err != nil {
+		// Not fatal: the daemon's whole HA side works without MQTT, and the
+		// client keeps retrying in the background.
+		slog.Warn("mqtt: initial connect failed", "err", err)
+	}
+	return client
 }

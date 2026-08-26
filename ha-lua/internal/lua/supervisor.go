@@ -47,6 +47,10 @@ type Deps struct {
 	// Router receives each script's ha.serve routes on load and loses them on
 	// stop. May be nil (no UI server).
 	Router *Router
+	// MQTTSubscribe and MQTTPublish back the Lua mqtt module. Both nil when
+	// no broker is configured, which makes every mqtt.* call raise.
+	MQTTSubscribe func(filter string) error
+	MQTTPublish   func(topic string, payload []byte, qos byte, retain bool) error
 	// OnLoaded is called (on its own goroutine) once a started script has
 	// finished loading — the hook for subscribing newly required event
 	// types. May be nil.
@@ -117,6 +121,9 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 	r.SetCallServiceAsync(s.deps.CallServiceAsync)
 	r.SetFireEvent(s.deps.FireEvent)
 	r.SetSetState(s.deps.SetState)
+	if s.deps.MQTTSubscribe != nil {
+		r.SetMQTT(s.deps.MQTTSubscribe, s.deps.MQTTPublish)
+	}
 	r.SetRemoveState(s.deps.RemoveState)
 
 	sctx, cancel := context.WithCancel(ctx)
