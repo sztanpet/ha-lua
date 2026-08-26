@@ -1,70 +1,48 @@
 -- ikea_dimmer.lua
 --
--- An IKEA E1743 / RODRET two-button dimmer driving one light, with the
--- hold-to-dim ramp run here in the daemon instead of on the device.
+-- An IKEA E1743 / RODRET two-button dimmer driving one light, straight off
+-- the MQTT broker — no Home Assistant automation in the path.
 --
 -- The dimmer sends "on" / "off" for a click, and for a hold the pair
 -- "brightness_move_up" / "brightness_move_down" at press plus
--- "brightness_stop" at release. It never sends a level — it expects whoever
--- is listening to keep stepping the light until the release arrives. That is
--- all start_ramp/ramp_tick do: a chain of ha.after steps, each nudging
+-- "brightness_stop" at release. It never sends a level: it expects whoever is
+-- listening to keep stepping the light until the release arrives. That is all
+-- start_ramp/ramp_tick do — a chain of ha.after steps, each nudging
 -- brightness by STEP and scheduling the next, cancelled by bumping a
 -- generation counter that the pending step checks. (The daemon has no
 -- timer-cancel API, so a stale step must disarm itself.)
 --
--- HOW THE PRESSES GET HERE. Zigbee2MQTT can surface a button three ways, and
--- which ones you have depends on its config — so this script accepts any of
--- them:
+-- WHY MQTT AND NOT AN ENTITY. Zigbee2MQTT 2.x publishes a button as an MQTT
+-- **device trigger**: it produces no entity, and Home Assistant consumes the
+-- press inside its automation engine, so it never reaches the event bus and
+-- nothing on the HA WebSocket API can see it. The broker is the only place
+-- that press exists. Subscribing here also drops two hops (MQTT → HA →
+-- automation → bus → WS) from the most latency-sensitive thing in the house.
 --
---   1. As an **MQTT device trigger** (`device_automation` discovery). This is
---      the default in Zigbee2MQTT 2.x and it produces NO entity at all: the
---      press exists only as an automation trigger inside Home Assistant, so
---      no script can see it directly. Bridge it with a four-line HA
---      automation that re-fires the press onto the event bus:
+-- Zigbee2MQTT publishes each press twice: as a bare word on
+-- "<base>/<device>/action" and inside the JSON state object on
+-- "<base>/<device>". This subscribes to the action topic only — one message
+-- per press, no dedup needed. Note the topic carries the friendly name
+-- VERBATIM, spaces and all ("zigbee2mqtt/ikea dimmer 1/action"), which is not
+-- the underscored entity id HA would show you.
 --
---        triggers:
---          - trigger: device
---            domain: mqtt
---            device_id: <your dimmer's device id>
---            type: action
---            subtype: on              # one trigger per subtype you use:
---                                     # on, off, brightness_move_up,
---                                     # brightness_move_down, brightness_stop
---        actions:
---          - event: ha_lua_command
---            event_data:
---              script: ikea_dimmer    # this script's id (its filename)
---              action: "{{ trigger.payload }}"
---
---      ha.on_command below picks those up. This path is the reliable one:
---      every press fires, including two identical presses in a row.
---
---   2. As `event.<name>_action` — state is a timestamp, the action sits in
---      the event_type attribute.
---
---   3. As the legacy `sensor.<name>_action` — state IS the action. This one
---      is lossy: Home Assistant does not fire state_changed when neither the
---      state nor the attributes changed, so a second identical press in a
---      row is simply never delivered.
---
---   If an action entity exists the script watches it (2 before 3) and logs
---   which one at load; otherwise it relies on path 1 alone.
+-- The light is driven through HA rather than MQTT because it is not a
+-- Zigbee2MQTT device. If yours is, publishing {"brightness_move": ±rate} to
+-- "<base>/<light>/set" (and 0 to stop) is better still: the bulb ramps
+-- itself, and the step chain below disappears entirely.
 --
 -- The other hard-won detail is that the light's REPORTED brightness lags what
 -- we commanded by the Zigbee round trip, so seeding a new ramp from it right
 -- after the previous one ended would jump the level backwards. A ramp seeds
 -- from the level we last commanded while that is still fresh, and only then
 -- from the reported state. Same lesson as mirrored_switches.lua.
---
--- Edit DIMMER and LIGHT for your own devices. RAMP_FULL_SECS is the knob for
--- how fast a hold crosses the whole range.
 
--- A hold is a race against the user's finger: the default 100 ms batch window
--- would both delay the ramp and, for a short tap, collapse the move and its
--- stop into one event — losing the hold entirely.
 ha.immediate_events()
 
-local DIMMER = "ikea_dimmer_1" -- Zigbee2MQTT friendly name, not an entity id
+-- The Zigbee2MQTT friendly name, exactly as it appears in the topic —
+-- spaces included. Check yours with: mosquitto_sub -t 'zigbee2mqtt/#' -v
+local DIMMER = "ikea dimmer 1"
+local ACTION_TOPIC = "zigbee2mqtt/" .. DIMMER .. "/action"
 local LIGHT = "light.konyha_konyha_led"
 
 local ON_BRIGHTNESS = 255 -- what a click on the on button sets; nil = the bulb's own last level
@@ -207,56 +185,8 @@ local function dispatch(name, source)
   action()
 end
 
--- Path 1: the HA automation bridging the MQTT device trigger. on_command keeps
--- only the events addressed to this script (event_data.script == script id).
-ha.on_command(function(action)
-  dispatch(action, "ha_lua_command")
+mqtt.subscribe(ACTION_TOPIC, function(_, action)
+  dispatch(action, ACTION_TOPIC)
 end)
 
--- Diagnostic only. on_command drops a command addressed to another script
--- silently, which from the log looks exactly like no command arriving at all —
--- and those two have completely different causes (a wrong `script:` in the
--- automation vs. the automation not firing, or the daemon not subscribed).
--- This says which one you are looking at.
-ha.on_event("ha_lua_command", function(data)
-  trace(string.format("ha_lua_command seen: script=%s action=%s (mine: %s)",
-    tostring(data and data.script), tostring(data and data.action), ha.script_id))
-end)
-
--- Paths 2 and 3: an action entity, if this Zigbee2MQTT publishes one. The
--- event platform carries the action in an attribute (its state is only a
--- timestamp); the legacy sensor's state is the action itself.
-local function action_of(new_state)
-  local attributes = new_state.attributes
-  if attributes and type(attributes.event_type) == "string" then
-    return attributes.event_type
-  end
-  return new_state.state
-end
-
-local function action_entity()
-  local event_id, sensor_id
-  for _, entity_id in ipairs(ha.get_entity_ids("*" .. DIMMER .. "*_action")) do
-    if entity_id:match("^event%.") then
-      event_id = entity_id
-    elseif entity_id:match("^sensor%.") then
-      sensor_id = entity_id
-    end
-  end
-  return event_id or sensor_id
-end
-
-local ACTION_ENTITY = action_entity()
-if ACTION_ENTITY then
-  ha.log("info", DIMMER .. ": watching " .. ACTION_ENTITY .. " and ha_lua_command for " .. LIGHT)
-  ha.on_state_change(ACTION_ENTITY, function(data)
-    if data.new_state then
-      dispatch(action_of(data.new_state), data.entity_id)
-    end
-  end)
-else
-  -- Not a warning: Zigbee2MQTT 2.x publishes the button as an MQTT device
-  -- trigger only, and then the bridging automation is the whole input.
-  ha.log("info", DIMMER .. ": no *_action entity, driving " .. LIGHT ..
-    " from ha_lua_command events only (script id " .. ha.script_id .. ")")
-end
+ha.log("info", DIMMER .. ": watching " .. ACTION_TOPIC .. " for " .. LIGHT)

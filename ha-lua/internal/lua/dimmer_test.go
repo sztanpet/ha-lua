@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
+	"github.com/sztanpet/ha-lua/internal/mqtt"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
-// The ids and the step size hardcoded in the shipped example.
+// The topic, ids and step size hardcoded in the shipped example.
 const (
-	dimmerActionEntity = "event.ikea_dimmer_1_action"
+	dimmerActionTopic  = "zigbee2mqtt/ikea dimmer 1/action"
 	dimmerLight        = "light.konyha_konyha_led"
 	dimmerStep         = 16
 	dimmerMin          = 3
@@ -33,22 +34,11 @@ type dimmerHarness struct {
 	ctx     context.Context
 	tracker *state.Tracker
 	reg     *Registry
+	broker  *fakeBroker
 	cmds    chan string // "turn_on 116" / "turn_on -" / "turn_off -"
 }
 
-// newDimmerHarness seeds an event.<name>_action entity — the Zigbee2MQTT
-// install that publishes one. newCommandDimmerHarness is the other shape: no
-// action entity at all, presses arriving only as ha_lua_command events fired
-// by the automation bridging an MQTT device trigger.
 func newDimmerHarness(t *testing.T, lightState string, lightAttrs string) *dimmerHarness {
-	return newHarness(t, true, lightState, lightAttrs)
-}
-
-func newCommandDimmerHarness(t *testing.T, lightState string, lightAttrs string) *dimmerHarness {
-	return newHarness(t, false, lightState, lightAttrs)
-}
-
-func newHarness(t *testing.T, withActionEntity bool, lightState string, lightAttrs string) *dimmerHarness {
 	dir := t.TempDir()
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "ikea_dimmer.lua"),
 		filepath.Join(dir, "ikea_dimmer.lua"))
@@ -67,11 +57,7 @@ func newHarness(t *testing.T, withActionEntity bool, lightState string, lightAtt
 	h := &dimmerHarness{t: t, ctx: ctx, tracker: tracker, reg: reg,
 		cmds: make(chan string, 32)}
 
-	seed := []ha.StateData{seedEntity(dimmerLight, lightState, lightAttrs)}
-	if withActionEntity {
-		seed = append(seed, seedEntity(dimmerActionEntity, "2026-01-01T00:00:00Z", `{"event_type":null}`))
-	}
-	if err := tracker.Seed(ctx, seed); err != nil {
+	if err := tracker.Seed(ctx, []ha.StateData{seedEntity(dimmerLight, lightState, lightAttrs)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := sched.Start(ctx); err != nil {
@@ -96,6 +82,8 @@ func newHarness(t *testing.T, withActionEntity bool, lightState string, lightAtt
 		verdict <- nil
 		return verdict, nil
 	})
+	h.broker = &fakeBroker{}
+	r.SetMQTT(h.broker.subscribe, h.broker.publish)
 	reg.Add(r)
 
 	done := make(chan struct{})
@@ -115,32 +103,11 @@ func seedEntity(entityID, stateVal, attrs string) ha.StateData {
 		LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"}
 }
 
-// press feeds one Zigbee2MQTT action through the tracker and the registry, in
-// main.go's router order (apply to the mirror, then dispatch). The event
-// platform carries the action in an attribute; its state is only a timestamp.
+// press feeds one press the way Zigbee2MQTT publishes it: a bare action word
+// on the device's action topic.
 func (h *dimmerHarness) press(action string) {
 	h.t.Helper()
-	h.report(dimmerActionEntity, time.Now().UTC().Format(time.RFC3339Nano),
-		`{"event_type":"`+action+`"}`)
-}
-
-// command fires what the HA automation bridging the MQTT device trigger
-// fires: one ha_lua_command event addressed to this script.
-func (h *dimmerHarness) command(scriptID, action string) {
-	h.t.Helper()
-	h.reg.Dispatch(ha.Event{Type: "ha_lua_command",
-		Data: jsontext.Value(`{"script":"` + scriptID + `","action":"` + action + `"}`)})
-}
-
-func (h *dimmerHarness) report(entityID, stateVal, attrs string) {
-	h.t.Helper()
-	raw := jsontext.Value(`{"entity_id":"` + entityID + `","new_state":{"entity_id":"` +
-		entityID + `","state":"` + stateVal + `","attributes":` + attrs +
-		`,"last_changed":"2026-01-01T01:00:00Z","last_updated":"2026-01-01T01:00:00Z"}}`)
-	if err := h.tracker.HandleStateChanged(h.ctx, raw); err != nil {
-		h.t.Fatal(err)
-	}
-	h.reg.Dispatch(ha.Event{Type: "state_changed", Data: raw})
+	h.reg.DispatchMQTT(mqtt.Message{Topic: dimmerActionTopic, Payload: []byte(action)})
 }
 
 func (h *dimmerHarness) expectCmd(want string) {
@@ -227,30 +194,16 @@ func TestIkeaDimmerIgnoresUnknownActions(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestIkeaDimmerCommandEvents covers the path a Zigbee2MQTT 2.x install
-// actually uses: the button is an MQTT device trigger, which produces no
-// entity at all, so an HA automation re-fires each press as an ha_lua_command
-// event. The ramp must work identically off that input.
-func TestIkeaDimmerCommandEvents(t *testing.T) {
-	h := newCommandDimmerHarness(t, "on", `{"brightness":100}`)
+// TestIkeaDimmerSubscribesToTheActionTopic pins the topic the script asks the
+// broker for. The friendly name carries spaces verbatim — assuming the
+// underscored entity-id spelling is exactly the mistake that made an earlier
+// version of this script watch a topic that never existed.
+func TestIkeaDimmerSubscribesToTheActionTopic(t *testing.T) {
+	h := newDimmerHarness(t, "on", `{"brightness":100}`)
 
-	h.command("ikea_dimmer", "brightness_move_down")
-	h.expectCmd(fmt.Sprintf("turn_on %d", 100-dimmerStep))
-	h.expectCmd(fmt.Sprintf("turn_on %d", 100-2*dimmerStep))
-
-	h.command("ikea_dimmer", "brightness_stop")
-	h.expectSilence()
-
-	h.command("ikea_dimmer", "on")
-	h.expectCmd(fmt.Sprintf("turn_on %d", dimmerOnBrightness))
-}
-
-// TestIkeaDimmerIgnoresOtherScriptsCommands: ha_lua_command is one shared
-// event type, so a command addressed to another script must not move this
-// light.
-func TestIkeaDimmerIgnoresOtherScriptsCommands(t *testing.T) {
-	h := newCommandDimmerHarness(t, "on", `{"brightness":100}`)
-
-	h.command("some_other_script", "off")
-	h.expectSilence()
+	h.broker.mu.Lock()
+	defer h.broker.mu.Unlock()
+	if len(h.broker.filters) != 1 || h.broker.filters[0] != dimmerActionTopic {
+		t.Errorf("subscribed filters = %q, want [%q]", h.broker.filters, dimmerActionTopic)
+	}
 }
