@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-19 (Go 1.27 toolchain)
+Last updated: 2026-08-26 (IKEA dimmer example)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,13 +10,14 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Go 1.27 toolchain** (2026-08-19). go.mod, Dockerfile builder and the
-Woodpecker image moved to 1.27; no source change was required. The one snag was
-static analysis: honnef.co/go/tools v0.7.0 panics building IR for the 1.27
-stdlib, and golangci-lint vendors the same pass, so both had to be unblocked by
-bumping honnef to v0.8.0-rc.1. Direct deps bumped on top, and JSON moved off
-`github.com/go-json-experiment/json` onto the stdlib `encoding/json/v2` —
-plan.md had predicted that swap since day one. Detail: `state/core-daemon.md`.
+**IKEA dimmer example** (2026-08-26, unreleased). `examples/ikea_dimmer.lua`:
+an E1743/RODRET two-button dimmer driving one light over Zigbee2MQTT, with the
+hold-to-dim ramp run in the daemon as a chain of `ha.after` steps. Two things
+worth remembering beyond the code: there is no timer-cancel API, so a released
+ramp disarms its pending step through a generation counter, and Z2M's legacy
+`sensor.<name>_action` silently loses repeated identical presses (HA skips
+`state_changed` when state and attributes are both unchanged) — the event
+entity is the one to watch. Detail: `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

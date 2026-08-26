@@ -4,8 +4,8 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: the Batteries drain rate as a median (2026-08-10,
-`18b7852` + `bd33ee5`, v4.6.1).
+growing on top; newest: `ikea_dimmer.lua` (2026-08-26, `07b56dd` + `2514b30`,
+unreleased).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -305,3 +305,40 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   entity picker filtered to the chosen domain, exact URL/curl output for both
   request styles, and the generated URL fired back at the endpoint to prove it
   actually reaches light.turn_on.
+
+## ikea_dimmer.lua (2026-08-26, `07b56dd`, docs `2514b30`)
+- IKEA E1743/RODRET two-button dimmer -> `light.konyha_konyha_led`, via
+  Zigbee2MQTT. Requested with real ids; kept in `examples/` like
+  mirrored_switches.lua, which also carries the author's real entity ids.
+- The device sends `brightness_move_up|down` + `brightness_stop`, never a
+  level, so the ramp runs HERE: a chain of `ha.after("250ms")` steps
+  (4 s full range). Doing it in the daemon works on any dimmable light
+  instead of needing bulb-side level-move.
+- There is NO timer-cancel API, so release cannot delete the pending step: a
+  generation counter is bumped and every step checks it and disarms itself.
+  That also covers a direction reversal with no stop in between. Do not
+  "fix" this by adding cancellation to the scheduler for one example.
+- No leak from the chain: `timerFns` entries for `after` timers are deleted
+  when they fire (`api_ha_test.go` asserts it), and post-load `keepTimer` is
+  a no-op, so the pruning list does not grow either.
+- Z2M exposes the action twice. `event.<name>_action` (state = timestamp,
+  action in the `event_type` attribute) is the reliable one; the legacy
+  `sensor.<name>_action` loses repeated identical presses because HA skips
+  `state_changed` when state AND attributes are unchanged. The script picks
+  the event entity if it exists, else the sensor, else warns and watches
+  both.
+- Ramp seeding repeats the mirrored_switches echo lesson: the light's
+  reported brightness lags the command, so seed from our own last commanded
+  level while it is < 5 s old, and only then from the report.
+- `ha.immediate_events()` is mandatory here, not an optimization: the 100 ms
+  batch window collapses per-entity events, so a short tap's move + stop
+  would merge into one and the hold would be lost.
+- Everything is traced with `ha.log("debug", ...)` (action received, seed and
+  its source, each step, cancellation, release) at the user's request — one
+  press becomes a burst of async service calls, and there is nothing else to
+  reconstruct it from.
+- Tests: `internal/lua/dimmer_test.go` runs the real script against a spy
+  call_service with a LIVE scheduler (the ramp is real timers): clicks, a
+  two-step ramp then a release that must silence the next step, the dim-down
+  clamp at MIN, hold-up-from-off lighting at MIN first, and unknown/empty
+  actions being ignored.
