@@ -4,6 +4,58 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.7.0 - 2026-08-26
+
+### Added
+- **Scripts can talk to MQTT directly.** `mqtt.subscribe(filter, fn)` and
+  `mqtt.publish(topic, payload)` open the broker to Lua, which is the only way
+  to see a device Home Assistant never turns into an entity. Zigbee2MQTT 2.x
+  publishes a button as an MQTT *device trigger*: it produces no entity, and
+  Home Assistant consumes the press inside its automation engine, so the press
+  never reaches the event bus and nothing on the WebSocket API can observe it.
+  Handlers receive the concrete topic, the raw payload, and the payload decoded
+  when it is JSON — Zigbee2MQTT publishes both shapes for the same device.
+  Topic filters take the usual `+` and `#` wildcards and are validated at load,
+  so a filter that could never match is a load error rather than a subscription
+  that silently never fires. MQTT messages bypass the 100 ms batch window like
+  timers do: coalescing a button press with the release that follows it would
+  break every button.
+- **MQTT settings in the add-on options** — `broker`, `username`, `password`
+  and `client_id`. A bare host is enough (`core-mosquitto` becomes
+  `tcp://core-mosquitto:1883`); a scheme is kept as typed, so `ssl://` works.
+  **Leave `broker` empty and the add-on uses the Supervisor's own MQTT
+  service**, the credentials of the broker Home Assistant already knows about,
+  so the usual install needs no MQTT configuration at all. With no broker
+  configured the `mqtt` module is still installed and every call raises: a
+  script written for MQTT that silently does nothing is a worse outcome than
+  one that fails loudly.
+- **`ikea_dimmer.lua`** — an IKEA E1743 / RODRET two-button dimmer driving one
+  light, off the broker, with no Home Assistant automation in the path. Click
+  for on/off, hold to ramp the brightness, release to stop. The dimmer sends
+  only "move" and "stop" and never a level, so the daemon steps the light
+  itself; the ramp cancels through a generation counter, since a released hold
+  cannot delete a timer that is already scheduled.
+- **A script load now logs a line** with its handler counts
+  (`lua: script loaded script=… state_handlers=1 event_handlers=0
+  mqtt_filters=1 …`). A successful load was completely silent, which left "is
+  my script even running?" — the first question when a script does nothing —
+  unanswerable from the log.
+
+### Fixed
+- **A script that fails to load now shows that error on the Debug tab.** It was
+  written to the log and nowhere else, so the page showed a script with no
+  error beside one that had never run.
+- **A rejected MQTT connection reports the broker's own verdict.** With the
+  client library's connect-retry enabled a refused CONNECT leaves the attempt
+  pending forever, so a wrong password surfaced as "connect timed out" while
+  the broker had actually answered "not Authorized". Retries are handled here
+  now, and every failure is logged with its cause.
+
+### Changed
+- `lua_api.md` documented `ha.on_event` handlers as receiving an
+  `{event_type, time_fired, data}` envelope. They receive the decoded data
+  payload; the documentation was wrong, not the code.
+
 ## 4.6.1 - 2026-08-10
 
 ### Fixed
