@@ -3,7 +3,7 @@
 Working state for the daemon's MQTT client and the Lua `mqtt` module. Spec:
 `mqtt-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **COMPLETE** (2026-08-26), unreleased. Commits `1e65a83` (spec),
+Status: **COMPLETE.** Shipped in 4.7.0 (2026-08-26, tag v4.7.0). Commits `1e65a83` (spec),
 `6d79eb4` (topic matching), `07befd2` (client), `6b310fa` (connect
 diagnostics), `c78cac7` (Lua module), `66b11ac` (wiring), `45885c0` (dimmer
 example), `9b265b0` (docs).

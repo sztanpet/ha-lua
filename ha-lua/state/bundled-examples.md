@@ -4,8 +4,7 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: `ikea_dimmer.lua` (2026-08-26, `07b56dd`..`89fcc2a`,
-unreleased).
+growing on top; newest: `ikea_dimmer.lua`, MQTT-driven (2026-08-26, v4.7.0).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating

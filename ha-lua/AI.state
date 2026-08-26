@@ -10,7 +10,7 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**MQTT client + Lua `mqtt` module** (2026-08-26, unreleased). Scripts can now
+**MQTT client + Lua `mqtt` module** (2026-08-26, v4.7.0). Scripts can now
 subscribe and publish directly, which is the only way to see a Zigbee2MQTT
 button: 2.x publishes one as an MQTT *device trigger*, which produces no
 entity and never reaches the HA event bus, so nothing on the WebSocket API can
