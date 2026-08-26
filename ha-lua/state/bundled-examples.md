@@ -364,3 +364,21 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - Found while wiring it: `ha.on_event` handlers are called with the event's
   DATA table, not the {event_type, time_fired, data} envelope lua_api.md
   showed (runner.go:446). Docs fixed in `89fcc2a`.
+
+## ikea_dimmer.lua ramp shape (2026-08-26, v4.7.1)
+- Field report: "I can see the steps". Cause was a LINEAR step (+16 of 255):
+  perceptually enormous at the dim end, invisible at the bright end. Now
+  geometric — level *= (MAX/MIN)^(step/full) — so every step looks the same
+  size. Near the floor the multiplicative step rounds back onto itself, hence
+  the ±1 floor in scale(); without it the ramp stalls short of MIN.
+- Rate: RAMP_FULL_SECS 8 at a 150 ms cadence (user asked for half of 4 s).
+  Raising RAMP_FULL_SECS slows the ramp AND shrinks each step, so it is the
+  only knob worth exposing.
+- `light.konyha_konyha_led` reports supported_features=40 (TRANSITION|FLASH),
+  color_modes=brightness. Transition IS honoured, so each step glides over
+  the step interval and the chain reads as continuous. Do NOT replace it with
+  one long transition: the device fades linearly in brightness units, which
+  perceptually does nothing and then falls off a cliff.
+- The dangling `STEP` in the ramp-start trace printed "&{}" instead of
+  raising — gopher-lua's %d on nil. A trace-only reference to a deleted
+  constant survives every test; grep for old constant names after a rename.
