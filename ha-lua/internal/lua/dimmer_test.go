@@ -22,6 +22,7 @@ const (
 	dimmerLight        = "light.konyha_konyha_led"
 	dimmerStep         = 16
 	dimmerMin          = 3
+	dimmerOnBrightness = 255
 )
 
 // dimmerHarness runs the real examples/ikea_dimmer.lua against a spy call
@@ -35,7 +36,19 @@ type dimmerHarness struct {
 	cmds    chan string // "turn_on 116" / "turn_on -" / "turn_off -"
 }
 
+// newDimmerHarness seeds an event.<name>_action entity — the Zigbee2MQTT
+// install that publishes one. newCommandDimmerHarness is the other shape: no
+// action entity at all, presses arriving only as ha_lua_command events fired
+// by the automation bridging an MQTT device trigger.
 func newDimmerHarness(t *testing.T, lightState string, lightAttrs string) *dimmerHarness {
+	return newHarness(t, true, lightState, lightAttrs)
+}
+
+func newCommandDimmerHarness(t *testing.T, lightState string, lightAttrs string) *dimmerHarness {
+	return newHarness(t, false, lightState, lightAttrs)
+}
+
+func newHarness(t *testing.T, withActionEntity bool, lightState string, lightAttrs string) *dimmerHarness {
 	dir := t.TempDir()
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "ikea_dimmer.lua"),
 		filepath.Join(dir, "ikea_dimmer.lua"))
@@ -54,10 +67,11 @@ func newDimmerHarness(t *testing.T, lightState string, lightAttrs string) *dimme
 	h := &dimmerHarness{t: t, ctx: ctx, tracker: tracker, reg: reg,
 		cmds: make(chan string, 32)}
 
-	if err := tracker.Seed(ctx, []ha.StateData{
-		seedEntity(dimmerActionEntity, "2026-01-01T00:00:00Z", `{"event_type":null}`),
-		seedEntity(dimmerLight, lightState, lightAttrs),
-	}); err != nil {
+	seed := []ha.StateData{seedEntity(dimmerLight, lightState, lightAttrs)}
+	if withActionEntity {
+		seed = append(seed, seedEntity(dimmerActionEntity, "2026-01-01T00:00:00Z", `{"event_type":null}`))
+	}
+	if err := tracker.Seed(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
 	if err := sched.Start(ctx); err != nil {
@@ -110,6 +124,14 @@ func (h *dimmerHarness) press(action string) {
 		`{"event_type":"`+action+`"}`)
 }
 
+// command fires what the HA automation bridging the MQTT device trigger
+// fires: one ha_lua_command event addressed to this script.
+func (h *dimmerHarness) command(scriptID, action string) {
+	h.t.Helper()
+	h.reg.Dispatch(ha.Event{Type: "ha_lua_command",
+		Data: jsontext.Value(`{"script":"` + scriptID + `","action":"` + action + `"}`)})
+}
+
 func (h *dimmerHarness) report(entityID, stateVal, attrs string) {
 	h.t.Helper()
 	raw := jsontext.Value(`{"entity_id":"` + entityID + `","new_state":{"entity_id":"` +
@@ -144,14 +166,13 @@ func (h *dimmerHarness) expectSilence() {
 	}
 }
 
-// TestIkeaDimmerClicks checks the two buttons map to plain on/off, with no
-// brightness of our own: the bulb restores its last level, as it does when
-// the dimmer drives it directly.
+// TestIkeaDimmerClicks checks the two buttons map to on at ON_BRIGHTNESS and
+// off.
 func TestIkeaDimmerClicks(t *testing.T) {
 	h := newDimmerHarness(t, "off", `{}`)
 
 	h.press("on")
-	h.expectCmd("turn_on -")
+	h.expectCmd(fmt.Sprintf("turn_on %d", dimmerOnBrightness))
 	h.press("off")
 	h.expectCmd("turn_off -")
 }
@@ -203,5 +224,33 @@ func TestIkeaDimmerIgnoresUnknownActions(t *testing.T) {
 
 	h.press("arrow_left_click")
 	h.press("")
+	h.expectSilence()
+}
+
+// TestIkeaDimmerCommandEvents covers the path a Zigbee2MQTT 2.x install
+// actually uses: the button is an MQTT device trigger, which produces no
+// entity at all, so an HA automation re-fires each press as an ha_lua_command
+// event. The ramp must work identically off that input.
+func TestIkeaDimmerCommandEvents(t *testing.T) {
+	h := newCommandDimmerHarness(t, "on", `{"brightness":100}`)
+
+	h.command("ikea_dimmer", "brightness_move_down")
+	h.expectCmd(fmt.Sprintf("turn_on %d", 100-dimmerStep))
+	h.expectCmd(fmt.Sprintf("turn_on %d", 100-2*dimmerStep))
+
+	h.command("ikea_dimmer", "brightness_stop")
+	h.expectSilence()
+
+	h.command("ikea_dimmer", "on")
+	h.expectCmd(fmt.Sprintf("turn_on %d", dimmerOnBrightness))
+}
+
+// TestIkeaDimmerIgnoresOtherScriptsCommands: ha_lua_command is one shared
+// event type, so a command addressed to another script must not move this
+// light.
+func TestIkeaDimmerIgnoresOtherScriptsCommands(t *testing.T) {
+	h := newCommandDimmerHarness(t, "on", `{"brightness":100}`)
+
+	h.command("some_other_script", "off")
 	h.expectSilence()
 }
