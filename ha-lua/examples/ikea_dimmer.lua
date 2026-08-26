@@ -213,6 +213,16 @@ ha.on_command(function(action)
   dispatch(action, "ha_lua_command")
 end)
 
+-- Diagnostic only. on_command drops a command addressed to another script
+-- silently, which from the log looks exactly like no command arriving at all —
+-- and those two have completely different causes (a wrong `script:` in the
+-- automation vs. the automation not firing, or the daemon not subscribed).
+-- This says which one you are looking at.
+ha.on_event("ha_lua_command", function(data)
+  trace(string.format("ha_lua_command seen: script=%s action=%s (mine: %s)",
+    tostring(data and data.script), tostring(data and data.action), ha.script_id))
+end)
+
 -- Paths 2 and 3: an action entity, if this Zigbee2MQTT publishes one. The
 -- event platform carries the action in an attribute (its state is only a
 -- timestamp); the legacy sensor's state is the action itself.
