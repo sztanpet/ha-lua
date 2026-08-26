@@ -2,7 +2,9 @@
 
 > **Working state:** [`state/mqtt.md`](state/mqtt.md) — implementation progress and decisions.
 
-Status: **in progress.**
+Status: **implemented** (2026-08-26). §4's `fn(topic, payload, decoded)`,
+§5's batch-window bypass and §3's Supervisor fallback all shipped as specified;
+the add-on options page carries the broker fields as well, on user request.
 
 ## 1. Goal
 

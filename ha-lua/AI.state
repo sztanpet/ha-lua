@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-26 (IKEA dimmer example)
+Last updated: 2026-08-26 (MQTT client)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,14 +10,13 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**IKEA dimmer example** (2026-08-26, unreleased). `examples/ikea_dimmer.lua`:
-an E1743/RODRET two-button dimmer driving one light, with the hold-to-dim ramp
-run in the daemon as a chain of `ha.after` steps (no timer-cancel API exists,
-so a released ramp disarms its pending step via a generation counter). The
-lesson worth keeping: a Zigbee2MQTT **MQTT device trigger** produces no entity
-and no bus event, so no script can see it — it must be bridged by an HA
-automation firing `ha_lua_command`, which `ha.on_command` then consumes.
-Detail: `state/bundled-examples.md`.
+**MQTT client + Lua `mqtt` module** (2026-08-26, unreleased). Scripts can now
+subscribe and publish directly, which is the only way to see a Zigbee2MQTT
+button: 2.x publishes one as an MQTT *device trigger*, which produces no
+entity and never reaches the HA event bus, so nothing on the WebSocket API can
+observe the press. Broker settings live in the add-on options and fall back to
+the Supervisor's MQTT service when left empty. The dimmer example now runs off
+the broker with no HA automation in the path. Detail: `state/mqtt.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -32,13 +31,21 @@ Detail: `state/bundled-examples.md`.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
 - `state/code-review.md` — review rounds 1 (v2.8.9) and 2 (v3.2.2), both CLOSED.
-- `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). IN PROGRESS.
+- `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). COMPLETE.
 - (sse-spec.md has no implementation and no state file.)
 
 Released versions and what shipped in them: `CHANGELOG.md`. Do not mirror it
 here.
 
 ## Key decisions (do not re-litigate without good reason)
+- **MQTT is an input, never a dependency.** An unconfigured or unreachable
+  broker disables the `mqtt` module and nothing else; the HA side must keep
+  working. Corollary: with no broker, `mqtt.*` RAISES rather than no-opping —
+  a script that silently does nothing is the failure mode that cost a whole
+  debugging session.
+- **Zigbee2MQTT topics carry the friendly name verbatim, spaces included**
+  (`zigbee2mqtt/ikea dimmer 1/action`). It is NOT the underscored entity id.
+  Confirm a topic against the broker before writing a script around it.
 - **Lua VM stays gopher-lua.** arnodel/golua (5.4/5.5) evaluated 2026-06-13 and
   rejected: v0.x single-maintainer, verbose CPS bindings across ~30 sites, stop
   semantics need SetContext, 5.3+ integers would split the number type through
