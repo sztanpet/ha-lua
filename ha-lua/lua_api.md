@@ -314,13 +314,12 @@ automation is latency-sensitive.
 
 Registers `fn` to run on every Home Assistant event of `type`. The daemon
 subscribes to the event type on demand and stays subscribed across reloads. `fn`
-receives:
+receives the event's **decoded data payload** — the event type is already known
+from the registration, and the envelope is not passed:
 
 ```lua
-ha.on_event("zha_event", function(ev)
-  -- ev.event_type
-  -- ev.time_fired   -- timestamp string
-  -- ev.data         -- decoded payload table
+ha.on_event("zha_event", function(data)
+  -- data.device_ieee, data.command, ... — whatever the event carries
 end)
 ```
 

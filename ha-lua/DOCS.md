@@ -563,37 +563,78 @@ dimmer over Zigbee2MQTT. A click of each button is on and off; holding a button
 ramps the brightness and releasing it stops the ramp.
 
 The reason a script is needed at all is that the dimmer never sends a
-brightness. Zigbee2MQTT reports `brightness_move_up` / `brightness_move_down`
-when the button goes down and `brightness_stop` when it comes back up — moving
-the light in between is the listener's job. This one does it as a chain of
-`ha.after` steps (250 ms apart, 4 seconds for the whole range by default), so
-it works on any dimmable light rather than only on bulbs that implement the
-Zigbee level-move command.
+brightness. It sends `brightness_move_up` / `brightness_move_down` when the
+button goes down and `brightness_stop` when it comes back up — moving the light
+in between is the listener's job. This one does it as a chain of `ha.after`
+steps (250 ms apart, 4 seconds for the whole range by default), so it works on
+any dimmable light rather than only on bulbs that implement the Zigbee
+level-move command.
 
-Two Zigbee2MQTT details it handles for you:
+### Getting the presses into the daemon
 
-- **Which entity to watch.** Recent versions publish `event.<name>_action`
-  (state is a timestamp, the action sits in the `event_type` attribute) as well
-  as the older `sensor.<name>_action` (state *is* the action). The sensor is
-  the lossy one: Home Assistant does not fire `state_changed` when neither the
-  state nor the attributes changed, so a second identical press in a row — two
-  clicks of the same button, two holds the same way — is simply never
-  delivered. The script prefers the event entity and falls back to the sensor.
-- **The light's report lags the command** by the Zigbee round trip, so a ramp
-  started right after the previous one ended would seed from a stale
-  brightness and jump backwards. It seeds from its own last commanded level
-  while that is still fresh.
+Zigbee2MQTT surfaces a button in one of three ways, and the script accepts all
+of them. **Check which one you have first — this is what decides whether the
+script does anything at all.**
+
+**MQTT device trigger** (the Zigbee2MQTT 2.x default). The press produces *no
+entity*: it exists only as an automation trigger inside Home Assistant, which
+means no script and no WebSocket client can see it. Bridge it with one HA
+automation that re-fires the press onto the event bus:
+
+```yaml
+alias: ikea dimmer 1 -> ha-lua
+mode: queued
+triggers:
+  - trigger: device
+    domain: mqtt
+    device_id: <your dimmer's device id>
+    type: action
+    subtype: 'on'
+  # …one more trigger per subtype: off, brightness_move_up,
+  # brightness_move_down, brightness_stop
+actions:
+  - event: ha_lua_command
+    event_data:
+      script: ikea_dimmer          # the script's id = its filename
+      action: "{{ trigger.payload }}"
+```
+
+`ha.on_command` picks those up. This is the reliable path — every press fires,
+including two identical presses in a row — and it is worth using even when an
+action entity exists.
+
+**`event.<name>_action`** — state is a timestamp, the action sits in the
+`event_type` attribute. Watched automatically if present.
+
+**`sensor.<name>_action`** (the legacy action sensor, off by default in
+Zigbee2MQTT 2.x). Its state *is* the action. Also watched, but it is lossy:
+Home Assistant does not fire `state_changed` when neither the state nor the
+attributes changed, so a second identical press in a row is never delivered.
+
+At load the script logs which entity it found, or that it is running on
+`ha_lua_command` events alone — the first place to look when nothing happens.
+
+### Installing it
 
 ```sh
 cp /config/ha-lua/examples/ikea_dimmer.lua /config/ha-lua/scripts/
 ```
 
-Then edit `DIMMER` (the Zigbee2MQTT friendly name, not an entity id) and
-`LIGHT` at the top; `RAMP_FULL_SECS` is the knob for how fast a hold crosses
-the range. With `log_level: debug` the script traces every press, the level it
-seeded the ramp from, and every step it commands — which is the only way to see
-what happened after the fact, since one press turns into a burst of service
-calls.
+Only `scripts/` is loaded; a script left in `examples/` never runs. Then edit
+`DIMMER` (the Zigbee2MQTT friendly name, not an entity id) and `LIGHT` at the
+top. `ON_BRIGHTNESS` is what a click on the on button sets (`nil` restores the
+bulb's own last level) and `RAMP_FULL_SECS` is how fast a hold crosses the
+range.
+
+One detail worth knowing if you change the ramp: the light's reported
+brightness lags the command by the Zigbee round trip, so a ramp started right
+after the previous one ended would seed from a stale brightness and jump
+backwards. The script seeds from its own last commanded level while that is
+still fresh.
+
+With `log_level: debug` it traces every press, the level it seeded the ramp
+from, and every step it commands — which is the only way to see what happened
+after the fact, since one press turns into a burst of service calls.
 
 ## Durable reminders example
 
