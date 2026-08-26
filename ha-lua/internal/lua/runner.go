@@ -227,8 +227,9 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	r.registerHaAPI(L, api)
 	registerStoreAPI(L, r.kv, r.global)
 
-	if err := L.DoFile(scriptPath); err != nil {
-		slog.Error("lua: script load error", "script", r.scriptID, "err", err)
+	loadErr := L.DoFile(scriptPath)
+	if loadErr != nil {
+		slog.Error("lua: script load error", "script", r.scriptID, "err", loadErr)
 	}
 
 	// Persist timer functions for dispatch and prune old rows.
@@ -256,6 +257,20 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		slog.Warn("script asked for a UI tab but serves no GET \"/\" — its tab would open onto a 404",
 			"script", r.scriptID, "title", r.cachedUITitle)
 	}
+	// A silent successful load left "is my script even running?" unanswerable
+	// from the log — the first question anyone asks when a script does
+	// nothing. The counts answer the follow-up (did its handlers register)
+	// without a debug build. Skipped after a load error: that line already
+	// said what happened.
+	if loadErr == nil {
+		slog.Info("lua: script loaded", "script", r.scriptID,
+			"state_handlers", r.cachedStateHandlers,
+			"event_handlers", len(r.cachedEventHandlers),
+			"routes", len(r.cachedRoutes),
+			"timers", len(r.timerFns),
+			"immediate_events", r.cachedImmediate)
+	}
+
 	close(r.LoadedCh)
 
 	// Deliver initial states for on_state_change with initial=true
