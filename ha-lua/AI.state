@@ -32,6 +32,7 @@ Detail: `state/bundled-examples.md`.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
 - `state/code-review.md` — review rounds 1 (v2.8.9) and 2 (v3.2.2), both CLOSED.
+- `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). IN PROGRESS.
 - (sse-spec.md has no implementation and no state file.)
 
 Released versions and what shipped in them: `CHANGELOG.md`. Do not mirror it
