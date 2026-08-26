@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -190,6 +191,47 @@ func TestDisabledClient(t *testing.T) {
 	}
 	if err := c.Publish("a", []byte("b"), 0, false); err != ErrDisabled {
 		t.Errorf("Publish = %v, want ErrDisabled", err)
+	}
+}
+
+// TestBadCredentialsReportTheReason is the diagnostics regression test: with
+// paho's own connect-retry enabled a rejected CONNECT leaves the token
+// pending, so the daemon reported "connect timed out" while the broker had
+// actually said "not Authorized". That cost a real debugging session against
+// a live broker; the reason must reach the caller.
+func TestBadCredentialsReportTheReason(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	server := mochi.New(&mochi.Options{InlineClient: true})
+	err = server.AddHook(new(auth.Hook), &auth.Options{
+		Ledger: &auth.Ledger{Auth: auth.AuthRules{
+			{Username: "right", Password: "right", Allow: true},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.AddListener(listeners.NewTCP(listeners.Config{ID: "auth", Address: addr})); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve() }()
+	t.Cleanup(func() { _ = server.Close() })
+
+	c := New(Config{Broker: "tcp://" + addr, Username: "wrong", Password: "wrong",
+		ClientID: "test-badcreds"}, func(Message) {})
+	err = c.Start(t.Context())
+	if err == nil {
+		t.Fatal("Start succeeded with rejected credentials")
+	}
+	if !strings.Contains(err.Error(), "Authorized") {
+		t.Errorf("Start error = %v, want the broker's own verdict, not a timeout", err)
 	}
 }
 

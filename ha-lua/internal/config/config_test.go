@@ -195,3 +195,25 @@ func BenchmarkLoadConfig(b *testing.B) {
 		_, _ = load(path, true)
 	}
 }
+
+// TestNormalizeBroker: the add-on options field is filled in by a human, who
+// will type the hostname of the Mosquitto add-on and nothing else.
+func TestNormalizeBroker(t *testing.T) {
+	cases := map[string]string{
+		"":                      "",
+		"core-mosquitto":        "tcp://core-mosquitto:1883",
+		"core-mosquitto:1884":   "tcp://core-mosquitto:1884",
+		"  192.168.1.5  ":       "tcp://192.168.1.5:1883",
+		"tcp://broker:1883":     "tcp://broker:1883",
+		"ssl://broker:8883":     "ssl://broker:8883",
+		"ws://broker:9001/mqtt": "ws://broker:9001/mqtt",
+	}
+	for in, want := range cases {
+		var cfg Config
+		cfg.MQTT.Broker = in
+		cfg.Defaults()
+		if cfg.MQTT.Broker != want {
+			t.Errorf("normalizeBroker(%q) = %q, want %q", in, cfg.MQTT.Broker, want)
+		}
+	}
+}

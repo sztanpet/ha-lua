@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -65,6 +66,18 @@ type Config struct {
 		Keep []KeepRule `json:"keep" yaml:"keep"`
 	} `json:"state_history" yaml:"state_history"`
 
+	// MQTT is the optional direct broker connection. It is what lets scripts
+	// see devices Home Assistant cannot show them — a Zigbee2MQTT device
+	// trigger produces no entity and no bus event, so the broker is the only
+	// place that press exists. Broker empty disables MQTT; in add-on mode an
+	// empty broker falls back to the Supervisor's own MQTT service.
+	MQTT struct {
+		Broker   string `json:"broker"    yaml:"broker"`
+		Username string `json:"username"  yaml:"username"`
+		Password string `json:"password"  yaml:"password"`
+		ClientID string `json:"client_id" yaml:"client_id"`
+	} `json:"mqtt" yaml:"mqtt"`
+
 	Debug struct {
 		PprofAddr string `json:"pprof_addr" yaml:"pprof_addr"`
 	} `json:"debug" yaml:"debug"`
@@ -103,6 +116,22 @@ func (c *Config) Defaults() {
 	if c.StateHistory.PurgeInterval == "" {
 		c.StateHistory.PurgeInterval = "1h"
 	}
+	c.MQTT.Broker = normalizeBroker(c.MQTT.Broker)
+}
+
+// normalizeBroker turns what an HA user naturally types in the add-on options
+// ("core-mosquitto", "192.168.1.5:1883") into the URL paho needs. A value
+// that already carries a scheme is left alone, so ssl:// and ws:// still
+// work.
+func normalizeBroker(broker string) string {
+	broker = strings.TrimSpace(broker)
+	if broker == "" || strings.Contains(broker, "://") {
+		return broker
+	}
+	if !strings.Contains(broker, ":") {
+		broker += ":1883"
+	}
+	return "tcp://" + broker
 }
 
 // Load reads config from path (dev mode, YAML). If path is empty, add-on

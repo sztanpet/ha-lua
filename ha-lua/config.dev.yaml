@@ -37,6 +37,15 @@ http_port: 8100
 # Affects what wall-clock instant ha.at("07:00") resolves to.
 timezone: ""
 
+# Direct MQTT. Empty broker disables it; in add-on mode an empty broker falls
+# back to the Supervisor's Mosquitto service. A bare host gets tcp:// and
+# :1883 filled in.
+mqtt:
+  broker: ""
+  username: ""
+  password: ""
+  client_id: ""
+
 state_history:
   retention_days: 2
   purge_interval: "1h"

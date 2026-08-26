@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,25 @@ const opTimeout = 5 * time.Second
 
 // ErrDisabled is returned by every operation when no broker is configured.
 var ErrDisabled = errors.New("mqtt: no broker configured")
+
+// retryInterval is how often a failed initial connect is retried.
+const retryInterval = 30 * time.Second
+
+// pahoLog routes the client library's own diagnostics into slog. Without it
+// paho's errors go nowhere, and "the broker rejected our password" reaches
+// the user as silence.
+type pahoLog struct {
+	level slog.Level
+}
+
+func (l pahoLog) Println(v ...any) {
+	slog.Log(context.Background(), l.level, "mqtt: "+strings.TrimSpace(fmt.Sprintln(v...)))
+}
+func (l pahoLog) Printf(format string, v ...any) {
+	slog.Log(context.Background(), l.level, "mqtt: "+strings.TrimSpace(fmt.Sprintf(format, v...)))
+}
+
+var pahoLogOnce sync.Once
 
 // Config is the broker connection. Broker empty disables MQTT entirely.
 type Config struct {
@@ -84,14 +104,23 @@ func (c *Client) Start(ctx context.Context) error {
 		return ErrDisabled
 	}
 
+	pahoLogOnce.Do(func() {
+		paho.ERROR = pahoLog{slog.LevelWarn}
+		paho.CRITICAL = pahoLog{slog.LevelError}
+	})
+
 	opts := paho.NewClientOptions().
 		AddBroker(c.cfg.Broker).
 		SetClientID(c.clientID()).
 		SetUsername(c.cfg.Username).
 		SetPassword(c.cfg.Password).
 		SetAutoReconnect(true).
-		SetConnectRetry(true).
-		SetConnectRetryInterval(5 * time.Second).
+		// Deliberately NOT SetConnectRetry: with it, a rejected CONNECT
+		// leaves the connect token pending forever, so a wrong password
+		// surfaces as "connect timed out" and the broker's actual verdict
+		// ("not Authorized") is never seen. Retrying is done below instead,
+		// where the error can be logged every time.
+		SetConnectTimeout(connectTimeout).
 		SetMaxReconnectInterval(1 * time.Minute).
 		SetCleanSession(true).
 		SetOrderMatters(false)
@@ -132,13 +161,13 @@ func (c *Client) Start(ctx context.Context) error {
 	c.cli = cli
 	c.mu.Unlock()
 
-	token := cli.Connect()
-	if !token.WaitTimeout(connectTimeout) {
-		return fmt.Errorf("mqtt: connect to %s timed out", c.cfg.Broker)
+	if err := connect(cli, c.cfg.Broker); err != nil {
+		// Not fatal to the daemon: every other subsystem works without MQTT,
+		// and a broker that is down at boot usually comes back.
+		go c.retryConnect(ctx, cli)
+		return err
 	}
-	if err := token.Error(); err != nil {
-		return fmt.Errorf("mqtt: connect to %s: %w", c.cfg.Broker, err)
-	}
+
 	select {
 	case <-c.subsReady:
 	case <-time.After(connectTimeout):
@@ -152,6 +181,42 @@ func (c *Client) Start(ctx context.Context) error {
 		cli.Disconnect(250)
 	}()
 	return nil
+}
+
+// connect performs one connect attempt and reports the broker's own verdict.
+func connect(cli paho.Client, broker string) error {
+	token := cli.Connect()
+	if !token.WaitTimeout(connectTimeout + time.Second) {
+		return fmt.Errorf("mqtt: connect to %s timed out", broker)
+	}
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("mqtt: connect to %s: %w", broker, err)
+	}
+	return nil
+}
+
+// retryConnect keeps trying after a failed initial connect, logging the
+// broker's reason each time — a wrong password does not fix itself, and the
+// user needs to see why nothing is arriving.
+func (c *Client) retryConnect(ctx context.Context, cli paho.Client) {
+	ticker := time.NewTicker(retryInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			cli.Disconnect(250)
+			return
+		case <-ticker.C:
+			if cli.IsConnected() {
+				return
+			}
+			if err := connect(cli, c.cfg.Broker); err != nil {
+				slog.Warn("mqtt: connect failed, still retrying", "err", err)
+				continue
+			}
+			return
+		}
+	}
 }
 
 // Subscribe registers a topic filter. Idempotent: the broker sees one

@@ -25,6 +25,11 @@ linters:
         - (*net/smtp.Client).Close
         - (net.Conn).Close
         - (net.Listener).Close
+    misspell:
+      # Eclipse Mosquitto is the broker's actual name; misspell's dictionary
+      # only knows the insect.
+      ignore-rules:
+        - mosquitto
     staticcheck:
       checks: ["all"]
 
