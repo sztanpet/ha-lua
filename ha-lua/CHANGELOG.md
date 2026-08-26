@@ -4,6 +4,34 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.7.1 - 2026-08-26
+
+### Fixed
+- **A script is no longer woken by events it cannot handle.** Every runner
+  received every event on the bus, so a script with no state handler at all —
+  an MQTT-driven one, say — was queued every state change in the house,
+  dispatched each into a handler loop with nothing in it, and logged a
+  dispatch delay for each. Events arriving while a script is still loading are
+  still accepted, since its handler set is not known until the load finishes.
+- **The dimmer example's ramp-start trace printed `step &{}`.** It formatted a
+  constant the geometric ramp had replaced; Lua resolved the dangling name to
+  nil and printed it rather than raising, so the line lied in the log while
+  passing every test.
+
+### Changed
+- **The dimmer example ramps geometrically.** Each step multiplies the level
+  by about 1.09 rather than adding a fixed amount. A fixed step is a glaring
+  jump at brightness 20 and invisible at 200, because the eye reads brightness
+  logarithmically — that is what made a hold look like a staircase at the dim
+  end. Near the floor a multiplicative step rounds back onto itself, so the
+  ramp falls back to one unit and actually reaches the minimum.
+- **A hold now crosses the whole range in 8 seconds** (was 4), at 150 ms per
+  step. `RAMP_FULL_SECS` is the one knob worth turning: it sets the speed and
+  the step size together, because a longer ramp fits more, smaller steps into
+  the same cadence.
+- The dimmer example logs the light's transition support at load. Whether a
+  light honours `transition` decides how smooth a ramp can possibly be.
+
 ## 4.7.0 - 2026-08-26
 
 ### Added
