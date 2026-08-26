@@ -62,7 +62,9 @@ func (reg *Registry) Dispatch(ev ha.Event) {
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
 	for _, r := range reg.runners {
-		r.SendHAEvent(ev)
+		if r.wantsHAEvent(ev) {
+			r.SendHAEvent(ev)
+		}
 	}
 }
 

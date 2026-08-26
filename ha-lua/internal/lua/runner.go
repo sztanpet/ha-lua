@@ -184,6 +184,32 @@ func (r *Runner) SetRemoveState(fn func(ctx context.Context, entityID string) er
 	r.removeState = fn
 }
 
+// wantsHAEvent reports whether this script has a handler that could act on
+// ev. A script with no state handlers was still woken for every state change
+// in the house — queued, dispatched, and dropped on the floor by a handler
+// loop with nothing in it. An MQTT-only script paid that for every entity in
+// Home Assistant.
+//
+// Before the load finishes the handler set is unknown, so everything is
+// accepted: the channel buffer exists precisely so events arriving during a
+// load are handled after it.
+func (r *Runner) wantsHAEvent(ev ha.Event) bool {
+	select {
+	case <-r.LoadedCh:
+	default:
+		return true
+	}
+	if ev.Type == "state_changed" {
+		return r.cachedStateHandlers > 0
+	}
+	for _, h := range r.cachedEventHandlers {
+		if h.eventType == ev.Type {
+			return true
+		}
+	}
+	return false
+}
+
 // EventTypes returns the distinct custom event types this script handles.
 // Only valid once LoadedCh is closed.
 func (r *Runner) EventTypes() []string {
