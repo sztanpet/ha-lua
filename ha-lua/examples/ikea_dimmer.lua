@@ -8,9 +8,9 @@
 -- "brightness_stop" at release. It never sends a level: it expects whoever is
 -- listening to keep stepping the light until the release arrives. That is all
 -- start_ramp/ramp_tick do — a chain of ha.after steps, each nudging
--- brightness by STEP and scheduling the next, cancelled by bumping a
--- generation counter that the pending step checks. (The daemon has no
--- timer-cancel API, so a stale step must disarm itself.)
+-- brightness by one geometric step and scheduling the next, cancelled by
+-- bumping a generation counter that the pending step checks. (The daemon has
+-- no timer-cancel API, so a stale step must disarm itself.)
 --
 -- WHY MQTT AND NOT AN ENTITY. Zigbee2MQTT 2.x publishes a button as an MQTT
 -- **device trigger**: it produces no entity, and Home Assistant consumes the
@@ -149,8 +149,8 @@ end
 
 local function start_ramp(direction)
   ramp.generation = ramp.generation + 1
-  trace(string.format("ramp %d start, direction %+d, step %d every %s",
-    ramp.generation, direction, STEP, RAMP_STEP_SPEC))
+  trace(string.format("ramp %d start, direction %+d, x%.4f every %s",
+    ramp.generation, direction, STEP_FACTOR, RAMP_STEP_SPEC))
   local level = current_level()
   if not level then
     if direction < 0 then
