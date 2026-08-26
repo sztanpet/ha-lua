@@ -26,7 +26,7 @@ const (
 )
 
 // The example's ramp is geometric: each step multiplies the level by
-// (255/3)^(0.15/4) ≈ 1.1813, so the steps below are the levels a hold from
+// (255/3)^(0.15/8) ≈ 1.0869, so the steps below are the levels a hold from
 // the seeded brightness actually walks through. A linear step is what made
 // the ramp visibly staircase at the dim end.
 
@@ -172,8 +172,8 @@ func TestIkeaDimmerHoldRamps(t *testing.T) {
 	h := newDimmerHarness(t, "on", `{"brightness":100}`)
 
 	h.press("brightness_move_up")
+	h.expectCmd("turn_on 109")
 	h.expectCmd("turn_on 118")
-	h.expectCmd("turn_on 139")
 
 	h.press("brightness_stop")
 	h.expectSilence()
@@ -186,8 +186,8 @@ func TestIkeaDimmerHoldDownStopsAtMinimum(t *testing.T) {
 	h := newDimmerHarness(t, "on", `{"brightness":20}`)
 
 	h.press("brightness_move_down")
+	h.expectCmd("turn_on 18")
 	h.expectCmd("turn_on 17")
-	h.expectCmd("turn_on 14")
 	// Down to the floor: near the bottom a multiplicative step rounds back to
 	// where it started, so the ramp steps by 1 rather than stalling.
 	h.expectUntil(fmt.Sprintf("turn_on %d", dimmerMin))

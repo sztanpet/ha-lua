@@ -48,7 +48,7 @@ local LIGHT = "light.konyha_konyha_led"
 local ON_BRIGHTNESS = 255 -- what a click on the on button sets; nil = the bulb's own last level
 local RAMP_STEP_SPEC = "150ms"
 local RAMP_STEP_SECS = 0.15
-local RAMP_FULL_SECS = 4 -- seconds a hold takes to cross the whole range
+local RAMP_FULL_SECS = 8 -- seconds a hold takes to cross the whole range
 local MIN_BRIGHTNESS = 3 -- a hold down dims to the bottom, it never switches off
 local MAX_BRIGHTNESS = 255
 local COMMAND_FRESH_SECS = 5
@@ -58,6 +58,9 @@ local COMMAND_FRESH_SECS = 5
 -- step multiplies (or divides) the level by STEP_FACTOR, so every step looks
 -- the same size and the whole range still takes RAMP_FULL_SECS. A linear step
 -- is exactly what makes a ramp look like a staircase at the dim end.
+--
+-- RAMP_FULL_SECS is the only knob worth turning: raising it slows the ramp AND
+-- shrinks each step, because the step count grows to fill the time.
 local STEP_FACTOR = (MAX_BRIGHTNESS / MIN_BRIGHTNESS) ^ (RAMP_STEP_SECS / RAMP_FULL_SECS)
 
 local ramp = { generation = 0, level = nil }
