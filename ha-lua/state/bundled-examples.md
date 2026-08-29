@@ -4,7 +4,7 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: `ikea_dimmer.lua`, MQTT-driven (2026-08-26, v4.7.0).
+growing on top; newest: `nappali_switches.lua`, MQTT-driven (2026-08-29).
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
@@ -382,3 +382,37 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - The dangling `STEP` in the ramp-start trace printed "&{}" instead of
   raising — gopher-lua's %d on nil. A trace-only reference to a deleted
   constant survives every test; grep for old constant names after a rename.
+
+## nappali_switches.lua (2026-08-29, `2d11c26`, docs `205a09c`)
+- Two Aqara WXKG03LM_rev2 rockers (`switch1`, `switch2`) -> the author's real
+  `light.zbminir2_nappaliablak` / `light.zbminir2_nappalicsillar`. Single click owns one
+  light; double or hold takes both. Kept in `examples/` with the real ids,
+  like mirrored_switches and ikea_dimmer.
+- Confirmed against the live broker before writing a line of it (the
+  ikea_dimmer lesson): topics are `zigbee2mqtt/switch{1,2}/action`, the
+  gestures are exactly `single|double|hold`, ONE message per gesture, and the
+  action topic is **not retained** — so a reload cannot replay the last press
+  and no load-time guard is needed. The author was pressing the buttons while
+  the probe ran, which is what pinned the word list.
+- No `ha.immediate_events()` here, unlike ikea_dimmer: MQTT messages already
+  bypass the batch window (`runner.go`), and this script has no HA event
+  handlers to speed up. Adding it would be cargo cult.
+- "Both" is a GROUP toggle (any on -> all off, else all on), not two
+  independent toggles. Independent toggling leaves a half-lit room half-lit,
+  which is the opposite of what the gesture is for. The judgment call was
+  made here, not asked; flip it if the author disagrees.
+- The lights are ZBMINIR2 relays. Z2M's own discovery publishes them as
+  `switch.zbminir2-*`; in HA they are `light.zbminir2_nappaliablak` /
+  `light.zbminir2_nappalicsillar`, so a domain override or switch_as_x sits
+  on top. Do NOT derive an entity id from the Z2M discovery payload — ask.
+  The script warns at load if either id is unknown to the daemon rather than
+  failing silently.
+- Not yet verified in the field: whether the device ever emits a `single`
+  ahead of a `double`. The multistate cluster reports one value per gesture,
+  and the capture showed no such pair, so the script acts on a click
+  immediately. If a double ever toggles one light and then both, that
+  assumption is wrong and a ~350 ms single-click debounce is the fix.
+- Tests: `internal/lua/nappali_switches_test.go` runs the real script against
+  a spy call_service — per-button single clicks, double and hold from either
+  button hitting both lights, the half-lit room going dark rather than
+  swapping, and an unknown action being ignored.

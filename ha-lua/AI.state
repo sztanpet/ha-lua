@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-26 (v4.7.1)
+Last updated: 2026-08-29 (nappali_switches example)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,13 +10,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**MQTT client + Lua `mqtt` module** (2026-08-26, v4.7.0; dimmer ramp and event
-dispatch follow-ups in v4.7.1). Scripts subscribe and publish directly, which
-is the only way to see a Zigbee2MQTT button: 2.x publishes one as an MQTT
-*device trigger*, which produces no entity and never reaches the HA event bus,
-so nothing on the WebSocket API can observe the press. Broker settings live in
-the add-on options and fall back to the Supervisor's MQTT service when empty.
-Detail: `state/mqtt.md`.
+**`nappali_switches.lua`** (2026-08-29, unreleased). Two Aqara WXKG03LM
+rockers on MQTT toggling the two nappali lights: single click owns one light,
+double or hold takes both as a group. Topics, gesture words and the absence of
+a retain flag were confirmed against the live broker before writing it.
+Detail: `state/bundled-examples.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
