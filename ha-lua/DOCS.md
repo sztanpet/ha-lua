@@ -641,6 +641,67 @@ With `log_level: debug` it traces every press, the level it seeded the ramp
 from, and every step it commands — which is the only way to see what happened
 after the fact, since one press turns into a burst of service calls.
 
+## Zigbee button example
+
+`nappali_switches.lua` maps two Aqara WXKG03LM rockers onto the two lights of
+one room:
+
+| Gesture | Effect |
+|---------|--------|
+| `switch1` single | toggle `light.zbminir2_nappaliablak` |
+| `switch2` single | toggle `light.zbminir2_nappalicsillar` |
+| `double` or `hold`, either button | both lights, as a group |
+
+**Both** is a group toggle, not two independent toggles: if either light is on
+both go off, otherwise both come on. Toggled independently, a half-lit room
+would stay half-lit — the gesture meant to take the whole room would only swap
+which lamp is on.
+
+### Can't an HA automation do this?
+
+It can — but only inside Home Assistant. Zigbee2MQTT 2.x publishes a button as
+an MQTT **device trigger**, which the `mqtt` integration hands straight to the
+automation engine: no entity is created and nothing is fired on the event bus.
+An HA automation can subscribe to that device trigger (or to the raw topic with
+an `mqtt` trigger) and it works fine. What no script on the **HA WebSocket API**
+can do is see the press at all — there is no entity to watch and no event to
+receive. Hence `mqtt.subscribe`: the broker is the only place the press exists,
+and going there directly also drops the MQTT → HA → automation → bus → WS hops
+from something a human is standing there waiting for.
+
+A related trap is the older advice to trigger on the `action` *attribute* of a
+sensor: that only works while Zigbee2MQTT publishes one, and two identical
+presses in a row produce no state change to trigger on. The action topic has
+neither problem — it is one message per gesture.
+
+### Finding your own topics and actions
+
+```sh
+mosquitto_sub -h <broker> -t 'zigbee2mqtt/#' -v
+```
+
+then press the button. The topic carries the Zigbee2MQTT **friendly name
+verbatim**, spaces included — not the underscored entity id Home Assistant
+shows. Each press appears twice, as a bare word on `<device>/action` and inside
+the JSON state object on `<device>`; the script subscribes to the action topic
+only, so there is nothing to de-duplicate.
+
+Which words a device sends is its own business: this one sends `single`,
+`double` and `hold`, one message per gesture and never a `single` ahead of a
+`double` — which is why a click can act immediately instead of waiting out a
+double-click window. Check yours before assuming the same. Anything unrecognised
+is logged and ignored.
+
+### Installing it
+
+```sh
+cp /config/ha-lua/examples/nappali_switches.lua /config/ha-lua/scripts/
+```
+
+Then edit the `BUTTONS` table at the top — one `{ topic, light }` pair per
+button. Adding a third button extends the group the double and hold act on. At
+`log_level: debug` every press is traced with what the script made of it.
+
 ## Durable reminders example
 
 "Tell me if the door is still open in ten minutes" is the automation that
