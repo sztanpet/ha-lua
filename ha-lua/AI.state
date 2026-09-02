@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-08-29 (nappali_switches example)
+Last updated: 2026-09-02 (v4.8.0)
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,11 +10,12 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**`nappali_switches.lua`** (2026-08-29, unreleased). Two Aqara WXKG03LM
-rockers on MQTT toggling the two nappali lights: single click owns one light,
-double or hold takes both as a group. Topics, gesture words and the absence of
-a retain flag were confirmed against the live broker before writing it.
-Detail: `state/bundled-examples.md`.
+**v4.8.0** (2026-09-02). Ships the `nappali_switches.lua` MQTT example
+(detail: `state/bundled-examples.md`) plus a toolchain sweep: Go 1.27.1,
+`make update-deps`, and a `go fix ./...` modernization pass over the tree.
+The one thing that pass got wrong and was reverted: its `strings.Builder`
+rewrite of the purge query assembly, which cost four lines and a temporary
+to build a string out of at most a handful of retention rules.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -125,6 +126,13 @@ here.
   `_ =`.
 - **No vendoring** — go.sum plus the module proxy pin everything; `go mod vendor`
   is one command away if hermetic builds are ever needed.
+- **`make update-deps` overshoots on the linter graph — check `make lint` before
+  believing it.** `go get -u` walks golangci-lint's *transitive* deps past what
+  golangci-lint itself compiles against, and the breakage surfaces as `undefined:`
+  errors inside `$GOMODCACHE`, not in our code. As of v4.8.0 three are pinned back
+  to golangci-lint v2.13.2's own go.mod: gobwas/glob v0.2.3, alecthomas/
+  go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when golangci-lint
+  catches up; do not "fix" them forward.
 
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables, `ha.get_stats`, the `is_numeric`

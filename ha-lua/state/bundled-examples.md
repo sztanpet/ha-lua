@@ -4,7 +4,8 @@ Working state for the read-only bundled examples tree. Spec:
 `load-examples-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE.** Shipped in 2.2.0 (2026-06-22, tag v2.2.0). Examples keep
-growing on top; newest: `nappali_switches.lua`, MQTT-driven (2026-08-29).
+growing on top; newest: `nappali_switches.lua`, MQTT-driven (2026-08-29),
+shipped in 4.8.0.
 
 ## Bundled reference examples (2026-06-22)
 - The repo's example/script tree doubled as the author's personal heating
