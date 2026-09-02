@@ -312,7 +312,7 @@ func TestEnhancedClimateCard(t *testing.T) {
 	// without opening the editor.
 	day := `[{"time":"06:00","temp":21},{"time":"22:00","temp":18}]`
 	days := make([]string, 0, 7)
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		days = append(days, fmt.Sprintf("%q:%s", strconv.Itoa(i), day))
 	}
 	schedStates := strings.Replace(cardStates, `"schedule": {}`, `"schedule": {`+strings.Join(days, ",")+`}`, 1)

@@ -1,7 +1,6 @@
 package lua
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -18,11 +17,10 @@ import (
 func BenchmarkRegistryDispatch(b *testing.B) {
 	slog.SetLogLoggerLevel(slog.LevelError)
 	reg := NewRegistry()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 
 	numRunners := 100
-	for i := 0; i < numRunners; i++ {
+	for i := range numRunners {
 		r := &Runner{
 			scriptID: fmt.Sprintf("s%d", i),
 			ch:       make(chan Event, 10),

@@ -127,8 +127,7 @@ func TestSupervisorStop(t *testing.T) {
 	dir := t.TempDir()
 	writeScript(t, dir, "s.lua", `global.set("ver", "v1")`)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	sup, reg, global := newSupervisor(t, dir)
 	if err := sup.LoadAll(ctx); err != nil {
@@ -228,8 +227,7 @@ func TestStopScriptDoesNotUnregisterANewRunner(t *testing.T) {
 	defer func() { stopScriptHook = func() {} }()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() { defer wg.Done(); sup.StopScript("s") }()
+	wg.Go(func() { sup.StopScript("s") })
 	time.Sleep(50 * time.Millisecond) // let the stop reach the hook
 	sup.Reload(ctx, "s")              // its StopScript no-ops, its StartScript re-registers
 	wg.Wait()

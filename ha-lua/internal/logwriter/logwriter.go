@@ -30,10 +30,7 @@ type Rotating struct {
 // fresh file, so the active file plus the backup stay under maxTotalBytes.
 // Best-effort: any error leaves the file as-is.
 func RotateIfLarge(root *os.Root, path string, maxTotalBytes int64) {
-	segMax := maxTotalBytes / 2
-	if segMax < 1 {
-		segMax = 1
-	}
+	segMax := max(maxTotalBytes/2, 1)
 	fi, err := root.Stat(path)
 	if err != nil || fi.Size() < segMax {
 		return
@@ -44,10 +41,7 @@ func RotateIfLarge(root *os.Root, path string, maxTotalBytes int64) {
 // New opens (or creates, appending to) path and returns a writer bounded to
 // maxTotalBytes across the active file plus one rotated backup.
 func New(path string, maxTotalBytes int64) (*Rotating, error) {
-	segMax := maxTotalBytes / 2
-	if segMax < 1 {
-		segMax = 1
-	}
+	segMax := max(maxTotalBytes/2, 1)
 	w := &Rotating{path: path, segMax: segMax}
 	if err := w.open(); err != nil {
 		return nil, err

@@ -668,8 +668,7 @@ func dispatchException(L *lua.LState, api *haAPI, errMsg, traceback, callbackNam
 // of info.error.
 func luaErrParts(err error) (msg, traceback string) {
 	msg = err.Error()
-	var apiErr *lua.ApiError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*lua.ApiError](err); ok {
 		msg = apiErr.Object.String()
 		traceback = apiErr.StackTrace
 	}

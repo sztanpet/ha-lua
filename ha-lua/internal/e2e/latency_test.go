@@ -2,7 +2,7 @@ package e2e
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -12,8 +12,7 @@ import (
 // a quick on→off preserves command order. No timing assertions — those live
 // in the benchmarks, where flakiness costs nothing.
 func TestPipelineDelivers(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	p := startPipeline(t, ctx, mirrorScript, benchSeed(), 50*time.Millisecond)
 
 	if err := p.HA.injectStateChanged(ctx, "switch.a", "on"); err != nil {
@@ -42,8 +41,7 @@ func TestPipelineDelivers(t *testing.T) {
 // call_service command arriving back, through the real client, tracker
 // write, dispatch, and Lua handler. Instant acks — nothing is parked.
 func BenchmarkEventToServiceCall(b *testing.B) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	p := startPipeline(b, ctx, mirrorScript, benchSeed(), 0)
 
 	samples := make([]time.Duration, 0, b.N)
@@ -67,8 +65,7 @@ func BenchmarkEventToServiceCall(b *testing.B) {
 // event-latency spec's §3 (background persistence) should collapse this back
 // to BenchmarkEventToServiceCall's numbers.
 func BenchmarkEventToServiceCallBusyKV(b *testing.B) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	p := startPipeline(b, ctx, mirrorScript, benchSeed(), 0)
 
 	noiseCtx, stopNoise := context.WithCancel(ctx)
@@ -102,8 +99,7 @@ func BenchmarkEventToServiceCallBusyKV(b *testing.B) {
 // ({ wait = false }) it should drop to the plain pipeline latency.
 func BenchmarkQuickToggle(b *testing.B) {
 	const deviceAck = 100 * time.Millisecond
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	p := startPipeline(b, ctx, mirrorScript, benchSeed(), deviceAck)
 
 	var totalOff time.Duration
@@ -134,8 +130,7 @@ func BenchmarkQuickToggle(b *testing.B) {
 // second, and off-ns/op is where it shows.
 func BenchmarkQuickToggleNoWait(b *testing.B) {
 	const deviceAck = 100 * time.Millisecond
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 	p := startPipeline(b, ctx, mirrorScriptNoWait, benchSeed(), deviceAck)
 
 	var totalOff time.Duration
@@ -171,7 +166,7 @@ func reportPercentiles(b *testing.B, samples []time.Duration) {
 	if len(samples) == 0 {
 		return
 	}
-	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	slices.Sort(samples)
 	p50 := samples[len(samples)/2]
 	p99 := samples[len(samples)*99/100]
 	b.ReportMetric(float64(p50.Nanoseconds()), "p50-ns")

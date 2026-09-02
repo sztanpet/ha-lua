@@ -584,8 +584,7 @@ func TestOnCommand(t *testing.T) {
 
 func TestTimerAPI(t *testing.T) {
 	L, api, _, runner := newHALState(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := api.scheduler.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -768,8 +767,7 @@ func TestPruneKeepsLoadTimeAfter(t *testing.T) {
 
 func TestTimerExceptionHandling(t *testing.T) {
 	L, api, _, runner := newHALState(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if err := api.scheduler.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -845,7 +843,7 @@ func TestAfterFromCallbackDoesNotGrowKeepIDs(t *testing.T) {
 	api.loaded = true
 	api.keepIDs = nil
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if err := L.DoString(`ha.after("1h", function() end)`); err != nil {
 			t.Fatal(err)
 		}

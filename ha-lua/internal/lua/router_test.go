@@ -83,7 +83,7 @@ func waitRoute(t *testing.T, router *Router, method, path string) {
 
 func waitRouteID(t *testing.T, router *Router, scriptID, method, path string) {
 	t.Helper()
-	for i := 0; i < 400; i++ {
+	for range 400 {
 		if router.match(scriptID, method, path) {
 			return
 		}
@@ -265,8 +265,7 @@ func TestRouterReloadReRegisters(t *testing.T) {
 		Router:    router,
 		NewKV:     func(id string) *store.Store { return store.New(writeDB, readDB, id) },
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	writeScript(t, dir, "ui.lua", `ha.serve("GET", "/a", function(req) return 200, "A" end)`)
 	sup.StartScript(ctx, "ui")
@@ -386,7 +385,7 @@ func TestRunnerStatsRecordsLastError(t *testing.T) {
 
 func TestRunnerStatsCountsDroppedEvents(t *testing.T) {
 	r := &Runner{scriptID: "ui", ch: make(chan Event, 1)}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		r.Send(Event{})
 	}
 	if got := r.Stats().Dropped; got != 4 {
@@ -406,7 +405,7 @@ func TestRegistryAllIsOrderedByScriptID(t *testing.T) {
 	want := []string{"alpha", "bravo", "mike", "zulu"}
 	// Repeated because the bug it guards against is map iteration order: a
 	// single pass can match by luck.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		var got []string
 		for _, r := range reg.All() {
 			got = append(got, r.ScriptID())

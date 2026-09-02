@@ -76,7 +76,7 @@ func TestEveryFiresAndReschedules(t *testing.T) {
 	}
 
 	// Two fires prove the timer reschedules, not just fires once.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		f := waitFire(t, fired)
 		if f.scriptID != "s1" || f.timerID != id {
 			t.Fatalf("fire %d = %+v", i, f)
@@ -378,7 +378,7 @@ func BenchmarkSchedulerFire(b *testing.B) {
 	s.onFire = func(string, string) {}
 	ctx := context.Background()
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		if _, err := s.RegisterEvery(ctx, "bench", "1h", i+1); err != nil {
 			b.Fatal(err)
 		}
@@ -400,8 +400,7 @@ func BenchmarkSchedulerFire(b *testing.B) {
 
 func BenchmarkSchedulerConcurrencyStress(b *testing.B) {
 	s, fired, _ := newTestSched(b, time.UTC)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 
 	// Drain fired events in background to prevent blocking the scheduler
 	go func() {

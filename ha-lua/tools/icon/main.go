@@ -139,12 +139,12 @@ func main() {
 
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	step := 1.0 / samples
-	for py := 0; py < size; py++ {
-		for px := 0; px < size; px++ {
+	for py := range size {
+		for px := range size {
 			var acc rgb
 			var alpha float64
-			for sy := 0; sy < samples; sy++ {
-				for sx := 0; sx < samples; sx++ {
+			for sy := range samples {
+				for sx := range samples {
 					col, a := sample(
 						float64(px)+(float64(sx)+0.5)*step,
 						float64(py)+(float64(sy)+0.5)*step,

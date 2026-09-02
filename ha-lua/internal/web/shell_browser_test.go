@@ -442,7 +442,7 @@ ha.log("warn", "beta speaking")`,
 	}
 	// Every remaining line must be alpha's: the panel refetches from seq 0 on a
 	// filter change, so beta's lines cannot survive on screen.
-	for _, line := range strings.Split(filtered, "\n") {
+	for line := range strings.SplitSeq(filtered, "\n") {
 		if line != "" && !strings.Contains(line, "[alpha]") {
 			t.Errorf("filtered log kept %q; full text:\n%s", line, filtered)
 		}

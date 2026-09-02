@@ -142,17 +142,15 @@ func TestConcurrentWriters(t *testing.T) {
 	log, buf, _ := newTestLogger(64)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 50; j++ {
+	for range 8 {
+		wg.Go(func() {
+			for j := range 50 {
 				log.Info("spam", "j", j)
 			}
-		}()
+		})
 	}
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			buf.Snapshot(Query{Level: slog.LevelDebug})
 		}
 	}()

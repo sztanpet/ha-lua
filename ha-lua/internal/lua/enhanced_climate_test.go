@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -175,15 +176,15 @@ func (f *enhancedFixture) fireCommand(action, data string) {
 func (f *enhancedFixture) lastCompanion(entityID string) (string, map[string]any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for i := len(f.publish) - 1; i >= 0; i-- {
-		if f.publish[i].entityID != entityID {
+	for _, v := range slices.Backward(f.publish) {
+		if v.entityID != entityID {
 			continue
 		}
 		var m map[string]any
-		if err := json.Unmarshal(f.publish[i].attrs, &m); err != nil {
-			return f.publish[i].state, nil
+		if err := json.Unmarshal(v.attrs, &m); err != nil {
+			return v.state, nil
 		}
-		return f.publish[i].state, m
+		return v.state, m
 	}
 	return "", nil
 }
@@ -207,12 +208,7 @@ func (f *enhancedFixture) waitCompanion(entityID string, check func(state string
 func (f *enhancedFixture) removedCompanion(entityID string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, r := range f.removed {
-		if r == entityID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.removed, entityID)
 }
 
 // companionWrites counts how many set_state calls targeted entityID.

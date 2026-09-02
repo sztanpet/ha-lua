@@ -2,6 +2,7 @@ package lua
 
 import (
 	"context"
+	"maps"
 
 	lua "github.com/yuin/gopher-lua"
 
@@ -117,9 +118,7 @@ func newStateProxy(L *lua.LState, kv *store.Store, defaults *lua.LTable) *lua.LT
 			cache[key] = goVal
 		})
 	}
-	for k, v := range existing {
-		cache[k] = v
-	}
+	maps.Copy(cache, existing)
 
 	data := &stateProxyData{cache: cache, kv: kv}
 

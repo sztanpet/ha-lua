@@ -153,7 +153,7 @@ func TestTabsTieBreakIsStable(t *testing.T) {
 	}
 	h := Handler(Deps{Scripts: scripts.list})
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		tabs := decodeTabs(t, get(t, h, "/api/tabs"))
 		if len(tabs) != 2 || tabs[0].ID != "alpha" || tabs[1].ID != "bravo" {
 			t.Fatalf("tabs = %+v, want alpha then bravo", tabs)
