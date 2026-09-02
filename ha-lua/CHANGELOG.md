@@ -4,6 +4,25 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.8.0 - 2026-09-02
+
+### Added
+- **`nappali_switches.lua`, an example driving two lights straight off the
+  broker.** Two Aqara WXKG03LM rockers: a single click toggles one living-room
+  light, a double or a hold takes both as a group. It exists because
+  Zigbee2MQTT 2.x publishes a button as an MQTT *device trigger* — no entity is
+  created and Home Assistant consumes the press inside its automation engine,
+  so the press never reaches the event bus and nothing on the WebSocket API can
+  see it. The broker is the only place it exists.
+
+### Changed
+- **The add-on builds against Go 1.27.1** and its dependencies were refreshed;
+  the only functional bump is modernc.org/sqlite 1.57.0 -> 1.58.0, the rest is
+  the linter tool graph.
+- **`go fix` modernizations across the tree.** Counting loops, WaitGroup
+  bookkeeping, hand-rolled min/max and linear searches now use the stdlib
+  equivalents. No behaviour change.
+
 ## 4.7.1 - 2026-08-26
 
 ### Fixed
