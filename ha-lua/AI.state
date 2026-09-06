@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-02 (v4.8.0)
+Last updated: 2026-09-06
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,12 +10,15 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v4.8.0** (2026-09-02). Ships the `nappali_switches.lua` MQTT example
-(detail: `state/bundled-examples.md`) plus a toolchain sweep: Go 1.27.1,
-`make update-deps`, and a `go fix ./...` modernization pass over the tree.
-The one thing that pass got wrong and was reverted: its `strings.Builder`
-rewrite of the purge query assembly, which cost four lines and a temporary
-to build a string out of at most a handful of retention rules.
+**Heating overshoot correction** — spec written 2026-09-06, no code yet
+(detail: `state/overshoot.md`, spec: `overshoot-spec.md`). The children's room
+overshoots because its ESPHome bang-bang cannot anticipate the heat already in
+the radiator. Fix is a learned early cutoff: full relay power to a stopping
+point set at `requested - k*rise`, with `k` corrected from the measured peak
+after each episode. PID was recommended, then dropped on the user's objection —
+it costs warmup speed by construction and its constants drift seasonally; see
+`state/overshoot.md` for why all three earlier designs failed. Next: §10
+commit 1.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -31,6 +34,7 @@ to build a string out of at most a handful of retention rules.
   retention overrides, the reminders lib. COMPLETE.
 - `state/code-review.md` — review rounds 1 (v2.8.9) and 2 (v3.2.2), both CLOSED.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). COMPLETE.
+- `state/overshoot.md` — learned heating early-cutoff (overshoot-spec.md).
 - (sse-spec.md has no implementation and no state file.)
 
 Released versions and what shipped in them: `CHANGELOG.md`. Do not mirror it
@@ -91,6 +95,10 @@ here.
   out of a frame, so one scrollable pixel in there eats the whole gesture) and
   scrolls `#view`. Script pages must therefore lay out as documents — no
   `100vh`, no `position:fixed`.
+- **No hover-only affordances in any UI we ship.** `title=` tooltips, `:hover`
+  reveals and the like are unreachable on the phones and wall tablets HA is
+  actually used from — the disclosure is missing exactly where it is needed.
+  Anything hidden behind discovery must be a tap target.
 - **Debug introspection accessors never touch an `*lua.LState`** — cached fields
   and atomics only. `logbuf` WRAPS the text handler, never replaces it.
 - **The Lovelace card is one vanilla file**: plain HTML + HA CSS theme variables,
