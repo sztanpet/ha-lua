@@ -402,6 +402,11 @@ func TestThermostatAPI(t *testing.T) {
 	if bedroom["mode"] != "heat" {
 		t.Errorf("mode = %v, want heat", bedroom["mode"])
 	}
+	// No schedule and no override: there is no request, so `target` falls back
+	// to the device's own setpoint and the two halves of the split agree.
+	if bedroom["target"] != float64(18) || bedroom["commanded"] != float64(18) {
+		t.Errorf("target/commanded = %v/%v, want 18/18", bedroom["target"], bedroom["commanded"])
+	}
 
 	// POST /api/override: the override is reflected in the returned state.
 	rec = doReqID(router, "thermostat", "POST", "/api/override", `{"zone":"bedroom","minutes":30}`)
@@ -416,6 +421,16 @@ func TestThermostatAPI(t *testing.T) {
 	}
 	if rem, _ := override["remaining_s"].(float64); rem <= 0 || rem > 30*60 {
 		t.Errorf("remaining_s = %v, want 0<rem<=1800", override["remaining_s"])
+	}
+	// The split (overshoot-spec.md §8): the override makes the request 21 while
+	// call_service is a no-op capture, so the entity's setpoint stays 18. This
+	// is the only place the two halves are forced apart — `target` must be what
+	// was asked for, `commanded` what is on the device.
+	if bedroom["target"] != float64(21) {
+		t.Errorf("target = %v, want 21 (the requested override temp)", bedroom["target"])
+	}
+	if bedroom["commanded"] != float64(18) {
+		t.Errorf("commanded = %v, want 18 (the entity's setpoint)", bedroom["commanded"])
 	}
 
 	// Bad zone -> 400.

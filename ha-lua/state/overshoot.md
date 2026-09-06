@@ -67,10 +67,15 @@ order, each for a reason that is not obvious from the final shape:
 Requested temp is the primary number; commanded, offset and sample count are
 reachable only by a deliberate **tap** — not a `title=` tooltip, which is
 hover-only and therefore unreachable on the phones and wall tablets this UI
-actually runs on. Payload splits `target` (requested) from `commanded`; the
-stepper must edit `target`. Left unsplit, `target` silently becomes the
-commanded value and one stepper nudge ratchets the user's real request down by
-the offset.
+actually runs on. Payload splits `target` (requested) from `commanded`.
+
+Checked against the code at commit 2, correcting an earlier claim in this file
+and in spec §8: `thermostat.html` **does not read `target` at all**, and the
+stepper edits `override_temp` (a KV value, untouched by the correction), so
+there is no ratchet bug. What the check did turn up is bigger: the card has no
+setpoint display whatsoever — head is room temp plus a status word, the only
+number is the override temp. "Show the requested temp" therefore means adding
+a number that has never been on the card, not relabelling one.
 
 ## Introspection rules (spec §9)
 Added on the user's instruction, 2026-09-06, and they are design rather than
@@ -108,7 +113,17 @@ raises or notifies; a learner just sits there with a wrong number in it.
    §4.2 carries an amendment note; its original text describes the old
    single-key contract.
 
+2. `thermostat: split requested and commanded in the zone payload` —
+   `target` now computed from `desired()` (falling back to the device setpoint
+   for a zone with no request at all), `commanded` added from the entity's
+   `temperature` attribute. `commanded` is deliberately read *back from the
+   device* rather than from `written`: it then also shows the window script's
+   frost value and exposes a write that never landed. `TestThermostatAPI`
+   forces the two apart via the override path (request 21, entity still 18,
+   because its call_service is a no-op capture).
+
 ## Pending
-- §11 commits 2-5.
+- §11 commits 3-5. Commit 5 is larger than the spec first implied: the card
+  has no setpoint display to hang the disclosure off, so one has to be added.
 - `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
   children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.

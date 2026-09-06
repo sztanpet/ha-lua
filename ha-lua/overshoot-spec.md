@@ -218,16 +218,28 @@ The zone state payload (`thermostat.lua:270`) splits accordingly:
 
 | field | source | role |
 |-------|--------|------|
-| `target` | `desired` | the big number; **what the stepper edits** |
+| `target` | `desired` | the requested setpoint |
 | `commanded` | `written` | revealed on tap |
 | `offset`, `k`, `samples` | the learner | revealed on tap, beside `commanded` |
 
 `target` currently reads `current_target(zone)` — straight off the climate
-entity. Left alone it would silently become the *commanded* value, and the
-stepper at `thermostat.html:495` edits from that base, so **one nudge would
-ratchet the user's real request down by the offset** and every subsequent nudge
-would drift the room colder. Splitting the payload is what prevents that, and
-it must land before the offset is ever non-zero.
+entity — so left alone it silently becomes the *commanded* value for every
+consumer of the API, under a name that says "what was asked for". Fix the
+meaning before the two values can ever differ.
+
+**The shipped card does not read `target`, and there is no ratchet risk.** An
+earlier draft of this section claimed the stepper edits from `target` and that
+one nudge would therefore walk the user's request down by the offset. That is
+wrong: `thermostat.html`'s stepper edits `override_temp`, a KV value the
+correction never touches, and the card renders `current_temp`, `override_temp`
+and the schedule strip only. `target` is unread by our own UI today.
+
+**Which means the card has no setpoint display at all.** The head shows the
+room temperature and a status word; the only number on the card is the override
+temperature. So §8 is not a relabelling of a number already on screen — commit 5
+has to *add* the requested setpoint to the card and hang the disclosure off it.
+That is the honest reading of "show the requested temp", and it is more work
+than revealing a second value beside an existing one.
 
 Show `offset` and `samples` together, not a bare commanded number: "19.8°,
 −1.2° learned over 6 nights" says whether to trust it; "19.8°" says nothing.
@@ -356,8 +368,9 @@ Each commit compiles and passes `make test`.
    `heating_windows.lua`'s restore onto it. Pure plumbing; behaviour identical
    while `written == desired`.
 2. **`thermostat: split requested and commanded in the zone payload`** —
-   §8's payload fields, stepper re-based onto `target`. Still a no-op, but it
-   must precede any non-zero offset.
+   §8's payload fields: `target` re-based onto the request, `commanded` added.
+   Still a no-op for the shipped UI, which reads neither, but it must precede
+   any non-zero offset so no consumer ever sees a corrected `target`.
 3. **`examples: learn each zone's heating overshoot`** — `lib/overshoot.lua`
    (pure: the latch, the clamp, the `k` update, and the `ok, reason` validity
    predicate of §9.2) with Go unit tests alongside `lib/control.lua`'s;

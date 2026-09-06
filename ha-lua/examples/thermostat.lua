@@ -247,17 +247,29 @@ local function bad(msg)
 end
 
 -- zone_state builds the per-zone status block for GET /api/state.
+--
+-- `target` and `commanded` are the two halves of the split (overshoot-spec.md
+-- §8): `target` is what the user asked for, `commanded` is the number actually
+-- on the device. They are equal today. `commanded` is read back from the
+-- climate entity rather than from what we published, so it also shows the
+-- window script's frost value and exposes a write that never landed.
 local function zone_state(zone, now, dow, minute)
   local state = ha.get_state(zone_defs[zone].climate)
   local hvac_mode = state and state.state or "unknown"
-  local current, target, hvac_action
+  local current, commanded, hvac_action
   if state and state.attributes then
     current = state.attributes.current_temperature
-    target = state.attributes.temperature
+    commanded = state.attributes.temperature
     -- hvac_action ("heating"/"idle"/...) is what the device is doing right
     -- now, distinct from the mode; the UI uses it to show "heating" vs "on".
     hvac_action = state.attributes.hvac_action
   end
+  -- Computed rather than read back from global so a schedule transition shows
+  -- immediately instead of waiting for the next tick. A zone with no schedule
+  -- and no override has no request at all; it falls back to the device value
+  -- so the field is never empty (and such a zone is never corrected either,
+  -- because apply_zone leaves it alone).
+  local target = desired(zone, now, dow, minute) or commanded
   local days = load_schedule(zone)
   local sched_temp, now_index = schedule.resolve(days, dow, minute)
   local min_temp, max_temp = temp_bounds(zone)
@@ -279,6 +291,7 @@ local function zone_state(zone, now, dow, minute)
     hvac_action = hvac_action,
     current_temp = current,
     target = target,
+    commanded = commanded,
     override_temp = override_temp(zone),
     min_temp = min_temp,
     max_temp = max_temp,
