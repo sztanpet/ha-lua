@@ -340,6 +340,8 @@ The flagship example — a heating controller with a web UI — lives in
 | `heating_windows.lua` | Drops a zone to a frost guard (15 °C) while a window is open and restores the controller's desired setpoint when it closes. |
 | `lib/zones.lua` | Shared zone definitions (climate + window entity ids) used by both scripts. **Edit this to match your setup.** |
 | `lib/schedule.lua` | Pure schedule math (no I/O). |
+| `lib/control.lua` | Pure control helpers shared by the controller scripts (no I/O). |
+| `lib/overshoot.lua` | Pure overshoot-correction math (no I/O). |
 
 To use it, copy all of these from `examples/` into your scripts directory —
 **`thermostat.html` must sit next to `thermostat.lua`** (the script reads it with
@@ -350,6 +352,33 @@ To use it, copy all of these from `examples/` into your scripts directory —
 persisted per zone, so they survive restarts. The controller writes a zone's
 setpoint only while its mode is `heat` and no window is open; it never changes
 the hvac mode.
+
+### Overshoot correction
+
+A small room with an on/off thermostat sails past its setpoint: the valve takes
+minutes to close and the radiator keeps radiating for a quarter of an hour after
+the controller has decided to stop, and there is nothing on the device that can
+anticipate that. The controller can, by commanding a lower setpoint for the
+climb and letting the stored heat land the room on target. Full power the whole
+way — only the stopping point moves, so the warmup is no slower.
+
+How much lower is learned per zone, from the peak each warmup actually reaches,
+so it follows the seasons instead of needing to be retuned. The cut is
+proportional to the climb being attempted: a 3 °C warmup from setback gets a
+real correction, a 0.2 °C top-up gets essentially none, which leaves the
+steady-state hold band exactly where you asked for it.
+
+**It ships in observe-only mode and stays there until you turn it off per
+zone.** In that mode it does everything except change the setpoint: it computes
+the correction, records the episode and logs what it would have done. Give it a
+week and read the log before trusting it with a room.
+
+Every episode is journaled, including the ones it throws away — a window opened
+mid-warmup, the mode leaving `heat`, the setpoint changing, a restart — each
+with its reason, and those log at `warn`. A learner that silently discards every
+episode is indistinguishable from one that has converged, so the discards are
+the thing worth watching. Filter the Debug tab's log by source `thermostat` to
+see them.
 
 ## Enhanced climate card
 

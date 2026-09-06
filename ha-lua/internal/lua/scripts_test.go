@@ -331,6 +331,26 @@ func writeTestZones(t *testing.T, libDir string) {
 	}
 }
 
+// writeThermostatScripts stages a scripts dir holding the shipped thermostat
+// example and every lib it requires, plus the zones fixture, and returns it.
+// One place to add a lib to: a script that gains a require and a test dir that
+// does not simply fails to load.
+func writeThermostatScripts(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	libDir := filepath.Join(dir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestZones(t, libDir)
+	for _, lib := range []string{"schedule.lua", "control.lua", "overshoot.lua"} {
+		copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", lib), filepath.Join(libDir, lib))
+	}
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
+	return dir
+}
+
 // TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
 // (spec §4.2): on a window close, the real heating_windows.lua must restore the
 // setpoint the controller published to global:thermostat:written:<zone> — not a
@@ -437,16 +457,7 @@ func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 // /api/state returns per-zone status, an override shows up in the next read,
 // and a bad zone is rejected with 400.
 func TestThermostatAPI(t *testing.T) {
-	dir := t.TempDir()
-	libDir := filepath.Join(dir, "lib")
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeTestZones(t, libDir)
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
+	dir := writeThermostatScripts(t)
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -678,18 +689,12 @@ func TestThermostatOrderAPI(t *testing.T) {
 // and returns the pieces needed to seed state and dispatch events at it. The
 // scheduler is created but not Start()ed, so no tick fires and tests drive the
 // controller purely through dispatched state-change events.
-func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore, *state.Tracker) {
+// startThermostat loads the real thermostat.lua in a runner. Any prepare
+// functions run against the script's KV store BEFORE the script loads, which is
+// how a test stages state the script only reads at load time.
+func startThermostat(t *testing.T, prepare ...func(context.Context, *store.Store)) (*Registry, *store.Store, *store.GlobalStore, *state.Tracker) {
 	t.Helper()
-	dir := t.TempDir()
-	libDir := filepath.Join(dir, "lib")
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeTestZones(t, libDir)
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
+	dir := writeThermostatScripts(t)
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -700,6 +705,10 @@ func startThermostat(t *testing.T) (*Registry, *store.Store, *store.GlobalStore,
 	global := store.NewGlobal(writeDB, readDB)
 	reg := NewRegistry()
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
+
+	for _, fn := range prepare {
+		fn(context.Background(), kv)
+	}
 
 	r := NewRunner("thermostat", dir, openTestRoot(t, dir), openTestRoot(t, t.TempDir()), tracker, sched, kv, global)
 	r.SetCallService(func(context.Context, string, string, jsontext.Value) error { return nil })
@@ -723,6 +732,16 @@ func climateChange(entity string, oldT, newT float64) ha.Event {
 	return ha.Event{Type: "state_changed", Data: jsontext.Value(fmt.Sprintf(
 		`{"entity_id":%q,"old_state":{"state":"heat","attributes":{"temperature":%v}},`+
 			`"new_state":{"state":"heat","attributes":{"temperature":%v}}}`, entity, oldT, newT))}
+}
+
+// climateChangeInRoom is climateChange plus the room temperature, which the
+// overshoot learner needs: the tracker replaces an entity's attributes
+// wholesale, so an event that omits current_temperature erases it.
+func climateChangeInRoom(entity string, oldT, newT, room float64) ha.Event {
+	return ha.Event{Type: "state_changed", Data: jsontext.Value(fmt.Sprintf(
+		`{"entity_id":%q,"old_state":{"state":"heat","attributes":{"temperature":%v,"current_temperature":%v}},`+
+			`"new_state":{"state":"heat","attributes":{"temperature":%v,"current_temperature":%v}}}`,
+		entity, oldT, room, newT, room))}
 }
 
 func manualTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
@@ -780,6 +799,109 @@ func TestThermostatManualHoldDetected(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("manual hold was never recorded")
+}
+
+// TestThermostatOpensOvershootEpisode: a request that rises above the room
+// temperature starts an overshoot episode (overshoot-spec.md §5). k is still
+// K_INIT here, so the latched offset is zero and the commanded setpoint equals
+// the request — the learner records the episode without changing behaviour.
+func TestThermostatOpensOvershootEpisode(t *testing.T) {
+	reg, kv, global, tracker := startThermostat(t)
+	ctx := context.Background()
+
+	if err := tracker.Seed(ctx, []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":18,"current_temperature":18}`)},
+		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = global.Set(ctx, "thermostat:desired:bedroom", 18.0)
+	_ = global.Set(ctx, "thermostat:written:bedroom", 18.0)
+
+	// The dial moving to 21 becomes a manual hold, which re-applies the zone —
+	// the request changes from 18 to 21 with the room at 18, so an episode opens.
+	reg.Dispatch(climateChangeInRoom("climate.bedroom", 18, 21, 18))
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		v, err := kv.Get(ctx, "overshoot_episode:bedroom")
+		if err != nil {
+			t.Fatal(err)
+		}
+		episode, ok := v.(map[string]any)
+		if !ok {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if episode["requested"] != float64(21) {
+			t.Errorf("requested = %v, want 21", episode["requested"])
+		}
+		if episode["rise"] != float64(3) {
+			t.Errorf("rise = %v, want 3", episode["rise"])
+		}
+		if episode["offset"] != float64(0) {
+			t.Errorf("offset = %v, want 0 (K_INIT is zero)", episode["offset"])
+		}
+		if episode["observe_only"] != true {
+			t.Errorf("observe_only = %v, want true (it ships watching, §9.4)", episode["observe_only"])
+		}
+		if episode["applied"] != float64(21) {
+			t.Errorf("applied = %v, want 21 (the uncorrected request)", episode["applied"])
+		}
+		return
+	}
+	t.Fatal("no overshoot episode was opened")
+}
+
+// TestThermostatAbandonsEpisodeOnRestart: an episode still in flight when the
+// daemon stopped is discarded at load, not resumed — its timing is broken and a
+// corrupted k costs more than a lost sample (§6). It must leave a journal row
+// with the reason, because an episode that vanishes silently is exactly the
+// failure §9.1 is about.
+func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
+	stale := map[string]any{
+		"opened_at": 1000, "requested": 21.0, "current_at_open": 18.0,
+		"rise": 3.0, "k_used": 0.4, "offset": 1.2, "commanded": 19.8,
+		"applied": 19.8, "observe_only": false, "peak": 19.9, "peak_at": 1200,
+	}
+	_, kv, _, _ := startThermostat(t, func(ctx context.Context, kv *store.Store) {
+		if err := kv.Set(ctx, "overshoot_episode:bedroom", stale); err != nil {
+			t.Fatal(err)
+		}
+		if err := kv.Set(ctx, "overshoot_k:bedroom", 0.4); err != nil {
+			t.Fatal(err)
+		}
+	})
+	ctx := context.Background()
+
+	if v, err := kv.Get(ctx, "overshoot_episode:bedroom"); err != nil {
+		t.Fatal(err)
+	} else if v != nil {
+		t.Errorf("stale episode survived the load: %v", v)
+	}
+
+	v, err := kv.Get(ctx, "overshoot_journal:bedroom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := v.([]any)
+	if len(rows) != 1 {
+		t.Fatalf("journal has %d rows, want 1: %v", len(rows), v)
+	}
+	row, _ := rows[0].(map[string]any)
+	if row["outcome"] != "discarded" || row["reason"] != "restart" {
+		t.Errorf("outcome/reason = %v/%v, want discarded/restart", row["outcome"], row["reason"])
+	}
+	if row["k_before"] != float64(0.4) || row["k_after"] != float64(0.4) {
+		t.Errorf("k moved on a discarded episode: %v -> %v", row["k_before"], row["k_after"])
+	}
+
+	// A discard must not count as a sample; nothing was learned.
+	if v, err := kv.Get(ctx, "overshoot_samples:bedroom"); err != nil {
+		t.Fatal(err)
+	} else if v != nil {
+		t.Errorf("samples = %v, want unset after a discard", v)
+	}
 }
 
 // TestThermostatOverrideSuppressesManual: an active override makes the

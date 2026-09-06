@@ -142,8 +142,30 @@ raises or notifies; a learner just sits there with a wrong number in it.
    defensive. Written down because the first test asserted it *was* reachable
    and was wrong.
 
+4. `thermostat: run the overshoot learner per zone` — episode state machine on
+   the existing tick, journal (ring of 50 per zone), log lines, `k`/`samples`
+   per zone, observe-only defaulted on. Payload carries `k`, `samples`,
+   `offset`, `observe_only` so commit 5 is pure frontend.
+
+   Decisions taken while wiring:
+   - **An episode opens on a REQUEST CHANGE to a value above the room**, not
+     merely on the room sitting below setpoint — the latter is true on every
+     tick of a normal hold and would open an episode a minute. `apply_zone`
+     reads the previously published `desired` before overwriting it; that is
+     the change detector.
+   - **The commanded setpoint is clamped to the device's advertised range.** HA
+     silently drops an out-of-range setpoint, so an unclamped command would
+     never be applied and the episode would then wait forever for a cutoff that
+     cannot arrive.
+   - **An invalidated episode closes immediately** rather than limping to the
+     end of its coast. The warn fires when the thing happens, and the
+     correction stops when the reason for it stopped being true.
+   - Test scaffolding: `writeThermostatScripts` now stages the example and all
+     its libs in one place. Three copies of that list had already drifted — the
+     new `require` broke the two this commit did not touch.
+
 ## Pending
-- §11 commits 4-5. Commit 5 is larger than the spec first implied: the card
+- §11 commit 5. Commit 5 is larger than the spec first implied: the card
   has no setpoint display to hang the disclosure off, so one has to be added.
 - `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
   children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.

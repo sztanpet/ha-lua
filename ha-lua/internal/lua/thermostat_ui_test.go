@@ -47,16 +47,7 @@ func serveThermostatUI(t *testing.T) *httptest.Server {
 // test can render a zone in a non-heat mode without disturbing the others.
 func serveThermostatUISeed(t *testing.T, seed []ha.StateData) *httptest.Server {
 	t.Helper()
-	dir := t.TempDir()
-	libDir := filepath.Join(dir, "lib")
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeTestZones(t, libDir)
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.html"), filepath.Join(dir, "thermostat.html"))
+	dir := writeThermostatScripts(t)
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
