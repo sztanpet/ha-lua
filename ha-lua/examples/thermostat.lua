@@ -165,15 +165,22 @@ end
 -- apply_zone publishes the zone's desired setpoint and writes it to the climate
 -- entity when the mode is heat and no window is open. The write is skipped when
 -- the value is unchanged so we don't spam set_temperature.
+--
+-- Two values are published, not one: `desired` is the request, `written` is
+-- what we command the device to. They are equal today; the overshoot
+-- correction (overshoot-spec.md §7) is what will drive them apart, and
+-- everything that compares against the device already reads `written`.
 local function apply_zone(zone, now, dow, minute)
   local desired_temp = desired(zone, now, dow, minute)
   if desired_temp == nil then return end
+  local commanded_temp = desired_temp
   global.set(zones.desired_key(zone), desired_temp)
+  global.set(zones.written_key(zone), commanded_temp)
   -- Write only in heat mode, with no window open (the window script's
   -- territory), and only when the value actually changed — the shared
   -- control.should_write gate.
-  if control.should_write(mode(zone), any_window_open(zone), current_target(zone), desired_temp) then
-    set_temp(zone, desired_temp)
+  if control.should_write(mode(zone), any_window_open(zone), current_target(zone), commanded_temp) then
+    set_temp(zone, commanded_temp)
   end
 end
 
@@ -189,9 +196,10 @@ end
 ha.every("1m", tick)
 
 -- Manual setpoint change detection (§9): the controller is the only thing that
--- writes `desired`, and it always writes exactly `desired`, so a climate target
--- that differs from the published desired is an external change by the user. It
--- becomes an ad-hoc manual hold that lasts until the next schedule transition.
+-- writes the zone's setpoint, and it always writes exactly what it published as
+-- `written`, so a climate target that differs from that is an external change
+-- by the user. It becomes an ad-hoc manual hold that lasts until the next
+-- schedule transition.
 for zone, conf in pairs(zone_defs) do
   ha.on_state_change(conf.climate, function(data)
     local new_state = data.new_state
@@ -205,7 +213,7 @@ for zone, conf in pairs(zone_defs) do
     -- Window open or not-yet-seeded: that's the window script's 15°C territory.
     if any_window_open(zone) or any_window_unknown(zone) then return end
 
-    local published = global.get(zones.desired_key(zone))
+    local published = global.get(zones.written_key(zone))
     -- Float tolerance: our own write (and the window restore) set target ==
     -- published exactly, but 21 vs 21.0 must not look like a manual change. The
     -- predicate is the shared control.is_manual.
@@ -437,13 +445,17 @@ ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
 
--- Publish each zone's desired once at load time so the window script has a
--- value to restore before the first tick fires.
+-- Publish each zone's setpoints once at load time so the window script has a
+-- value to restore, and the manual detector a value to compare against, before
+-- the first tick fires.
 do
   local now, dow, minute = now_parts()
   for zone in pairs(zone_defs) do
     local desired_temp = desired(zone, now, dow, minute)
-    if desired_temp ~= nil then global.set(zones.desired_key(zone), desired_temp) end
+    if desired_temp ~= nil then
+      global.set(zones.desired_key(zone), desired_temp)
+      global.set(zones.written_key(zone), desired_temp)
+    end
   end
 end
 

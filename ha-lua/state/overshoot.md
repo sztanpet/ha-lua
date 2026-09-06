@@ -3,9 +3,8 @@
 Working state for the learned early-cutoff correction. Spec:
 `overshoot-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **spec written, nothing implemented.** Next: commit 1 of
-`overshoot-spec.md` §11 (`thermostat: publish the written setpoint
-separately`).
+Status: **in progress.** §11 commit 1 done. Next: commit 2 (`thermostat:
+split requested and commanded in the zone payload`).
 
 ## Why it exists (2026-09-06)
 - Field problem: the children's room is small and its thermostat sails 1–2 °C
@@ -99,7 +98,17 @@ raises or notifies; a learner just sits there with a wrong number in it.
   (standing project decision), so learner state cannot go there and should not
   — the script serves its own page and its own source-filterable log lines.
 
+## Commits
+1. `thermostat: publish the written setpoint separately` — `zones.written_key`,
+   published every tick beside `desired`; `control.is_manual` and
+   `heating_windows.lua`'s restore both moved onto it. Behaviour identical
+   (`written == desired`). The two Go tests that cover the handoff now seed the
+   two keys to *different* values, so they fail if either consumer drifts back
+   onto `desired` — verified by reverting the change. `thermostat-ui-spec.md`
+   §4.2 carries an amendment note; its original text describes the old
+   single-key contract.
+
 ## Pending
-- All five commits of §11.
+- §11 commits 2-5.
 - `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
   children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.

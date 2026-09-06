@@ -30,11 +30,24 @@ M.zones = {
   kitchen    = { climate = "climate.kitchen",     windows = { "binary_sensor.kitchen_window" },     radiator = "sensor.kitchen_radiator_temp" },
 }
 
--- The global key both scripts use to hand off the controller's desired
--- setpoint. The controller publishes it every tick; the window script reads it
--- to know what to restore when a window closes.
+-- The two global keys the scripts hand zone setpoints off through. Both are
+-- published every tick by the controller.
+--
+-- `desired` is what the user asked for — the schedule/override/manual value.
+-- Anything displaying intent reads this one.
+--
+-- `written` is what the controller actually commands the device to, which may
+-- be lower than `desired` while the overshoot correction is cutting a warmup
+-- early (see overshoot-spec.md §7). Anything comparing against the value on
+-- the device — the manual-change detector, the window script's restore — must
+-- read this one, or it will read our own correction as the user turning the
+-- dial. The two are equal whenever no correction is active.
 function M.desired_key(zone)
   return "thermostat:desired:" .. zone
+end
+
+function M.written_key(zone)
+  return "thermostat:written:" .. zone
 end
 
 return M

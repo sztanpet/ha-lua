@@ -198,6 +198,13 @@ The old "save the pre-open setpoint and restore it" logic is removed from
 controller skips its own write whenever a window is open, and the window script
 writes exactly the published desired on close, the two can never fight.
 
+> **Amended by `overshoot-spec.md` §7.** The controller now publishes two keys:
+> `thermostat:desired:<zone>` (the request, unchanged in meaning) and
+> `thermostat:written:<zone>` (what it actually commands, which the overshoot
+> correction may pull below the request). The restore-on-close and the
+> manual-change detector both read **`written`** — restoring the request would
+> wipe an active correction. Everything above holds otherwise.
+
 > Alternative: merge both into the controller and delete `heating_windows.lua`.
 > Functionally identical; the chosen default keeps the file per your
 > instruction. Either way `frost_temp` (config) is the single source for 15 °C.

@@ -19,7 +19,8 @@ after each episode. PID was recommended, then dropped on the user's objection �
 it costs warmup speed by construction and its constants drift seasonally; see
 `state/overshoot.md` for why all three earlier designs failed. Ships in
 observe-only mode by default (§9.4): it journals what it would have done
-without touching the heating. Next: §11 commit 1.
+without touching the heating. §11 commit 1 (the desired/written setpoint
+split) is in; next is commit 2, the zone payload.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

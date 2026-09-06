@@ -5,10 +5,13 @@
 -- setpoint is restored. It cooperates with thermostat.lua instead of fighting
 -- it (see thermostat-ui-spec.md §4.2):
 --
---   * on close it restores whatever the controller currently *wants* — the
---     value the controller publishes to global:thermostat:desired:<zone> — not
---     a stale pre-open setpoint. So a schedule transition or an override that
---     happened while the window was open is honoured on close.
+--   * on close it restores whatever the controller is currently commanding —
+--     the value it publishes to global:thermostat:written:<zone> — not a stale
+--     pre-open setpoint. So a schedule transition or an override that happened
+--     while the window was open is honoured on close. It is deliberately the
+--     *written* value and not the requested one: restoring the request would
+--     wipe an active overshoot correction for the rest of the warmup
+--     (overshoot-spec.md §7).
 --   * the controller, in turn, never writes the setpoint while a window is
 --     open, so the two can never write conflicting values.
 --
@@ -55,10 +58,10 @@ for window in pairs(by_window) do
       -- controller keeps publishing what it wants in global.
       set_temp(zone, FROST)
     elseif new_state.state == "off" then
-      -- Closed: restore whatever the controller currently wants. This is the
-      -- live schedule/override value, never the stale pre-open setpoint.
-      local desired = global.get(zones.desired_key(zone))
-      if type(desired) == "number" then set_temp(zone, desired) end
+      -- Closed: restore whatever the controller is currently commanding. This
+      -- is the live schedule/override value, never the stale pre-open setpoint.
+      local commanded = global.get(zones.written_key(zone))
+      if type(commanded) == "number" then set_temp(zone, commanded) end
     end
   end)
 end

@@ -211,6 +211,9 @@ M.zones = {
 function M.desired_key(zone)
   return "thermostat:desired:" .. zone
 end
+function M.written_key(zone)
+  return "thermostat:written:" .. zone
+end
 return M
 `
 
@@ -222,12 +225,15 @@ func writeTestZones(t *testing.T, libDir string) {
 	}
 }
 
-// TestWindowHandoffRestoresPublishedDesired exercises the two-script contract
+// TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
 // (spec §4.2): on a window close, the real heating_windows.lua must restore the
-// setpoint the controller published to global:thermostat:desired:<zone> — not a
-// stale saved value. It runs the shipped script in a real runner with a captured
-// call_service, a seeded climate entity, and a published desired.
-func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
+// setpoint the controller published to global:thermostat:written:<zone> — not a
+// stale saved value, and not the *requested* value, which may sit above the
+// commanded one while an overshoot correction is cutting a warmup short
+// (overshoot-spec.md §7). The two keys are seeded to different values here so
+// that distinction is pinned. It runs the shipped script in a real runner with
+// a captured call_service and a seeded climate entity.
+func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 	dir := t.TempDir()
 	libDir := filepath.Join(dir, "lib")
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
@@ -271,13 +277,17 @@ func TestWindowHandoffRestoresPublishedDesired(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() { cancel(); sup.Wait() }()
 
-	// The zone must be heating, and the controller has published its desired.
+	// The zone must be heating, and the controller has published both setpoints.
+	// They differ: 21 is what the user asked for, 20 is what is on the device.
 	if err := tracker.Seed(ctx, []ha.StateData{
 		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value("{}")},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := global.Set(ctx, "thermostat:desired:bedroom", 20.0); err != nil {
+	if err := global.Set(ctx, "thermostat:desired:bedroom", 21.0); err != nil {
+		t.Fatal(err)
+	}
+	if err := global.Set(ctx, "thermostat:written:bedroom", 20.0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -609,8 +619,10 @@ func manualTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
 }
 
 // TestThermostatManualHoldDetected: with no override and a closed (seeded)
-// window, a climate target that differs from the published desired is recorded
-// as a manual hold (§9), with a future expiry.
+// window, a climate target that differs from the published *written* setpoint
+// is recorded as a manual hold (§9), with a future expiry. The two published
+// keys are seeded apart and the dial is moved to exactly the requested value,
+// so a detector comparing against `desired` instead would see no change at all.
 func TestThermostatManualHoldDetected(t *testing.T) {
 	reg, kv, global, tracker := startThermostat(t)
 	ctx := context.Background()
@@ -621,17 +633,20 @@ func TestThermostatManualHoldDetected(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := global.Set(ctx, "thermostat:desired:bedroom", 18.0); err != nil {
+	if err := global.Set(ctx, "thermostat:desired:bedroom", 20.0); err != nil {
+		t.Fatal(err)
+	}
+	if err := global.Set(ctx, "thermostat:written:bedroom", 18.0); err != nil {
 		t.Fatal(err)
 	}
 
-	reg.Dispatch(climateChange("climate.bedroom", 18, 22))
+	reg.Dispatch(climateChange("climate.bedroom", 18, 20))
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if temp, ok := manualTemp(t, kv, "bedroom"); ok {
-			if temp != 22 {
-				t.Fatalf("manual temp = %v, want 22", temp)
+			if temp != 20 {
+				t.Fatalf("manual temp = %v, want 20", temp)
 			}
 			ov, _ := kv.Get(ctx, "manual:bedroom")
 			m := ov.(map[string]any)
@@ -670,6 +685,8 @@ func TestThermostatOverrideSuppressesManual(t *testing.T) {
 	}
 	_ = global.Set(ctx, "thermostat:desired:bedroom", 18.0)
 	_ = global.Set(ctx, "thermostat:desired:childrens", 18.0)
+	_ = global.Set(ctx, "thermostat:written:bedroom", 18.0)
+	_ = global.Set(ctx, "thermostat:written:childrens", 18.0)
 
 	reg.Dispatch(climateChange("climate.bedroom", 18, 22))        // must be suppressed (override)
 	reg.Dispatch(climateChange("climate.childrens_room", 18, 22)) // barrier: must create manual hold

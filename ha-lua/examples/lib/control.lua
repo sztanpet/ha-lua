@@ -24,10 +24,13 @@ function M.desired(override, manual, schedule_temp)
 end
 
 -- is_manual reports whether a climate target reflects an external (user) change
--- rather than our own write. The controller always writes exactly the published
--- desired, so a target within 0.1° of it is our own write (or the window
--- restore) — 21 vs 21.0 must not look like a change. A non-numeric published
--- value (never published yet) counts as a manual change.
+-- rather than our own write. `published` is the value the controller last
+-- commanded (zones.written_key), NOT what the user asked for: with the
+-- overshoot correction active the two differ, and comparing against the
+-- request would read our own correction as a dial nudge. A target within 0.1°
+-- of it is our own write (or the window restore) — 21 vs 21.0 must not look
+-- like a change. A non-numeric published value (never published yet) counts as
+-- a manual change.
 function M.is_manual(target, published)
   if type(published) == "number" and math.abs(target - published) <= 0.1 then
     return false
