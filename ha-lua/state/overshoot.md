@@ -4,7 +4,7 @@ Working state for the learned early-cutoff correction. Spec:
 `overshoot-spec.md`. Global decisions live in `../AI.state`.
 
 Status: **spec written, nothing implemented.** Next: commit 1 of
-`overshoot-spec.md` §10 (`thermostat: publish the written setpoint
+`overshoot-spec.md` §11 (`thermostat: publish the written setpoint
 separately`).
 
 ## Why it exists (2026-09-06)
@@ -73,7 +73,33 @@ stepper must edit `target`. Left unsplit, `target` silently becomes the
 commanded value and one stepper nudge ratchets the user's real request down by
 the offset.
 
+## Introspection rules (spec §9)
+Added on the user's instruction, 2026-09-06, and they are design rather than
+polish — this is the only script here that fails *silently*. Everything else
+raises or notifies; a learner just sits there with a wrong number in it.
+
+- **A discarded episode is a record with a reason, never a bare `return`.** A
+  learner that silently discards every episode looks exactly like one that has
+  converged: `k` still, no error, no log line, room still overshooting. If a
+  window is opened during the warmup every evening, the feature would do
+  nothing at all and say nothing about it.
+- **Discards log at `warn`, not `debug`.** If you must raise the log level to
+  find out the feature has never once run, the diagnostic has already failed.
+- **The validity predicate returns `ok, reason`, not `ok`.** One string shared
+  by the journal, the log line and the unit tests. A boolean makes the caller
+  re-derive the reason for the journal and the two copies drift.
+- **Observe-only ships defaulted ON.** Computes, journals and logs the offset;
+  writes the uncorrected value. One branch at the write site, and it buys a
+  week of evidence about what it *would* have done before it goes near a
+  child's bedroom. Turning it off per zone is the deliberate act of trusting
+  it.
+- **`k` resets from the UI/HTTP, never from `sqlite3 /data/ha-lua.db`**, and
+  without a restart or reload.
+- **No daemon changes.** The debug page's accessors never touch an `*lua.LState`
+  (standing project decision), so learner state cannot go there and should not
+  — the script serves its own page and its own source-filterable log lines.
+
 ## Pending
-- All five commits of §10.
-- `enhanced_climate.lua` + the Lovelace card are deferred (§11); the
+- All five commits of §11.
+- `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
   children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.

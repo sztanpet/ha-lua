@@ -3,7 +3,7 @@
 > **Working state:** [`state/overshoot.md`](state/overshoot.md) — implementation progress and decisions.
 
 Status: **ready to build**. Control model and UI rules resolved (§5, §8);
-§11 lists what is deliberately deferred.
+§12 lists what is deliberately deferred.
 
 ## 1. Goal
 
@@ -197,7 +197,7 @@ which is the value actually on the device — restoring `desired` after a window
 closed would otherwise wipe the correction for the rest of the episode.
 
 `enhanced_climate.lua` has the same two sites (`:314`, `:365`) and takes the
-same treatment if the feature is extended to it (§11).
+same treatment if the feature is extended to it (§12).
 
 ## 8. UI
 
@@ -236,7 +236,102 @@ Show `offset` and `samples` together, not a bare commanded number: "19.8°,
 read the climate entity directly and will show the commanded value with no
 explanation. The requested/commanded split only holds inside our own UIs.
 
-## 9. Interaction with `valve_watch.lua`
+## 9. Debugging and introspection
+
+Every other script here fails loudly and immediately: a bad service call raises,
+a seized valve notifies. **This one does not.** It accumulates hidden state over
+days, from episodes nobody was watching, and its failure mode is a room that is
+quietly 1.5 °C too cold in February because of an episode last Tuesday that
+learned from bad data. Delayed, unreproducible, silent. Introspection is
+therefore not a convenience here — without it the feature is not debuggable at
+all, and the rules below are part of the design rather than a later addition.
+
+### 9.1 Every episode is journaled, discarded ones included
+
+**A discard is a record with a reason, never a bare `return`.** This is the
+central rule. A learner that silently discards every episode is
+indistinguishable from one that has converged: `k` sits still, nothing errors,
+no log line appears, and the room keeps overshooting. If a window is opened
+every evening during the warmup, or the mode keeps leaving `heat`, the feature
+would do nothing whatsoever and give no sign of it.
+
+One record per episode, appended to a bounded ring (last 50 per zone) in the
+script's KV store:
+
+```
+opened_at, closed_at, zone
+requested, current_at_open, rise
+k_used, offset, commanded          -- what it decided, and from what
+peak, peak_at, error               -- what actually happened
+k_before, k_after                  -- what it concluded
+outcome  "learned" | "discarded" | "observed"
+reason   nil | "window_open" | "mode_left_heat" | "setpoint_changed"
+              | "rise_too_small" | "restart"
+```
+
+Deciding inputs and resulting action are both in the record, so an episode can
+be re-judged months later without the surrounding state.
+
+### 9.2 The validity check returns a reason, not a boolean
+
+Design constraint on `lib/overshoot.lua`: the episode-validity predicate returns
+`ok, reason`, not `ok`. The journal, the log line and the unit tests then assert
+on the same string. A boolean forces the caller to re-derive the reason for the
+journal, and the two copies drift — the classic way a diagnostic ends up lying.
+
+### 9.3 Log lines at all three decision points
+
+Via `ha.log`, so they land in the daemon log and are filterable by source in the
+existing debug page's log viewer (`internal/web/debug.go`) with no daemon change:
+
+| point | level | carries |
+|-------|-------|---------|
+| episode open | `info` | zone, requested, current, rise, k, offset, commanded |
+| episode close | `info` | peak, error, k before → after |
+| **discard** | **`warn`** | the reason from §9.2 |
+
+Discards are `warn`, deliberately, and not `debug`. A persistent discard is
+exactly the silent failure of §9.1, and it must be visible at the default log
+level — if you have to raise the log level to discover the feature has never
+once run, the diagnostic has already failed.
+
+### 9.4 Observe-only mode, and it ships enabled
+
+A per-zone flag. The controller computes the offset, journals it and logs it,
+but writes the **uncorrected** setpoint. Everything runs and records; nothing
+touches the heating.
+
+**This is how the feature ships first, defaulted on.** It costs one branch at
+the write site, and it means the learner can be judged on a week of what it
+*would* have done before it is allowed near a child's bedroom. Turning it off
+per zone is the deliberate act of trusting it — which is also the only honest
+way to answer "is `k` converged yet", since the journal shows the predicted
+peak against the real one either way.
+
+### 9.5 `k` is resettable without touching the database
+
+A UI action and an HTTP endpoint that zero `k` and clear the journal for one
+zone. When a learner goes wrong the recovery path must not be
+`sqlite3 /data/ha-lua.db`, and it must not require a daemon restart or a script
+reload.
+
+### 9.6 Surfacing
+
+- **On the page:** `k`, the current offset and the last episodes, behind §8's
+  tap disclosure — the same action, one level deeper. Requested stays the only
+  number on the default view.
+- **As JSON:** `GET /zones/<zone>/overshoot` returns `k`, sample count and the
+  journal, so it is curl-able and greppable without the UI. `thermostat.lua`
+  already has the HTTP API section for it.
+
+### 9.7 What is deliberately not added
+
+**No daemon changes.** The debug page's accessors never touch an `*lua.LState`
+(a standing project decision), so per-script learner state cannot be surfaced
+there — and should not be. It is script state; the script already serves its own
+page and its own filterable log lines. Nothing here needs Go.
+
+## 10. Interaction with `valve_watch.lua`
 
 Benign, but worth stating because an earlier draft of this design (PID +
 `slow_pwm`, §4.1) would have **silently disabled** valve_watch on any corrected
@@ -252,7 +347,7 @@ actually regulates to — so it stays consistent. Warmups from setback remain fa
 longer than `WARMUP`, so judging opportunities are unaffected in the case that
 matters. **No change to `valve_watch.lua` is required.**
 
-## 10. Files and commit order
+## 11. Files and commit order
 
 Each commit compiles and passes `make test`.
 
@@ -264,16 +359,22 @@ Each commit compiles and passes `make test`.
    §8's payload fields, stepper re-based onto `target`. Still a no-op, but it
    must precede any non-zero offset.
 3. **`examples: learn each zone's heating overshoot`** — `lib/overshoot.lua`
-   (pure: the latch, the clamp, the `k` update, episode validity) with Go unit
-   tests alongside `lib/control.lua`'s; `overshoot.lua` does the I/O, episode
-   detection and peak tracking.
+   (pure: the latch, the clamp, the `k` update, and the `ok, reason` validity
+   predicate of §9.2) with Go unit tests alongside `lib/control.lua`'s;
+   `overshoot.lua` does the I/O, episode detection and peak tracking. Ships
+   with §9.1's journal and §9.3's log lines — the diagnostics land *with* the
+   learner, not after it, because the first week of episodes is the data that
+   says whether any of this works.
 4. **`thermostat: apply the learned overshoot offset`** — the controller
-   latches `offset` at episode start and writes `requested − offset`. This is
-   the commit that changes behaviour.
+   latches `offset` at episode start and writes `requested − offset`, gated by
+   §9.4's observe-only flag, **defaulted on**. Behaviour is therefore still
+   unchanged after this commit; flipping the flag per zone is a deliberate
+   separate act.
 5. **`thermostat: reveal the commanded setpoint on tap`** — §8's disclosure in
-   `thermostat.html`.
+   `thermostat.html`, plus §9.6's journal view, §9.6's JSON endpoint and
+   §9.5's reset action.
 
-## 11. Deferred
+## 12. Deferred
 
 - **`enhanced_climate.lua` and the Lovelace card.** The children's room lives
   in `lib/zones.lua`, so `thermostat.lua` is the whole target. Extending it

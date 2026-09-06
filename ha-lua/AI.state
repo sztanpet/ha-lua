@@ -17,8 +17,9 @@ the radiator. Fix is a learned early cutoff: full relay power to a stopping
 point set at `requested - k*rise`, with `k` corrected from the measured peak
 after each episode. PID was recommended, then dropped on the user's objection —
 it costs warmup speed by construction and its constants drift seasonally; see
-`state/overshoot.md` for why all three earlier designs failed. Next: §10
-commit 1.
+`state/overshoot.md` for why all three earlier designs failed. Ships in
+observe-only mode by default (§9.4): it journals what it would have done
+without touching the heating. Next: §11 commit 1.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
