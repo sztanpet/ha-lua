@@ -176,6 +176,8 @@ rows and filtering in Lua, and would need a retention override to survive the
 - the hvac mode left `heat`
 - the requested setpoint changed before the room reached it
 - `rise < MIN_RISE`
+- the room never reached the commanded setpoint within `MAX_EPISODE` (4 h) —
+  the plant could not keep up, and nothing about overshoot can be read off it
 - the daemon restarted mid-episode — in-flight episode state is abandoned, not
   reconstructed. One lost sample is worth nothing; a corrupted `k` is.
 
@@ -198,6 +200,17 @@ closed would otherwise wipe the correction for the rest of the episode.
 
 `enhanced_climate.lua` has the same two sites (`:314`, `:365`) and takes the
 same treatment if the feature is extended to it (§12).
+
+**The episode state machine lives in the controller too, not in a second
+script.** An earlier commit plan put episode detection and peak tracking in an
+`overshoot.lua` beside the controller. That splits one decision across two
+scripts: the controller has to latch the offset at episode start (§5) and the
+learner has to detect the same boundary to know when to start tracking the
+peak, so both would re-derive it and drift. `store.*` is per-script, so `k` and
+the journal would have to travel through `global` as well. The controller
+already holds everything an episode needs — the request, the room temperature,
+the mode, the window state, and a 1-minute tick. What stays separate is
+`lib/overshoot.lua`: pure, no `ha.*`/`store.*`/`time.*`, unit-testable from Go.
 
 ## 8. UI
 
@@ -278,8 +291,13 @@ peak, peak_at, error               -- what actually happened
 k_before, k_after                  -- what it concluded
 outcome  "learned" | "discarded" | "observed"
 reason   nil | "window_open" | "mode_left_heat" | "setpoint_changed"
-              | "rise_too_small" | "restart"
+              | "rise_too_small" | "restart" | "never_reached"
 ```
+
+`never_reached` is the room failing to reach even the *reduced* setpoint within
+`MAX_EPISODE` (4 h). Without it an episode that never cuts off sits open
+forever and never learns — silent, and precisely §9.1's failure. It is also the
+one discard that says something about the plant rather than about us.
 
 Deciding inputs and resulting action are both in the record, so an episode can
 be re-judged months later without the surrounding state.
@@ -371,21 +389,24 @@ Each commit compiles and passes `make test`.
    §8's payload fields: `target` re-based onto the request, `commanded` added.
    Still a no-op for the shipped UI, which reads neither, but it must precede
    any non-zero offset so no consumer ever sees a corrected `target`.
-3. **`examples: learn each zone's heating overshoot`** — `lib/overshoot.lua`
-   (pure: the latch, the clamp, the `k` update, and the `ok, reason` validity
-   predicate of §9.2) with Go unit tests alongside `lib/control.lua`'s;
-   `overshoot.lua` does the I/O, episode detection and peak tracking. Ships
-   with §9.1's journal and §9.3's log lines — the diagnostics land *with* the
-   learner, not after it, because the first week of episodes is the data that
-   says whether any of this works.
-4. **`thermostat: apply the learned overshoot offset`** — the controller
-   latches `offset` at episode start and writes `requested − offset`, gated by
-   §9.4's observe-only flag, **defaulted on**. Behaviour is therefore still
-   unchanged after this commit; flipping the flag per zone is a deliberate
-   separate act.
+3. **`examples: add the heating overshoot learner`** — `lib/overshoot.lua`,
+   pure and unwired: the latch, the clamp, the episode step function, the
+   `k` update, and the `ok, reason` validity predicate of §9.2. Go unit tests
+   alongside `lib/control.lua`'s. No behaviour change — nothing calls it yet.
+4. **`thermostat: run the overshoot learner per zone`** — wire it into the
+   controller: episode detection on the existing tick, peak tracking, `k` per
+   zone, §9.1's journal, §9.3's log lines, and §9.4's observe-only flag
+   **defaulted on**, so the commanded value is computed and recorded while the
+   uncorrected setpoint is still what gets written. Behaviour is therefore
+   still unchanged after this commit.
 5. **`thermostat: reveal the commanded setpoint on tap`** — §8's disclosure in
-   `thermostat.html`, plus §9.6's journal view, §9.6's JSON endpoint and
-   §9.5's reset action.
+   `thermostat.html` (which must first *add* a setpoint display), §9.6's
+   journal view and JSON endpoint, §9.5's reset action, and the switch that
+   takes a zone out of observe-only.
+
+The learner and its diagnostics land together in commit 4, as §9 requires; what
+moved out of it is only the pure library, because a pure module plus its tests
+is the smaller bisectable unit and it keeps the wiring commit readable.
 
 ## 12. Deferred
 

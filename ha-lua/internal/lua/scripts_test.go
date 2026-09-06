@@ -173,6 +173,112 @@ func TestControlPureLib(t *testing.T) {
 	}
 }
 
+func TestOvershootPureLib(t *testing.T) {
+	L := newScheduleState(t)
+
+	err := L.DoString(`
+		local o = require "overshoot"
+
+		-- offset: proportional to the rise, clamped into [0, MAX_OFFSET].
+		assert(o.offset(0, 3) == 0, "k=0 -> no correction")
+		assert(math.abs(o.offset(0.4, 3) - 1.2) < 1e-9, "0.4 * 3 = 1.2")
+		assert(o.offset(0.8, 10) == o.MAX_OFFSET, "clamped to MAX_OFFSET")
+		assert(o.offset(0.4, -2) == 0, "negative rise -> no correction")
+		-- A top-up gets essentially nothing, which is what keeps the correction
+		-- out of the steady-state hold band.
+		assert(o.offset(0.4, 0.3) < 0.13, "top-up correction is negligible")
+
+		-- open: only when the request is above the room.
+		assert(o.open(21, 21, 0.4, false, 0) == nil, "no rise -> no episode")
+		assert(o.open(21, 22, 0.4, false, 0) == nil, "falling request -> no episode")
+		local ep = o.open(21, 18, 0.4, false, 1000)
+		assert(ep.rise == 3, "rise")
+		assert(math.abs(ep.offset - 1.2) < 1e-9, "offset latched")
+		assert(math.abs(ep.commanded - 19.8) < 1e-9, "commanded")
+		assert(ep.applied == ep.commanded, "correcting -> applied is commanded")
+		assert(ep.peak == 18 and ep.peak_at == 1000, "peak seeded at the room temp")
+
+		-- Observe-only writes the request but records what it would have done.
+		local obs = o.open(21, 18, 0.4, true, 1000)
+		assert(obs.applied == 21, "observe-only applies the request")
+		assert(math.abs(obs.commanded - 19.8) < 1e-9, "observe-only still records the command")
+
+		-- step: climb, cut off at the applied setpoint, then coast.
+		local phase = o.step(ep, 19, 1060)
+		assert(phase == "heating" and ep.peak == 19, "still climbing")
+		assert(ep.cutoff_at == nil, "no cutoff yet")
+		phase = o.step(ep, 19.9, 1120)
+		assert(phase == "coasting" and ep.cutoff_at == 1120, "cut off at the commanded value")
+		phase = o.step(ep, 20.6, 1300)
+		assert(phase == "coasting" and ep.peak == 20.6 and ep.peak_at == 1300, "peak tracked while coasting")
+		phase = o.step(ep, 20.2, 1400)
+		assert(phase == "coasting" and ep.peak == 20.6, "peak is a running max, not the last sample")
+		phase = o.step(ep, 20.1, 1120 + o.COAST_SECONDS)
+		assert(phase == "done", "coast window closes the episode")
+
+		-- close: the peak landed 0.4 below the request, so k comes down.
+		local k_after, outcome, reason = o.close(ep, 0.4)
+		assert(outcome == "learned" and reason == nil, "learned")
+		-- error = 20.6 - 21 = -0.4, rise 3 -> k + 0.5 * (-0.4/3)
+		assert(math.abs(k_after - (0.4 + 0.5 * (-0.4 / 3))) < 1e-9, "k update "..tostring(k_after))
+		assert(o.close(o.open(21, 18, 0.4, true, 0), 0.4) ~= nil, "observe-only still learns")
+
+		-- k stays inside its bounds however extreme the error.
+		local hot = o.open(21, 18, 0.4, false, 0)
+		o.step(hot, 19.8, 60)
+		o.step(hot, 40, 120)
+		o.step(hot, 40, 60 + o.COAST_SECONDS + 120)
+		local k_hot = o.close(hot, 0.4)
+		assert(k_hot == o.K_MAX, "k clamped to K_MAX, got "..tostring(k_hot))
+		-- Downward, k can only ever halve toward zero and never cross it: an
+		-- episode cuts off at requested - k*rise, so the peak cannot land more
+		-- than the offset low and the update is bounded below by -GAIN*k. The
+		-- zero clamp is defensive, not reachable.
+		local cold = o.open(21, 18, 0.4, false, 0)
+		o.step(cold, 19.8, 60)
+		o.step(cold, 19.8, 60 + o.COAST_SECONDS)
+		local k_cold = o.close(cold, 0.4)
+		assert(math.abs(k_cold - 0.2) < 1e-9, "worst case halves k, got "..tostring(k_cold))
+
+		-- valid returns the reason, not a bare boolean (spec §9.2), and the
+		-- FIRST reason wins so the thing that actually broke the episode is what
+		-- a reader sees.
+		local windowed = o.open(21, 18, 0.4, false, 0)
+		o.invalidate(windowed, "window_open")
+		o.invalidate(windowed, "mode_left_heat")
+		local ok, why = o.valid(windowed)
+		assert(ok == false and why == "window_open", "first reason wins, got "..tostring(why))
+		local k_same, outcome2, reason2 = o.close(windowed, 0.4)
+		assert(k_same == 0.4 and outcome2 == "discarded" and reason2 == "window_open", "discard leaves k alone")
+
+		-- A rise too small to teach anything still gets its (tiny) correction.
+		local tiny = o.open(21, 20.9, 0.4, false, 0)
+		assert(tiny ~= nil and tiny.offset > 0, "tiny episode still corrects")
+		o.step(tiny, 21, 60)
+		o.step(tiny, 21.4, 60 + o.COAST_SECONDS)
+		ok, why = o.valid(tiny)
+		assert(ok == false and why == "rise_too_small", "tiny rise teaches nothing, got "..tostring(why))
+
+		-- An episode that never reaches its setpoint is abandoned rather than
+		-- left open forever learning nothing.
+		local stuck = o.open(21, 18, 0, false, 0)
+		assert(o.step(stuck, 18.5, 3600) == "heating", "still trying")
+		assert(o.step(stuck, 18.6, o.MAX_EPISODE_SECONDS) == "done", "given up")
+		ok, why = o.valid(stuck)
+		assert(ok == false and why == "never_reached", "never_reached, got "..tostring(why))
+
+		-- record carries both the decision and the outcome.
+		local row = o.record(ep, "childrens", 0.4, k_after, "learned", nil, 9999)
+		assert(row.zone == "childrens" and row.closed_at == 9999, "record identity")
+		assert(row.k_before == 0.4 and row.k_after == k_after, "record k")
+		assert(math.abs(row.error - (20.6 - 21)) < 1e-9, "record error")
+		assert(row.outcome == "learned" and row.reason == nil, "record outcome")
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 // openTestRoot opens an os.Root over dir, closed on test cleanup. It backs
 // the fs module, require, and Supervisor.LoadAll's script enumeration.
 func openTestRoot(t testing.TB, dir string) *os.Root {

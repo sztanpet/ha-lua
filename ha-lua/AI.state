@@ -19,8 +19,9 @@ after each episode. PID was recommended, then dropped on the user's objection �
 it costs warmup speed by construction and its constants drift seasonally; see
 `state/overshoot.md` for why all three earlier designs failed. Ships in
 observe-only mode by default (§9.4): it journals what it would have done
-without touching the heating. §11 commits 1-2 (the desired/written
-setpoint split and the zone payload) are in; next is commit 3, the learner.
+without touching the heating. §11 commits 1-3 are in (the
+desired/written setpoint split, the zone payload, and the pure learner lib);
+next is commit 4, wiring the learner into the controller.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

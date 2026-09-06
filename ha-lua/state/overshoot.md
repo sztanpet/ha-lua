@@ -53,6 +53,15 @@ order, each for a reason that is not obvious from the final shape:
   right in spirit, but the learner only needs one number per episode, not a
   replayed curve. Avoids `get_history`'s missing `until` parameter (~1500 rows
   pulled and filtered in Lua) and needs no retention override.
+- **The episode state machine lives in the controller, not a second script.**
+  An earlier commit plan had an `overshoot.lua` beside the controller doing
+  episode detection and peak tracking. That splits one decision in two: the
+  controller must latch the offset at episode start and the learner must find
+  the same boundary to start tracking the peak, so both re-derive it and drift.
+  `store.*` is per-script, so `k` and the journal would travel through `global`
+  too. The controller already holds the request, the room temperature, the
+  mode, the window state and a 1-minute tick. `lib/overshoot.lua` is what stays
+  separate: pure, no `ha.*`/`store.*`/`time.*`, testable from Go.
 - **A standalone script cannot do this.** It would be clobbered by the 60 s
   tick and, worse, latched as a manual hold by `thermostat.lua:196`. The
   `desired`/`written` split (§7) is the minimum controller change.
@@ -122,8 +131,19 @@ raises or notifies; a learner just sits there with a wrong number in it.
    forces the two apart via the override path (request 21, entity still 18,
    because its call_service is a no-op capture).
 
+3. `examples: add the heating overshoot learner` — `lib/overshoot.lua`, pure
+   and unwired, with Go unit tests. Two things the code forced back into the
+   spec: a `never_reached` discard (an episode whose room never reaches the
+   setpoint would otherwise sit open forever, learning nothing and saying
+   nothing — exactly §9.1's silent failure), and the fact that **k's lower
+   clamp is unreachable**. A run cuts off at `requested - k*rise`, so the peak
+   cannot land more than the offset low and the update is bounded below by
+   `-GAIN*k`: k halves toward zero and never crosses it. The zero clamp is
+   defensive. Written down because the first test asserted it *was* reachable
+   and was wrong.
+
 ## Pending
-- §11 commits 3-5. Commit 5 is larger than the spec first implied: the card
+- §11 commits 4-5. Commit 5 is larger than the spec first implied: the card
   has no setpoint display to hang the disclosure off, so one has to be added.
 - `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
   children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.
