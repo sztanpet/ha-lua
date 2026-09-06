@@ -373,6 +373,13 @@ zone.** In that mode it does everything except change the setpoint: it computes
 the correction, records the episode and logs what it would have done. Give it a
 week and read the log before trusting it with a room.
 
+The card shows the requested temperature next to the room temperature; tap it
+to see what is actually being commanded, how much of the difference is the
+learned correction, how many episodes taught it, and the recent episode list.
+That panel is also where you take a zone out of observe-only, and where you
+reset a zone's learning if it has gone wrong — no database surgery, no restart.
+The same data is available as JSON at `/api/overshoot?zone=<zone>`.
+
 Every episode is journaled, including the ones it throws away — a window opened
 mid-warmup, the mode leaving `heat`, the setpoint changing, a restart — each
 with its reason, and those log at `warn`. A learner that silently discards every

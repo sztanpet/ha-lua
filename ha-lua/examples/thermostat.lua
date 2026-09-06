@@ -601,6 +601,63 @@ ha.serve("PUT", "/api/schedule", function(req)
   return json_ok(full_state())
 end)
 
+-- The learner's own state, for the UI's disclosure and for curl. Everything
+-- needed to judge whether k should be trusted is here, including the episodes
+-- that taught it nothing (spec §9.6).
+ha.serve("GET", "/api/overshoot", function(req)
+  local zone = req.query and req.query.zone
+  if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
+  local rows = store.get(journal_key(zone))
+  return json_ok({
+    zone = zone,
+    k = learned_k(zone),
+    samples = learned_samples(zone),
+    observe_only = observe_only(zone),
+    episode = live_episode(zone),
+    journal = type(rows) == "table" and rows or {},
+  })
+end)
+
+-- Recovery must not be `sqlite3 /data/ha-lua.db` (§9.5): when a zone's learning
+-- has gone wrong, this zeroes it from the UI with no restart and no reload.
+ha.serve("POST", "/api/overshoot/reset", function(req)
+  local body = decode_body(req)
+  if body == nil then return bad("invalid JSON body") end
+  local zone = body.zone
+  if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
+  -- The in-flight episode goes too: left behind, it would close against a k
+  -- that no longer exists and journal a row nobody could account for.
+  store.delete(episode_key(zone))
+  store.delete(k_key(zone))
+  store.delete(samples_key(zone))
+  store.delete(journal_key(zone))
+  ha.log("warn", "overshoot " .. zone .. ": learning reset")
+  local now, dow, minute = now_parts()
+  apply_zone(zone, now, dow, minute)
+  return json_ok(full_state())
+end)
+
+ha.serve("POST", "/api/overshoot/observe", function(req)
+  local body = decode_body(req)
+  if body == nil then return bad("invalid JSON body") end
+  local zone = body.zone
+  if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
+  if type(body.observe_only) ~= "boolean" then return bad("observe_only must be a boolean") end
+  store.set(observe_key(zone), body.observe_only)
+  -- A running episode latched its setpoint from the old flag. End it rather
+  -- than let the change land half way through a warmup, and journal it so the
+  -- gap in the record has a reason against it.
+  local episode = live_episode(zone)
+  local now, dow, minute = now_parts()
+  if episode ~= nil then
+    overshoot.invalidate(episode, "observe_changed")
+    close_episode(zone, episode, now:unix())
+  end
+  ha.log("warn", string.format("overshoot %s: observe_only = %s", zone, tostring(body.observe_only)))
+  apply_zone(zone, now, dow, minute)
+  return json_ok(full_state())
+end)
+
 -- ---------------------------------------------------------------------------
 -- The single-page UI (§7) lives in thermostat.html next to this script: one
 -- self-contained HTML document (inline vanilla JS/CSS, no build step, no

@@ -2,8 +2,10 @@
 
 > **Working state:** [`state/overshoot.md`](state/overshoot.md) — implementation progress and decisions.
 
-Status: **ready to build**. Control model and UI rules resolved (§5, §8);
-§12 lists what is deliberately deferred.
+Status: **built**, shipping in observe-only mode (§9.4). §11's five commits are
+in; §12 lists what is deliberately deferred. Where the code and this document
+disagreed, the document was corrected — the notes saying so are kept
+deliberately, since each marks something that was got wrong on paper first.
 
 ## 1. Goal
 
@@ -178,6 +180,8 @@ rows and filtering in Lua, and would need a retention override to survive the
 - `rise < MIN_RISE`
 - the room never reached the commanded setpoint within `MAX_EPISODE` (4 h) —
   the plant could not keep up, and nothing about overshoot can be read off it
+- observe-only was switched for the zone mid-episode — the episode latched its
+  setpoint from the old setting and cannot be judged against the new one
 - the daemon restarted mid-episode — in-flight episode state is abandoned, not
   reconstructed. One lost sample is worth nothing; a corrupted `k` is.
 
@@ -292,6 +296,7 @@ k_before, k_after                  -- what it concluded
 outcome  "learned" | "discarded" | "observed"
 reason   nil | "window_open" | "mode_left_heat" | "setpoint_changed"
               | "rise_too_small" | "restart" | "never_reached"
+              | "observe_changed"
 ```
 
 `never_reached` is the room failing to reach even the *reduced* setpoint within
@@ -350,9 +355,12 @@ reload.
 - **On the page:** `k`, the current offset and the last episodes, behind §8's
   tap disclosure — the same action, one level deeper. Requested stays the only
   number on the default view.
-- **As JSON:** `GET /zones/<zone>/overshoot` returns `k`, sample count and the
-  journal, so it is curl-able and greppable without the UI. `thermostat.lua`
-  already has the HTTP API section for it.
+- **As JSON:** `GET /api/overshoot?zone=<zone>` returns `k`, sample count, the
+  live episode and the journal, so it is curl-able and greppable without the
+  UI. (The path follows `thermostat.lua`'s existing `/api/...?zone=` shape
+  rather than the `/zones/<zone>/…` this section first proposed.)
+  `POST /api/overshoot/reset` and `POST /api/overshoot/observe` are the two
+  writes §9.5 and §9.4 call for.
 
 ### 9.7 What is deliberately not added
 

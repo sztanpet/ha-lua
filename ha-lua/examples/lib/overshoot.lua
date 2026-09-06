@@ -84,7 +84,12 @@ function M.open(requested, current, k, observe_only, at)
   }
 end
 
--- invalidate marks an episode unusable for learning. The FIRST reason wins: a
+-- invalidate marks an episode unusable for learning, with one of:
+--   "window_open" "mode_left_heat" "setpoint_changed" "restart"
+--   "never_reached" "observe_changed"
+-- (plus "rise_too_small", which valid() derives rather than being told).
+--
+-- The FIRST reason wins: a
 -- window opened during a warmup that later also left heat mode is a
 -- window_open episode, and the reason a reader wants is the one that broke it.
 function M.invalidate(episode, reason)

@@ -594,6 +594,50 @@ func TestThermostatAPI(t *testing.T) {
 		t.Fatalf("schedule temp within range: status = %d body %q", rec.Code, rec.Body.String())
 	}
 
+	// The learner's own endpoints (§9.5, §9.6): its state is curl-able, and a
+	// zone that has gone wrong is recoverable without touching the database.
+	rec = doReqID(router, "thermostat", "GET", "/api/overshoot?zone=bedroom", "")
+	if rec.Code != 200 {
+		t.Fatalf("GET /api/overshoot status %d body %q", rec.Code, rec.Body.String())
+	}
+	learner := decode(rec)
+	if learner["k"] != float64(0) {
+		t.Errorf("k = %v, want 0 (K_INIT)", learner["k"])
+	}
+	if learner["observe_only"] != true {
+		t.Errorf("observe_only = %v, want true — it ships watching", learner["observe_only"])
+	}
+	if rec := doReqID(router, "thermostat", "GET", "/api/overshoot?zone=nope", ""); rec.Code != 400 {
+		t.Errorf("unknown zone: status = %d, want 400", rec.Code)
+	}
+
+	rec = doReqID(router, "thermostat", "POST", "/api/overshoot/observe", `{"zone":"bedroom","observe_only":false}`)
+	if rec.Code != 200 {
+		t.Fatalf("POST /api/overshoot/observe status %d body %q", rec.Code, rec.Body.String())
+	}
+	zones, _ = decode(rec)["zones"].(map[string]any)
+	bedroom, _ = zones["bedroom"].(map[string]any)
+	if bedroom["observe_only"] != false {
+		t.Errorf("observe_only = %v after opting in, want false", bedroom["observe_only"])
+	}
+	if rec := doReqID(router, "thermostat", "POST", "/api/overshoot/observe", `{"zone":"bedroom","observe_only":"no"}`); rec.Code != 400 {
+		t.Errorf("non-boolean observe_only: status = %d, want 400", rec.Code)
+	}
+
+	// Reset restores the untrained state, flag included.
+	if err := kv.Set(context.Background(), "overshoot_k:bedroom", 0.5); err != nil {
+		t.Fatal(err)
+	}
+	rec = doReqID(router, "thermostat", "POST", "/api/overshoot/reset", `{"zone":"bedroom"}`)
+	if rec.Code != 200 {
+		t.Fatalf("POST /api/overshoot/reset status %d body %q", rec.Code, rec.Body.String())
+	}
+	zones, _ = decode(rec)["zones"].(map[string]any)
+	bedroom, _ = zones["bedroom"].(map[string]any)
+	if bedroom["k"] != float64(0) || bedroom["samples"] != float64(0) {
+		t.Errorf("after reset k/samples = %v/%v, want 0/0", bedroom["k"], bedroom["samples"])
+	}
+
 	// GET / serves the self-contained UI page.
 	rec = doReqID(router, "thermostat", "GET", "/", "")
 	if rec.Code != 200 {

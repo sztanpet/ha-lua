@@ -531,6 +531,55 @@ func TestThermostatUIOverrideTempStepper(t *testing.T) {
 	}
 }
 
+// TestThermostatUIRevealsCommandedSetpoint: the commanded setpoint and the
+// learner's state are reachable by TAPPING the requested one and by nothing
+// else. Not a title= tooltip: this page is read on phones and wall tablets
+// where hover does not exist, so a hover-only disclosure would be missing
+// exactly on the device you would be holding while wondering what the
+// thermostat is doing (spec §8).
+func TestThermostatUIRevealsCommandedSetpoint(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveThermostatUI(t)
+
+	const panels = `document.querySelectorAll(".card .disclosure").length`
+	const expanded = `document.querySelector(".card .setpoint").getAttribute("aria-expanded")`
+	var beforeClick, afterClick, afterSecondClick int
+	var ariaBefore, ariaAfter, panelText string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
+		chromedp.WaitVisible(".card .setpoint", chromedp.ByQuery),
+		chromedp.Evaluate(panels, &beforeClick),
+		chromedp.Evaluate(expanded, &ariaBefore),
+		chromedp.Click(".card .setpoint", chromedp.ByQuery),
+		chromedp.Poll(panels+" === 1", nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(panels, &afterClick),
+		chromedp.Evaluate(expanded, &ariaAfter),
+		chromedp.Evaluate(`document.querySelector(".card .disclosure").innerText`, &panelText),
+		chromedp.Click(".card .setpoint", chromedp.ByQuery),
+		chromedp.Poll(panels+" === 0", nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(panels, &afterSecondClick),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if beforeClick != 0 || ariaBefore != "false" {
+		t.Errorf("disclosure visible before the tap: %d panels, aria-expanded=%q", beforeClick, ariaBefore)
+	}
+	if afterClick != 1 || ariaAfter != "true" {
+		t.Errorf("tap did not reveal: %d panels, aria-expanded=%q", afterClick, ariaAfter)
+	}
+	if afterSecondClick != 0 {
+		t.Errorf("second tap did not hide the disclosure: %d panels", afterSecondClick)
+	}
+	// The seeded bedroom sits at a commanded 18 with nothing learned yet, and
+	// the panel must say both — a bare commanded number says nothing about
+	// whether to trust it.
+	for _, want := range []string{"Commanded", "18.0", "nothing learned yet", "watching only"} {
+		if !strings.Contains(panelText, want) {
+			t.Errorf("disclosure text is missing %q:\n%s", want, panelText)
+		}
+	}
+}
+
 // cardOrderJS reads the rendered card order as a list of zone ids.
 const cardOrderJS = `Array.from(document.querySelectorAll(".card[data-zone]")).map(card => card.dataset.zone)`
 

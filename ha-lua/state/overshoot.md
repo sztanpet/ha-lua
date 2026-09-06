@@ -3,8 +3,9 @@
 Working state for the learned early-cutoff correction. Spec:
 `overshoot-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **in progress.** §11 commit 1 done. Next: commit 2 (`thermostat:
-split requested and commanded in the zone payload`).
+Status: **complete.** All five §11 commits are in and the feature ships in
+observe-only mode. Next real step is field data: a week of the children's-room
+journal, then decide whether to take that zone out of observe-only.
 
 ## Why it exists (2026-09-06)
 - Field problem: the children's room is small and its thermostat sails 1–2 °C
@@ -164,8 +165,21 @@ raises or notifies; a learner just sits there with a wrong number in it.
      its libs in one place. Three copies of that list had already drifted — the
      new `require` broke the two this commit did not touch.
 
+5. `thermostat: reveal the commanded setpoint on tap` — the card had no
+   setpoint display, so one was added (room temp → requested temp in the head).
+   Tapping it opens a panel with requested/commanded/offset, `k`, sample count,
+   the observe-only switch, a reset, and the journal. Endpoints:
+   `GET /api/overshoot?zone=`, `POST /api/overshoot/reset`,
+   `POST /api/overshoot/observe` — the spec's `/zones/<zone>/overshoot` was
+   changed to match this script's existing `/api/...?zone=` shape.
+   Switching observe-only mid-episode closes the running one with a new
+   `observe_changed` reason rather than dropping it silently. The journal is
+   fetched on open rather than carried on `/api/state`, which is polled every
+   5 s. A chromedp test pins that the panel is unreachable without a tap.
+
 ## Pending
-- §11 commit 5. Commit 5 is larger than the spec first implied: the card
+- Nothing in §11. Field data next: read a week of the children's-room journal
+  (`/api/overshoot?zone=childrens`) before taking it out of observe-only. Commit 5 is larger than the spec first implied: the card
   has no setpoint display to hang the disclosure off, so one has to be added.
 - `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
   children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.

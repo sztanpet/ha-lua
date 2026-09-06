@@ -19,9 +19,10 @@ after each episode. PID was recommended, then dropped on the user's objection �
 it costs warmup speed by construction and its constants drift seasonally; see
 `state/overshoot.md` for why all three earlier designs failed. Ships in
 observe-only mode by default (§9.4): it journals what it would have done
-without touching the heating. §11 commits 1-4 are in — the learner runs
-per zone and journals every episode, still writing the uncorrected setpoint.
-Next is commit 5: the UI disclosure, the JSON endpoint and the reset.
+without touching the heating. All five §11 commits are in. The
+learner runs per zone, journals every episode with a reason, and still writes
+the uncorrected setpoint until a zone is taken out of observe-only from the
+card. Next step is field data, not code: a week of the children's-room journal.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
