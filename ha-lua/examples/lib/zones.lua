@@ -26,7 +26,7 @@ M.default_override_temp = 23
 -- window scripts ignore it.
 M.zones = {
   livingroom = { climate = "climate.living_room", windows = { "binary_sensor.living_room_window" }, radiator = "sensor.living_room_radiator_temp" },
-  bedroom    = { climate = "climate.bedroom",     windows = { "binary_sensor.bedroom_window" },     radiator = "sensor.bedroom_radiator_temp" },
+  bedroom    = { climate = "climate.bedroom",     windows = { "binary_sensor.sonoff_door_1_contact" }, radiator = "sensor.bedroom_radiator_temp" },
   kitchen    = { climate = "climate.kitchen",     windows = { "binary_sensor.kitchen_window" },     radiator = "sensor.kitchen_radiator_temp" },
 }
 
