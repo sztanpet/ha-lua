@@ -10,13 +10,16 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Enhanced-climate boost expiry** (6a06f3e, detail:
+**Enhanced-climate boost expiry** (6a06f3e + 7ea6a0c, detail:
 `state/enhanced-climate.md`). A timed override on a climate with no schedule
 and no manual hold under it left the dial at the boost temperature forever:
 nothing controls the climate once the override expires, so the control loop
 wrote nothing, and the override handler had already deleted the manual hold it
 could have fallen back to. Now a boost snapshots the setpoint it found and
-writes it back on the first uncontrolled pass. Before this, the open item was
+writes it back on the first uncontrolled pass. Second bug behind the same
+report: nothing reacted to the expiry at all — `active_override()` only clears
+the record when something calls it, and the only caller was the 1-minute tick,
+so the card sat at a frozen 00:00. A boost now schedules its own `ha.after`. Before this, the open item was
 **heating overshoot correction** (`state/overshoot.md`, `overshoot-spec.md`):
 all five §11 commits are in, it runs per zone in observe-only mode, and the
 next step there is field data — a week of the children's-room journal — not

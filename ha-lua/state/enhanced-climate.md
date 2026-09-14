@@ -8,7 +8,25 @@ decisions live in `../AI.state`.
 Status: **track COMPLETE, released v2.7.0; card iterated through v2.9.1.**
 Current card VERSION **0.3.31**.
 
-## Boost expiry left the dial at the boost temp (6a06f3e)
+## Boost expiry: two bugs, one symptom (6a06f3e, 7ea6a0c)
+Field report: a timed override to 30° for 10 minutes never ended — the dial
+stayed at 30 and the card's countdown froze at 00:00.
+
+### Nothing reacted to the expiry (7ea6a0c)
+- `active_override()` clears an expired record, but only as a side effect of
+  being *called* — and the only thing that called it on its own was the
+  1-minute tick. Until then the companion kept advertising `override.active =
+  true` with an `expires` already in the past; the card renders that as a
+  frozen 00:00 (`_tickCountdown` re-renders from the last push, which still
+  says active).
+- Fix: the override handler registers an `ha.after` for the boost's own
+  duration that re-applies the climate. The tick stays as the backstop for a
+  timer lost to a restart; a stale timer from an extended/cancelled boost is
+  harmless because `apply_climate` is idempotent.
+- `TestEnhancedClimateOverrideExpires` uses `minutes: 0.02` (1.2s) and asserts
+  the companion goes inactive with no tick, command or state change to help it.
+
+### Nothing to fall back to (6a06f3e)
 - Field report: a 10-minute override to 30° never went back to the 22° the
   zone was at. Cause: with no schedule and no manual hold, `desired()` returns
   nil once the override expires, and `apply_climate`'s "not controlled" branch
