@@ -623,3 +623,55 @@ func TestEnhancedClimateConfigureRepublishesCompanion(t *testing.T) {
 	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":[],"presets":[]}`)
 	f.waitWrites(companion, before+1, "republish on unchanged configure")
 }
+
+// TestEnhancedClimateOverrideRestoresSetpoint: a boost on a climate with no
+// schedule and no manual hold has nothing underneath it to take over when it
+// ends, so it must put back the setpoint it found — otherwise the boost
+// temperature is where the dial stays for good.
+func TestEnhancedClimateOverrideRestoresSetpoint(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":22,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+
+	f.fireCommand("override", `{"climate_entity":"climate.lr","minutes":10}`)
+	f.waitSetTemp(23, "boost to the default override temp")
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":23,"min_temp":7,"max_temp":35}`)
+
+	// Pressing a preset again extends the boost; it must not snapshot 23 as the
+	// way back.
+	f.fireCommand("override", `{"climate_entity":"climate.lr","minutes":10}`)
+
+	f.fireCommand("override", `{"climate_entity":"climate.lr","cancel":true}`)
+	f.waitSetTemp(22, "the pre-boost setpoint is restored")
+
+	// One-shot: the climate is uncontrolled now, so a later pass must not write
+	// 22 again over whatever the user has since dialled in.
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":24,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.x"]}`)
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		sensors, _ := attrs["window"].(map[string]any)["sensors"].([]any)
+		return len(sensors) == 1
+	}, "re-apply after the restore")
+	if temps := f.setTemps(); temps[len(temps)-1] != 22 {
+		t.Fatalf("setpoint written after the one-shot restore: %v", temps)
+	}
+}
+
+// TestEnhancedClimateOverrideKeepsSchedule: with a schedule underneath, the
+// boost ending falls back to the schedule, and the pre-boost snapshot must be
+// dropped rather than fight it.
+func TestEnhancedClimateOverrideKeepsSchedule(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "schedule 21")
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":21,"min_temp":7,"max_temp":35}`)
+
+	f.fireCommand("override", `{"climate_entity":"climate.lr","minutes":10}`)
+	f.waitSetTemp(23, "boost to 23")
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":23,"min_temp":7,"max_temp":35}`)
+
+	f.fireCommand("override", `{"climate_entity":"climate.lr","cancel":true}`)
+	f.waitSetTemp(21, "schedule takes back over")
+}

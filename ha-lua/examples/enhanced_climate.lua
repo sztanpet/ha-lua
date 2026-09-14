@@ -72,6 +72,7 @@ local function override_key(e) return "override:" .. e end
 local function manual_key(e) return "manual:" .. e end
 local function override_temp_key(e) return "override_temp:" .. e end
 local function desired_key(e) return "desired:" .. e end
+local function restore_key(e) return "restore:" .. e end
 
 -- slug_of derives the companion-sensor slug from a climate entity id:
 -- climate.living_room -> living_room (so the card can derive the companion id
@@ -298,7 +299,14 @@ end
 -- pass re-publishes the companion, so configure / tick / mutation all refresh
 -- it through this one path.
 local function apply_climate(e, now, dow, minute)
-  local desired_temp = desired(e, now, dow, minute)
+  local desired_temp, source = desired(e, now, dow, minute)
+  -- The pre-boost snapshot only matters while the boost is the active source:
+  -- any other source takes the climate over from here, so drop it unused.
+  local previous = nil
+  if source ~= "override" then
+    previous = store.get(restore_key(e))
+    if previous ~= nil then store.delete(restore_key(e)) end
+  end
   local lo, hi = temp_bounds(e)
   if desired_temp ~= nil then
     desired_temp = control.clamp_bounds(desired_temp, lo, hi)
@@ -316,7 +324,15 @@ local function apply_climate(e, now, dow, minute)
       end
     end
   else
-    store.delete(desired_key(e)) -- not controlled (no schedule/override/manual)
+    -- A boost that ends with no schedule or hold under it still has to put the
+    -- dial back where it found it, or the boost temperature sticks forever.
+    local restored = type(previous) == "number" and control.clamp_bounds(previous, lo, hi) or nil
+    if restored and control.should_write(mode(e), false, current_target(e), restored) then
+      set_temp(e, restored)
+      store.set(desired_key(e), restored) -- our own write must not read as a dial nudge
+    else
+      store.delete(desired_key(e)) -- not controlled (no schedule/override/manual)
+    end
   end
   publish_companion(e, now, desired_temp)
 end
@@ -463,6 +479,7 @@ local function remove_climate(e)
   reg[e] = nil
   save_registry(reg)
   store.delete(desired_key(e))
+  store.delete(restore_key(e)) -- a re-add must not resurrect a pre-boost setpoint
   published[e] = nil -- a re-add must re-publish, not skip against the stale cache
   local _, err = card.remove(slug_of(e)) -- the companion disappears with it
   if err then
@@ -501,6 +518,12 @@ card.on("override", function(data)
     ha.log("info", "override cancelled for " .. e)
   else
     if type(data.minutes) ~= "number" or data.minutes <= 0 or data.minutes > 1440 then return end
+    -- Snapshot the dial once per boost, before it is overwritten: extending a
+    -- running boost must not snapshot the boost temperature as the way back.
+    if not active_override(e, now) then
+      local current = current_target(e)
+      if type(current) == "number" then store.set(restore_key(e), current) end
+    end
     store.set(override_key(e), {
       active = true,
       ends_at = now:add(data.minutes * 60):format(time.RFC3339),
