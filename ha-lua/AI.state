@@ -10,19 +10,17 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Heating overshoot correction** — spec written 2026-09-06, no code yet
-(detail: `state/overshoot.md`, spec: `overshoot-spec.md`). The children's room
-overshoots because its ESPHome bang-bang cannot anticipate the heat already in
-the radiator. Fix is a learned early cutoff: full relay power to a stopping
-point set at `requested - k*rise`, with `k` corrected from the measured peak
-after each episode. PID was recommended, then dropped on the user's objection —
-it costs warmup speed by construction and its constants drift seasonally; see
-`state/overshoot.md` for why all three earlier designs failed. Ships in
-observe-only mode by default (§9.4): it journals what it would have done
-without touching the heating. All five §11 commits are in. The
-learner runs per zone, journals every episode with a reason, and still writes
-the uncorrected setpoint until a zone is taken out of observe-only from the
-card. Next step is field data, not code: a week of the children's-room journal.
+**Enhanced-climate boost expiry** (6a06f3e, detail:
+`state/enhanced-climate.md`). A timed override on a climate with no schedule
+and no manual hold under it left the dial at the boost temperature forever:
+nothing controls the climate once the override expires, so the control loop
+wrote nothing, and the override handler had already deleted the manual hold it
+could have fallen back to. Now a boost snapshots the setpoint it found and
+writes it back on the first uncontrolled pass. Before this, the open item was
+**heating overshoot correction** (`state/overshoot.md`, `overshoot-spec.md`):
+all five §11 commits are in, it runs per zone in observe-only mode, and the
+next step there is field data — a week of the children's-room journal — not
+code.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

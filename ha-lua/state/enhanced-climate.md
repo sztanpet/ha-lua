@@ -8,6 +8,24 @@ decisions live in `../AI.state`.
 Status: **track COMPLETE, released v2.7.0; card iterated through v2.9.1.**
 Current card VERSION **0.3.31**.
 
+## Boost expiry left the dial at the boost temp (6a06f3e)
+- Field report: a 10-minute override to 30° never went back to the 22° the
+  zone was at. Cause: with no schedule and no manual hold, `desired()` returns
+  nil once the override expires, and `apply_climate`'s "not controlled" branch
+  writes nothing — plus the override handler *deletes* the manual hold on the
+  way in, throwing away the only source that could have taken over.
+- Fix: a `restore:<entity>` snapshot of the climate's target, taken once per
+  boost (guarded by `active_override`, so extending a boost does not snapshot
+  its own temperature) and consumed on the first pass with no controlling
+  source. Dropped unused when a schedule/manual takes over; one-shot, so a
+  later dial change is not fought. The restore updates `desired:<entity>` too,
+  or the manual-change detector reads our own write back as a dial nudge.
+- Deliberately no window check on the restore path: an uncontrolled climate is
+  not ours to pause, and we never wrote it frost in the first place.
+- Tests: `TestEnhancedClimateOverrideRestoresSetpoint` (cancel path — the
+  expiry path is the same code, and a test cannot wait 10 minutes) and
+  `TestEnhancedClimateOverrideKeepsSchedule`.
+
 ## v2.9.1 (card 0.3.31) — radiator temp decimals
 - 0.3.31 (4478b78, shipped v2.9.1): the radiator segment printed the raw
   sensor state (`rad. 47.5333333°`). Now formats with the sensor's
