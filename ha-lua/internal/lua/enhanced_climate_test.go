@@ -675,3 +675,24 @@ func TestEnhancedClimateOverrideKeepsSchedule(t *testing.T) {
 	f.fireCommand("override", `{"climate_entity":"climate.lr","cancel":true}`)
 	f.waitSetTemp(21, "schedule takes back over")
 }
+
+// TestEnhancedClimateOverrideExpires: an override must clear itself the moment
+// it ends. Leaving that to the 1-minute control tick left the card's countdown
+// frozen at 00:00 — and the boost apparently still running — for up to a minute.
+func TestEnhancedClimateOverrideExpires(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":22,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+
+	f.fireCommand("override", `{"climate_entity":"climate.lr","minutes":0.02}`) // 1.2s
+	f.waitSetTemp(23, "boost to the default override temp")
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":23,"min_temp":7,"max_temp":35}`)
+
+	// No tick, no command, no state change: the boost's own timer has to be
+	// what puts the companion back to inactive.
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		o, _ := attrs["override"].(map[string]any)
+		return o != nil && o["active"] == false
+	}, "the override clears itself when it ends")
+	f.waitSetTemp(22, "the pre-boost setpoint comes back on expiry")
+}

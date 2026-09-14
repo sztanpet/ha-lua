@@ -529,6 +529,14 @@ card.on("override", function(data)
       ends_at = now:add(data.minutes * 60):format(time.RFC3339),
     })
     store.delete(manual_key(e)) -- an override outranks and clears any manual hold
+    -- Wake up when it ends. The 1-minute tick would notice up to a minute
+    -- late, which the card shows as a countdown frozen at 00:00 and a boost
+    -- that refuses to finish; the tick stays as the backstop for an ha.after
+    -- lost to a restart.
+    ha.after(string.format("%gm", data.minutes), function()
+      local ends_now, ends_dow, ends_minute = now_parts()
+      apply_climate(e, ends_now, ends_dow, ends_minute)
+    end)
     ha.log("info", "override " .. data.minutes .. "m for " .. e)
   end
   apply_climate(e, now, dow, minute)
