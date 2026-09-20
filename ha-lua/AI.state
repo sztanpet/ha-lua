@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-06
+Last updated: 2026-09-20
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,20 +10,18 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Enhanced-climate boost expiry** (6a06f3e + 7ea6a0c, detail:
-`state/enhanced-climate.md`). A timed override on a climate with no schedule
-and no manual hold under it left the dial at the boost temperature forever:
-nothing controls the climate once the override expires, so the control loop
-wrote nothing, and the override handler had already deleted the manual hold it
-could have fallen back to. Now a boost snapshots the setpoint it found and
-writes it back on the first uncontrolled pass. Second bug behind the same
-report: nothing reacted to the expiry at all — `active_override()` only clears
-the record when something calls it, and the only caller was the 1-minute tick,
-so the card sat at a frozen 00:00. A boost now schedules its own `ha.after`. Before this, the open item was
-**heating overshoot correction** (`state/overshoot.md`, `overshoot-spec.md`):
-all five §11 commits are in, it runs per zone in observe-only mode, and the
-next step there is field data — a week of the children's-room journal — not
-code.
+**galeria_stairs.lua** (08724d1, detail: `state/bundled-examples.md`). The hall
+switch `switch.halo_ajtokapcsolo` toggles the gallery staircase relay
+`switch.galeria_lepcsokapcsolo` — a pulse, not a mirror. The only real content
+is the press filter: old and new state must both be a real `on`/`off` and
+differ, or a relay rejoining the Zigbee mesh flips the staircase light at 3am.
+The user also got the equivalent HA YAML, which handles this case perfectly.
+Before this, the open item was **enhanced-climate boost expiry**
+(6a06f3e + 7ea6a0c, `state/enhanced-climate.md`): a boost now snapshots the
+setpoint it overwrote and schedules its own `ha.after` so the expiry is acted
+on instead of waiting for a caller of `active_override()`. Still open behind
+that: **heating overshoot correction** (`state/overshoot.md`) is in and running
+observe-only per zone; the next step there is field data, not code.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

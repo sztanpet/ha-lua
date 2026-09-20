@@ -417,3 +417,25 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   a spy call_service — per-button single clicks, double and hold from either
   button hitting both lights, the half-lit room going dark rather than
   swapping, and an unknown action being ignored.
+
+## galeria_stairs.lua (2026-09-20, `08724d1`)
+- `switch.halo_ajtokapcsolo` toggles `switch.galeria_lepcsokapcsolo`: a pulse,
+  not a mirror. Real ids in `examples/`, like mirrored_switches.
+- Entity ids were ASKED, not derived. The other ZBMINIR2 relays are
+  `switch.zbminir2_*`, these two are not — guessing the prefix would have
+  shipped a script that silently never fires. The load-time warn for an
+  unknown id stays regardless.
+- The press filter is the whole script: both old and new state must be a real
+  `on`/`off` AND differ. A relay leaving and rejoining the Zigbee mesh
+  (`on -> unavailable -> on`) and an attribute-only `state_changed` both look
+  like transitions; either one toggling the staircase light is a 3am bug.
+- `ha.immediate_events()` here for the mirrored_switches reason — a human is
+  standing at the switch, so the 100 ms batch window is visible latency.
+- The user was also given the equivalent HA YAML automation: this one HA does
+  handle perfectly (entity trigger, one action), unlike nappali_switches. The
+  YAML needs the explicit from/to pairs and `mode: queued`, otherwise
+  `to: "on"` alone fires on the unavailable recovery and a fast double press
+  is dropped by `mode: single`.
+- Tests: `internal/lua/galeria_stairs_test.go` — both directions toggle, and
+  the unavailable round trip, the attribute-only update and the target's own
+  state are all silent.
