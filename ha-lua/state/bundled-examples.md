@@ -439,3 +439,31 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - Tests: `internal/lua/galeria_stairs_test.go` — both directions toggle, and
   the unavailable round trip, the attribute-only update and the target's own
   state are all silent.
+
+## group_switches.lua (2026-09-21, `c402bd7`)
+- N wall switches -> one lamp set, forced uniform: any flip drives every lamp
+  in `LIGHTS` to one state. Works whether `LIGHTS` is a single HA light group
+  or a list of individual lamps.
+- PLACEHOLDER ids, unlike galeria_stairs/mirrored_switches — the user asked
+  for the pattern, not their own entities. The test pins the placeholders on
+  purpose: nobody edits `examples/` in place, they edit the copy in
+  `scripts/`.
+- Direction is a group toggle (any lamp on -> all off), NOT a copy of the
+  flipped switch's state. Copying looks fine with one switch and breaks with
+  three: their states drift, so a press that already agrees with the lamps
+  does nothing, and a wall switch that sometimes does nothing reads as broken.
+  Same call as nappali_switches' "both" gesture.
+- ONE call with the whole list, per direction. A per-lamp `light.toggle` is
+  the trap: a half-lit room stays half-lit, it just swaps which lamp is on.
+  That is also what makes this worth a script rather than the YAML — the
+  automation form needs a `choose` with `match: any` to get there.
+- The reason it is NOT an automation: the direction reads the lamps' state,
+  which lags the command by the device round trip, so two presses inside that
+  window both see "all off" and both turn everything on. `last_command` wins
+  for `COMMAND_FRESH_SECS` (5 s) and the reported state only after that —
+  mirrored_switches' lesson, no echo attribution needed because nothing here
+  writes to the switches.
+- Tests: `internal/lua/group_switches_test.go` — every switch drives both
+  directions, a half-lit room is forced off (all three lamps commanded), the
+  fast double press turns off instead of on again, and the unavailable round
+  trip / attribute-only update / lamps' own reports are silent.

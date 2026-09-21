@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-20
+Last updated: 2026-09-21
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,18 +10,19 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**galeria_stairs.lua** (08724d1, detail: `state/bundled-examples.md`). The hall
-switch `switch.halo_ajtokapcsolo` toggles the gallery staircase relay
-`switch.galeria_lepcsokapcsolo` — a pulse, not a mirror. The only real content
-is the press filter: old and new state must both be a real `on`/`off` and
-differ, or a relay rejoining the Zigbee mesh flips the staircase light at 3am.
-The user also got the equivalent HA YAML, which handles this case perfectly.
-Before this, the open item was **enhanced-climate boost expiry**
-(6a06f3e + 7ea6a0c, `state/enhanced-climate.md`): a boost now snapshots the
-setpoint it overwrote and schedules its own `ha.after` so the expiry is acted
-on instead of waiting for a caller of `active_override()`. Still open behind
-that: **heating overshoot correction** (`state/overshoot.md`) is in and running
-observe-only per zone; the next step there is field data, not code.
+**group_switches.lua** (c402bd7, detail: `state/bundled-examples.md`). Several
+wall switches forcing one lamp set uniform: any flip drives every lamp to all-on
+or all-off, never half-lit. Two calls that matter — direction is a group toggle
+rather than a copy of the flipped switch's state (three switches' states drift,
+and a press that agrees with the lamps would do nothing), and the group state
+comes from our own last command for 5 s before the lamps' reported state,
+because a fast double press otherwise reads the stale mirror and turns
+everything on twice. That lag is also the honest answer to "can an HA automation
+do this": for a pulse-to-one-group toggle yes, for this no. Shipped with
+placeholder ids; `galeria_stairs.lua` (08724d1) right before it carries the real
+ones for the hall -> gallery pulse. Still open behind that: **heating overshoot
+correction** (`state/overshoot.md`) is in and running observe-only per zone; the
+next step there is field data, not code.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
