@@ -431,9 +431,13 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   in `LAMPS` to one state. Real entities: SWITCHES = halo_ajtokapcsolo,
   halo_ajtoszekrenykapcsolo, galeria_lepcsokapcsolo; LAMPS =
   light.bedroom_galeria_halo_led, switch.galeria_lepcsokapcsolo.
-- `galeria_lepcsokapcsolo` is in BOTH lists — its wall switch still drives the
-  relay, and the relay feeds one of the lamps. That dual role is the whole
-  design, and it is why the first two versions of this script were wrong:
+- TWO of the three switches are in BOTH lists (`galeria_lepcsokapcsolo`,
+  `halo_ajtoszekrenykapcsolo`, `c6e13c2`): their wall switches still drive
+  their relays, and each relay feeds a lamp. Only `halo_ajtokapcsolo` is a pure
+  input. When a switch turns out to feed a lamp, adding it to LAMPS is the
+  whole change — the dual role is keyed off list membership, nothing else.
+  That dual role is the design, and it is why the first two versions of this
+  script were wrong:
   - Without echo attribution the room STROBES. We command the relay, it
     reports back, the report looks like a press, and `last_command` is still
     fresh so the verdict flips — forever, until the deadline. Fixed with
@@ -462,7 +466,9 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   `injectStateChanged` sends NO `old_state`, which this script requires — it
   needs an `injectTransition(entity, from, to)` helper first.
 - Tests: `internal/lua/group_switches_test.go` — pure inputs toggle both ways,
-  the relay's own press is followed rather than fought, the echo is swallowed
+  each relay's own press is followed rather than fought, one relay's press
+  expects the OTHER relay's echo but queues nothing for itself, the echo is
+  swallowed
   once and the next report on the same entity is a press again, a half-lit room
   is forced off, the fast double press turns off instead of on again, and the
   unavailable round trip / attribute-only update are silent.

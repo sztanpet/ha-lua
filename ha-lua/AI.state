@@ -10,10 +10,10 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**group_switches.lua** (b33ec7f, detail: `state/bundled-examples.md`). Three
-wall switches forcing the gallery pair (a light plus a relay) uniform. The
-design driver: `switch.galeria_lepcsokapcsolo` is both a trigger and one of the
-lamps, so the script needs mirrored_switches' echo attribution or the room
+**group_switches.lua** (c6e13c2, detail: `state/bundled-examples.md`). Three
+wall switches forcing three lamps (a light plus two relays) uniform. The design
+driver: two of those switches are themselves lamps — their relays feed a light —
+which is expressed by listing them in LAMPS as well, so the script needs mirrored_switches' echo attribution or the room
 strobes — our command reports back, reads as a press, and flips the still-fresh
 verdict — and the direction must come from the pressed switch's new state when
 that switch IS a lamp, since toggling the group would fight the person. Commands
