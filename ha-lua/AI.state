@@ -10,19 +10,18 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**group_switches.lua** (c402bd7, detail: `state/bundled-examples.md`). Several
-wall switches forcing one lamp set uniform: any flip drives every lamp to all-on
-or all-off, never half-lit. Two calls that matter — direction is a group toggle
-rather than a copy of the flipped switch's state (three switches' states drift,
-and a press that agrees with the lamps would do nothing), and the group state
-comes from our own last command for 5 s before the lamps' reported state,
-because a fast double press otherwise reads the stale mirror and turns
-everything on twice. That lag is also the honest answer to "can an HA automation
-do this": for a pulse-to-one-group toggle yes, for this no. Shipped with
-placeholder ids; `galeria_stairs.lua` (08724d1) right before it carries the real
-ones for the hall -> gallery pulse. Still open behind that: **heating overshoot
-correction** (`state/overshoot.md`) is in and running observe-only per zone; the
-next step there is field data, not code.
+**group_switches.lua** (b33ec7f, detail: `state/bundled-examples.md`). Three
+wall switches forcing the gallery pair (a light plus a relay) uniform. The
+design driver: `switch.galeria_lepcsokapcsolo` is both a trigger and one of the
+lamps, so the script needs mirrored_switches' echo attribution or the room
+strobes — our command reports back, reads as a press, and flips the still-fresh
+verdict — and the direction must come from the pressed switch's new state when
+that switch IS a lamp, since toggling the group would fight the person. Commands
+go out as `homeassistant.turn_*` because the lamp list mixes domains. Replaced
+and deleted `galeria_stairs.lua` (e26266f), which fought it over the same relay.
+Still open behind that: **heating overshoot correction**
+(`state/overshoot.md`) is in and running observe-only per zone; the next step
+there is field data, not code.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

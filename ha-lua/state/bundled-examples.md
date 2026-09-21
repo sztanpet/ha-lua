@@ -418,52 +418,51 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   button hitting both lights, the half-lit room going dark rather than
   swapping, and an unknown action being ignored.
 
-## galeria_stairs.lua (2026-09-20, `08724d1`)
-- `switch.halo_ajtokapcsolo` toggles `switch.galeria_lepcsokapcsolo`: a pulse,
-  not a mirror. Real ids in `examples/`, like mirrored_switches.
-- Entity ids were ASKED, not derived. The other ZBMINIR2 relays are
-  `switch.zbminir2_*`, these two are not — guessing the prefix would have
-  shipped a script that silently never fires. The load-time warn for an
-  unknown id stays regardless.
-- The press filter is the whole script: both old and new state must be a real
-  `on`/`off` AND differ. A relay leaving and rejoining the Zigbee mesh
-  (`on -> unavailable -> on`) and an attribute-only `state_changed` both look
-  like transitions; either one toggling the staircase light is a 3am bug.
-- `ha.immediate_events()` here for the mirrored_switches reason — a human is
-  standing at the switch, so the 100 ms batch window is visible latency.
-- The user was also given the equivalent HA YAML automation: this one HA does
-  handle perfectly (entity trigger, one action), unlike nappali_switches. The
-  YAML needs the explicit from/to pairs and `mode: queued`, otherwise
-  `to: "on"` alone fires on the unavailable recovery and a fast double press
-  is dropped by `mode: single`.
-- Tests: `internal/lua/galeria_stairs_test.go` — both directions toggle, and
-  the unavailable round trip, the attribute-only update and the target's own
-  state are all silent.
+## galeria_stairs.lua (2026-09-20, `08724d1`) — REMOVED in `e26266f`
+- Hall switch -> gallery relay pulse. Superseded by group_switches.lua, which
+  drives that same relay as one of its lamps; both installed meant two scripts
+  writing it on every press.
+- Worth keeping from it: entity ids were ASKED, not derived. The other ZBMINIR2
+  relays are `switch.zbminir2_*`, these are not — guessing the prefix would
+  have shipped a script that silently never fires.
 
-## group_switches.lua (2026-09-21, `c402bd7`)
-- N wall switches -> one lamp set, forced uniform: any flip drives every lamp
-  in `LIGHTS` to one state. Works whether `LIGHTS` is a single HA light group
-  or a list of individual lamps.
-- PLACEHOLDER ids, unlike galeria_stairs/mirrored_switches — the user asked
-  for the pattern, not their own entities. The test pins the placeholders on
-  purpose: nobody edits `examples/` in place, they edit the copy in
-  `scripts/`.
-- Direction is a group toggle (any lamp on -> all off), NOT a copy of the
-  flipped switch's state. Copying looks fine with one switch and breaks with
-  three: their states drift, so a press that already agrees with the lamps
-  does nothing, and a wall switch that sometimes does nothing reads as broken.
-  Same call as nappali_switches' "both" gesture.
-- ONE call with the whole list, per direction. A per-lamp `light.toggle` is
-  the trap: a half-lit room stays half-lit, it just swaps which lamp is on.
-  That is also what makes this worth a script rather than the YAML — the
-  automation form needs a `choose` with `match: any` to get there.
-- The reason it is NOT an automation: the direction reads the lamps' state,
-  which lags the command by the device round trip, so two presses inside that
-  window both see "all off" and both turn everything on. `last_command` wins
-  for `COMMAND_FRESH_SECS` (5 s) and the reported state only after that —
-  mirrored_switches' lesson, no echo attribution needed because nothing here
-  writes to the switches.
-- Tests: `internal/lua/group_switches_test.go` — every switch drives both
-  directions, a half-lit room is forced off (all three lamps commanded), the
-  fast double press turns off instead of on again, and the unavailable round
-  trip / attribute-only update / lamps' own reports are silent.
+## group_switches.lua (2026-09-21, `c402bd7` + `4bcfed8` + `b33ec7f`)
+- N wall switches -> one lamp set, forced uniform: any press drives every lamp
+  in `LAMPS` to one state. Real entities: SWITCHES = halo_ajtokapcsolo,
+  halo_ajtoszekrenykapcsolo, galeria_lepcsokapcsolo; LAMPS =
+  light.bedroom_galeria_halo_led, switch.galeria_lepcsokapcsolo.
+- `galeria_lepcsokapcsolo` is in BOTH lists — its wall switch still drives the
+  relay, and the relay feeds one of the lamps. That dual role is the whole
+  design, and it is why the first two versions of this script were wrong:
+  - Without echo attribution the room STROBES. We command the relay, it
+    reports back, the report looks like a press, and `last_command` is still
+    fresh so the verdict flips — forever, until the deadline. Fixed with
+    mirrored_switches' FIFO of expected states, minus the entry for the pressed
+    lamp itself (already in the commanded state, so no report will come and a
+    phantom entry would swallow the next real press).
+  - Direction depends on WHICH switch: a switch that is also a lamp has already
+    changed its light, so its new state is the intent and the rest follow it. A
+    group toggle there would take the light the person just switched on back
+    off. Pure inputs (their own state means nothing) keep the group toggle:
+    any lamp on -> all off.
+- `homeassistant.turn_on/off`, not `light.*`: LAMPS mixes a light with a relay
+  in the switch domain, and a light.* call silently skips the relay — the exact
+  half-lit room this script exists to prevent. One call, any mix of domains.
+- Also not an automation because the group decision reads the lamps' state,
+  which lags the command: two presses inside the round trip both see "all off"
+  and both turn everything on. `last_command` wins for COMMAND_FRESH_SECS (5s),
+  reported state only after that.
+- `ha.immediate_events()` + `wait = false`, and nothing in the handler touches
+  the DB — the user asked twice for low latency and specifically for immediate
+  mode; it was already there from the first version.
+- A benchmark for the real script in `internal/e2e` was started and REVERTED at
+  the user's request ("no need to measure"). If it is ever wanted:
+  `startPipeline` asserts the script sets `global.set("loaded", "bench")`, so a
+  shipped example cannot be dropped into it unchanged, and the fake HA's
+  `injectStateChanged` sends NO `old_state`, which this script requires — it
+  needs an `injectTransition(entity, from, to)` helper first.
+- Tests: `internal/lua/group_switches_test.go` — pure inputs toggle both ways,
+  the relay's own press is followed rather than fought, the echo is swallowed
+  once and the next report on the same entity is a press again, a half-lit room
+  is forced off, the fast double press turns off instead of on again, and the
+  unavailable round trip / attribute-only update are silent.
