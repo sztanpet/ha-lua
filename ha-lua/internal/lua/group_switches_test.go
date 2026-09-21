@@ -18,8 +18,9 @@ import (
 
 // The entity ids hardcoded in the shipped example. Two things here are the
 // whole point of the script and must stay pinned: the lamps mix domains (a
-// light and a relay, so a light.* call would silently skip the relay), and the
-// last switch IS one of the lamps (so it both triggers and echoes).
+// light and two relays, so a light.* call would silently skip the relays), and
+// two of the three switches ARE lamps — they both trigger and echo. Only
+// halo_ajtokapcsolo is a pure input.
 var (
 	groupSwitches = []string{
 		"switch.halo_ajtokapcsolo",
@@ -29,9 +30,11 @@ var (
 	groupLamps = []string{
 		"light.bedroom_galeria_halo_led",
 		"switch.galeria_lepcsokapcsolo",
+		"switch.halo_ajtoszekrenykapcsolo",
 	}
-	// The relay that is both a trigger and a lamp.
-	groupRelay = "switch.galeria_lepcsokapcsolo"
+	// The relays that are both a trigger and a lamp.
+	groupRelay    = "switch.galeria_lepcsokapcsolo"
+	groupWardrobe = "switch.halo_ajtoszekrenykapcsolo"
 )
 
 // groupHarness runs the real examples/group_switches.lua against a spy call
@@ -165,7 +168,7 @@ func TestGroupSwitchesPureInputTogglesGroup(t *testing.T) {
 			continue
 		}
 		t.Run(entityID, func(t *testing.T) {
-			h := newGroupHarness(t, "off", "off")
+			h := newGroupHarness(t, "off", "off", "off")
 
 			h.report(entityID, "off", "on")
 			h.expectCmd("turn_on")
@@ -180,30 +183,36 @@ func TestGroupSwitchesPureInputTogglesGroup(t *testing.T) {
 	}
 }
 
-// TestGroupSwitchesRelayPressFollowsIt: the relay's own wall switch has already
+// TestGroupSwitchesRelayPressFollowsIt: a relay's own wall switch has already
 // changed the lamp it feeds, so its new state is the intent and the rest are
 // forced to match. Toggling the group here would take the light the person just
-// switched on straight back off.
+// switched on straight back off. Both dual-role relays must behave that way —
+// nothing about it is special to the first one.
 func TestGroupSwitchesRelayPressFollowsIt(t *testing.T) {
-	h := newGroupHarness(t, "off", "off")
+	for _, entityID := range []string{groupRelay, groupWardrobe} {
+		t.Run(entityID, func(t *testing.T) {
+			h := newGroupHarness(t, "off", "off", "off")
 
-	h.report(groupRelay, "off", "on")
-	h.expectCmd("turn_on")
+			h.report(entityID, "off", "on")
+			h.expectCmd("turn_on")
 
-	h.report(groupRelay, "on", "off")
-	h.expectCmd("turn_off")
+			h.report(entityID, "on", "off")
+			h.expectCmd("turn_off")
+		})
+	}
 }
 
-// TestGroupSwitchesSwallowsOwnEcho is the strobe regression: the relay is both
-// commanded and watched, so our command comes back as a state report. Acted on
-// as a press it would restart the decision, and with our command still fresh
-// the verdict flips — the room oscillates until the echo deadline.
+// TestGroupSwitchesSwallowsOwnEcho is the strobe regression: both relays are
+// commanded and watched, so our command comes back as a state report on each.
+// Acted on as a press it would restart the decision, and with our command still
+// fresh the verdict flips — the room oscillates until the echo deadline.
 func TestGroupSwitchesSwallowsOwnEcho(t *testing.T) {
-	h := newGroupHarness(t, "off", "off")
+	h := newGroupHarness(t, "off", "off", "off")
 
 	h.report(groupSwitches[0], "off", "on")
 	h.expectCmd("turn_on")
-	h.report(groupRelay, "off", "on") // our own command reporting back
+	h.report(groupRelay, "off", "on")    // our own command reporting back
+	h.report(groupWardrobe, "off", "on") // and the other relay's echo
 	h.expectSilence()
 
 	// The echo is consumed once: the next report on the same entity is a real
@@ -212,11 +221,28 @@ func TestGroupSwitchesSwallowsOwnEcho(t *testing.T) {
 	h.expectCmd("turn_off")
 }
 
+// TestGroupSwitchesRelayPressExpectsTheOtherEcho: pressing one dual-role relay
+// commands the other, so the other's report is an echo — but the pressed one is
+// already in the commanded state and will report nothing. Queuing an expectation
+// for it anyway would swallow the person's next press on it.
+func TestGroupSwitchesRelayPressExpectsTheOtherEcho(t *testing.T) {
+	h := newGroupHarness(t, "off", "off", "off")
+
+	h.report(groupWardrobe, "off", "on")
+	h.expectCmd("turn_on")
+	h.report(groupRelay, "off", "on") // the other relay echoing our command
+	h.expectSilence()
+
+	// The wardrobe relay never echoed (it was already on), so this is a press.
+	h.report(groupWardrobe, "on", "off")
+	h.expectCmd("turn_off")
+}
+
 // TestGroupSwitchesForcesHalfLitRoom: one lamp on is "the group is on", so the
 // press takes everything off — and it commands ALL lamps, where a per-lamp
 // toggle would leave the room half-lit with the other lamp on instead.
 func TestGroupSwitchesForcesHalfLitRoom(t *testing.T) {
-	h := newGroupHarness(t, "off", "on")
+	h := newGroupHarness(t, "off", "on", "off")
 
 	h.report(groupSwitches[0], "off", "on")
 	h.expectCmd("turn_off")
@@ -228,7 +254,7 @@ func TestGroupSwitchesForcesHalfLitRoom(t *testing.T) {
 // again, losing the press. The decision must come from our own last command
 // while it is fresh.
 func TestGroupSwitchesFastDoublePress(t *testing.T) {
-	h := newGroupHarness(t, "off", "off")
+	h := newGroupHarness(t, "off", "off", "off")
 
 	h.report(groupSwitches[0], "off", "on")
 	h.expectCmd("turn_on")
@@ -241,9 +267,9 @@ func TestGroupSwitchesFastDoublePress(t *testing.T) {
 // mesh is not somebody flipping the switch, and neither is an attribute-only
 // update. Either one flipping the room is the 3am bug.
 func TestGroupSwitchesIgnoresNonPresses(t *testing.T) {
-	h := newGroupHarness(t, "off", "off")
+	h := newGroupHarness(t, "off", "off", "off")
 
-	for _, entityID := range []string{groupSwitches[0], groupRelay} {
+	for _, entityID := range []string{groupSwitches[0], groupRelay, groupWardrobe} {
 		h.report(entityID, "on", "unavailable")
 		h.report(entityID, "unavailable", "on")
 		h.report(entityID, "on", "on")

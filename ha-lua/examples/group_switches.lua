@@ -61,6 +61,7 @@ local SWITCHES = {
 local LAMPS = {
   "light.bedroom_galeria_halo_led",
   "switch.galeria_lepcsokapcsolo",
+  "switch.halo_ajtoszekrenykapcsolo",
 }
 
 -- How long our own command outranks the lamps' reported state. Long enough to
@@ -165,9 +166,11 @@ for _, entity_id in ipairs(SWITCHES) do
   end)
 end
 
+local warned = {}
 for _, list in ipairs({ SWITCHES, LAMPS }) do
   for _, entity_id in ipairs(list) do
-    if not ha.get_state(entity_id) then
+    if not warned[entity_id] and not ha.get_state(entity_id) then
+      warned[entity_id] = true
       ha.log("warn", "group_switches: " .. entity_id ..
         " is unknown to the daemon — is that the right entity id?")
     end
