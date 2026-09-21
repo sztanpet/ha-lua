@@ -1,14 +1,15 @@
 -- group_switches.lua
 --
--- Several wall switches driving one set of lamps: any flip of any switch
--- forces every lamp to the same state — all on, or all off, never half-lit.
--- The lamps may be one Home Assistant light group or a list of individual
--- lights; with a list the forced write is what keeps them together.
+-- Wall switches driving one set of lamps: any flip of any switch in SWITCHES
+-- forces every lamp in LAMPS to the same state — all on, or all off, never
+-- half-lit. LAMPS may hold as many entities as you like, in any mix of
+-- domains: a light, a relay in the switch domain, or a single Home Assistant
+-- light group all behave the same here.
 --
 -- Direction is a group toggle, not a copy of the switch's state: if any lamp
 -- is on, everything goes off, otherwise everything comes on. Copying the
 -- flipped switch's own state instead looks right with one switch and breaks
--- with three — their states drift apart, so pressing a switch that already
+-- with several — their states drift apart, so pressing a switch that already
 -- reads "on" while the lamps are on would do nothing at all, and a wall
 -- switch that sometimes does nothing is indistinguishable from a broken one.
 --
@@ -30,24 +31,19 @@
 -- nothing here writes to the switches: the lamps we command are never
 -- watched, so our own commands cannot come back as presses.
 --
--- Edit SWITCHES and LIGHTS to your entity ids (Developer Tools -> States).
--- Every LIGHTS entry must be in the light domain; a lamp behind a plain
--- switch entity needs switch_as_x.
+-- Edit SWITCHES and LAMPS to your entity ids (Developer Tools -> States).
 
 -- A human is standing at the switch, so the default 100 ms batch window is
 -- visible latency. See "ha.immediate_events" in lua_api.md.
 ha.immediate_events()
 
 local SWITCHES = {
-  "switch.hall_switch_a",
-  "switch.hall_switch_b",
-  "switch.hall_switch_c",
+  "switch.halo_ajtokapcsolo",
 }
 
-local LIGHTS = {
-  "light.hall_lamp_1",
-  "light.hall_lamp_2",
-  "light.hall_lamp_3",
+local LAMPS = {
+  "light.bedroom_galeria_halo_led",
+  "switch.galeria_lepcsokapcsolo",
 }
 
 -- How long our own command outranks the lamps' reported state. Long enough to
@@ -61,8 +57,8 @@ local function group_is_on()
   if last_command and os.time() - last_command.at < COMMAND_FRESH_SECS then
     return last_command.state == "on"
   end
-  for _, light in ipairs(LIGHTS) do
-    local state = ha.get_state(light)
+  for _, lamp in ipairs(LAMPS) do
+    local state = ha.get_state(lamp)
     if state and state.state == "on" then
       return true
     end
@@ -87,15 +83,17 @@ for _, entity_id in ipairs(SWITCHES) do
     local desired = group_is_on() and "off" or "on"
     last_command = { state = desired, at = os.time() }
     ha.log("debug", "group_switches: " .. change.entity_id .. " -> all lamps " .. desired)
-    -- One call with every lamp: turning them all to the desired state is what
-    -- makes a half-lit room uniform again, where a per-lamp toggle would only
+    -- homeassistant.turn_on/off, not light.* or switch.*: it forwards each
+    -- entity to its own domain, so one call covers a LAMPS list that mixes a
+    -- light with a relay. Commanding every lamp (rather than toggling each) is
+    -- what makes a half-lit room uniform again — a per-lamp toggle would only
     -- swap which lamp is on. wait = false so a second press is served without
     -- waiting out the round trip; failures reach ha.on_exception.
-    ha.call_service("light", "turn_" .. desired, { entity_id = LIGHTS }, { wait = false })
+    ha.call_service("homeassistant", "turn_" .. desired, { entity_id = LAMPS }, { wait = false })
   end)
 end
 
-for _, list in ipairs({ SWITCHES, LIGHTS }) do
+for _, list in ipairs({ SWITCHES, LAMPS }) do
   for _, entity_id in ipairs(list) do
     if not ha.get_state(entity_id) then
       ha.log("warn", "group_switches: " .. entity_id ..

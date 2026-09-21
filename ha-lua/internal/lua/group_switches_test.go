@@ -16,20 +16,17 @@ import (
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
-// The entity ids the shipped example ships with. Unlike mirrored_switches this
-// example carries placeholders, not the author's own entities — the user edits
-// the copy in scripts/, never examples/ — so pinning them here is pinning the
-// shipped file, which is the point.
+// The entity ids hardcoded in the shipped example. The lamps deliberately mix
+// domains — a light and a relay in the switch domain — which is what pins the
+// homeassistant.turn_on/off dispatch: a light.* call would silently skip the
+// relay.
 var (
 	groupSwitches = []string{
-		"switch.hall_switch_a",
-		"switch.hall_switch_b",
-		"switch.hall_switch_c",
+		"switch.halo_ajtokapcsolo",
 	}
-	groupLights = []string{
-		"light.hall_lamp_1",
-		"light.hall_lamp_2",
-		"light.hall_lamp_3",
+	groupLamps = []string{
+		"light.bedroom_galeria_halo_led",
+		"switch.galeria_lepcsokapcsolo",
 	}
 )
 
@@ -40,11 +37,14 @@ type groupHarness struct {
 	ctx     context.Context
 	tracker *state.Tracker
 	reg     *Registry
-	cmds    chan string // "turn_on light.a,light.b,light.c"
+	cmds    chan string // "homeassistant.turn_on light.a,switch.b"
 }
 
 // newGroupHarness seeds every lamp to lampStates[i] and every switch to "off".
 func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
+	if len(lampStates) != len(groupLamps) {
+		t.Fatalf("seed %d lamp states, the example has %d lamps", len(lampStates), len(groupLamps))
+	}
 	dir := t.TempDir()
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "group_switches.lua"),
 		filepath.Join(dir, "group_switches.lua"))
@@ -67,7 +67,7 @@ func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
 	for _, entityID := range groupSwitches {
 		seed = append(seed, seedEntity(entityID, "off", `{}`))
 	}
-	for i, entityID := range groupLights {
+	for i, entityID := range groupLamps {
 		seed = append(seed, seedEntity(entityID, lampStates[i], `{}`))
 	}
 	if err := tracker.Seed(ctx, seed); err != nil {
@@ -76,14 +76,14 @@ func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
 
 	r := NewRunner("group_switches", dir, openTestRoot(t, dir), nil,
 		tracker, sched, store.New(writeDB, readDB, "group_switches"), global)
-	r.SetCallServiceAsync(func(_ context.Context, _, service string, data jsontext.Value) (<-chan error, error) {
+	r.SetCallServiceAsync(func(_ context.Context, domain, service string, data jsontext.Value) (<-chan error, error) {
 		var payload struct {
 			EntityID any `json:"entity_id"`
 		}
 		if err := json.Unmarshal(data, &payload); err != nil {
 			t.Errorf("bad service data %s: %v", data, err)
 		}
-		h.cmds <- service + " " + strings.Join(entityIDs(payload.EntityID), ",")
+		h.cmds <- domain + "." + service + " " + strings.Join(entityIDs(payload.EntityID), ",")
 		verdict := make(chan error, 1)
 		verdict <- nil
 		return verdict, nil
@@ -120,7 +120,7 @@ func (h *groupHarness) report(entityID, oldState, newState string) {
 
 func (h *groupHarness) expectCmd(service string) {
 	h.t.Helper()
-	want := service + " " + strings.Join(groupLights, ",")
+	want := "homeassistant." + service + " " + strings.Join(groupLamps, ",")
 	select {
 	case got := <-h.cmds:
 		if got != want {
@@ -143,17 +143,17 @@ func (h *groupHarness) expectSilence() {
 // TestGroupSwitchesEverySwitchDrivesTheGroup: all three switches are equal, and
 // a press always commands every lamp — both directions, from any of them.
 func TestGroupSwitchesEverySwitchDrivesTheGroup(t *testing.T) {
-	h := newGroupHarness(t, "off", "off", "off")
+	h := newGroupHarness(t, "off", "off")
 
 	for i, entityID := range groupSwitches {
 		h.report(entityID, "off", "on")
 		h.expectCmd("turn_on")
-		for _, lamp := range groupLights { // the lamps confirm, as devices do
+		for _, lamp := range groupLamps { // the lamps confirm, as devices do
 			h.report(lamp, "off", "on")
 		}
 		h.report(entityID, "on", "off")
 		h.expectCmd("turn_off")
-		for _, lamp := range groupLights {
+		for _, lamp := range groupLamps {
 			h.report(lamp, "on", "off")
 		}
 		if i == len(groupSwitches)-1 {
@@ -166,9 +166,9 @@ func TestGroupSwitchesEverySwitchDrivesTheGroup(t *testing.T) {
 // press takes everything off — and it commands ALL lamps, where a per-lamp
 // toggle would leave the room half-lit with the other lamp on instead.
 func TestGroupSwitchesForcesHalfLitRoom(t *testing.T) {
-	h := newGroupHarness(t, "off", "on", "off")
+	h := newGroupHarness(t, "off", "on")
 
-	h.report(groupSwitches[1], "off", "on")
+	h.report(groupSwitches[0], "off", "on")
 	h.expectCmd("turn_off")
 }
 
@@ -178,12 +178,12 @@ func TestGroupSwitchesForcesHalfLitRoom(t *testing.T) {
 // again, losing the press. The decision must come from our own last command
 // while it is fresh.
 func TestGroupSwitchesFastDoublePress(t *testing.T) {
-	h := newGroupHarness(t, "off", "off", "off")
+	h := newGroupHarness(t, "off", "off")
 
 	h.report(groupSwitches[0], "off", "on")
 	h.expectCmd("turn_on")
 	// No lamp has reported anything yet — the mirror still says "off".
-	h.report(groupSwitches[2], "off", "on")
+	h.report(groupSwitches[0], "on", "off")
 	h.expectCmd("turn_off")
 }
 
@@ -191,10 +191,10 @@ func TestGroupSwitchesFastDoublePress(t *testing.T) {
 // mesh is not somebody flipping the switch, and neither is an attribute-only
 // update. Either one flipping the room is the 3am bug.
 func TestGroupSwitchesIgnoresNonPresses(t *testing.T) {
-	h := newGroupHarness(t, "off", "off", "off")
+	h := newGroupHarness(t, "off", "off")
 
 	h.report(groupSwitches[0], "on", "unavailable")
 	h.report(groupSwitches[0], "unavailable", "on")
-	h.report(groupSwitches[1], "on", "on")
+	h.report(groupSwitches[0], "on", "on")
 	h.expectSilence()
 }
