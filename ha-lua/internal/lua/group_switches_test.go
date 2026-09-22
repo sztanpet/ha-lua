@@ -265,6 +265,30 @@ func TestGroupSwitchesRelayPressExpectsTheOtherEcho(t *testing.T) {
 	h.expectCmd("turn_off")
 }
 
+// TestGroupSwitchesOutsideLampChangeBeatsTheFreshCommand: for a few seconds
+// after a command the script trusts it over the lamps' reported state, which is
+// what stops a fast double press from reading the stale mirror. A lamp moved
+// outside the script inside that window makes the shortcut a lie — the room is
+// lit again and the next press must still take it off, not on.
+func TestGroupSwitchesOutsideLampChangeBeatsTheFreshCommand(t *testing.T) {
+	h := newGroupHarness(t, "on", "on", "on")
+
+	h.report(groupSwitches[0], "off", "on") // a lit room goes off
+	h.expectCmd("turn_off")
+	for _, lamp := range groupLamps { // the devices confirm
+		h.report(lamp, "on", "off")
+	}
+	h.expectSilence()
+
+	// Somebody turns the LED back on in the app. It is not a switch, so this is
+	// not a press — it just means our "off" no longer describes the room.
+	h.report(groupLamps[0], "off", "on")
+	h.expectSilence()
+
+	h.report(groupSwitches[0], "on", "off")
+	h.expectCmd("turn_off")
+}
+
 // TestGroupSwitchesForcesHalfLitRoom: one lamp on is "the group is on", so the
 // press takes everything off — and it commands ALL lamps, where a per-lamp
 // toggle would leave the room half-lit with the other lamp on instead.

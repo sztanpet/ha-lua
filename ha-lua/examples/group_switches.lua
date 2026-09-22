@@ -79,6 +79,11 @@ for _, entity_id in ipairs(LAMPS) do
   is_lamp[entity_id] = true
 end
 
+local is_switch = {}
+for _, entity_id in ipairs(SWITCHES) do
+  is_switch[entity_id] = true
+end
+
 -- FIFO of states we commanded and expect back, per entity that is both
 -- watched and commanded. Nothing else can echo at us.
 local expected_echoes = {}
@@ -171,6 +176,23 @@ for _, entity_id in ipairs(SWITCHES) do
     -- waiting out the round trip; failures reach ha.on_exception.
     ha.call_service("homeassistant", "turn_" .. desired, { entity_id = LAMPS }, { wait = false })
   end)
+end
+
+-- Lamps we command but never trigger on. A report that contradicts our last
+-- command came from somewhere else — the app, a schedule, a command that never
+-- landed — so the shortcut that lets a fresh command stand in for the room has
+-- stopped being true. Drop it and let the next press read the lamps. (The lamps
+-- that are also switches need nothing here: a contradicting report on one of
+-- those is a press, and takes the press path above.)
+for _, lamp in ipairs(LAMPS) do
+  if not is_switch[lamp] then
+    ha.on_state_change(lamp, function(change)
+      local value = change.new_state.state
+      if last_command and (value == "on" or value == "off") and value ~= last_command.state then
+        last_command = nil
+      end
+    end)
+  end
 end
 
 local warned = {}
