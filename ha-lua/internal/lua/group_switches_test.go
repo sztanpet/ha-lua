@@ -37,6 +37,10 @@ var (
 	// The relays that are both a trigger and a lamp.
 	groupRelay    = "switch.galeria_lepcsokapcsolo"
 	groupWardrobe = "switch.halo_ajtoszekrenykapcsolo"
+	// Everything a press drives: the lamps, then the switches that are only
+	// inputs. A pure input is commanded so its own relay tracks the room, but
+	// it never votes on whether the room is lit.
+	groupCommanded = append(append([]string{}, groupLamps...), "switch.halo_ajtokapcsolo")
 )
 
 // groupHarness runs the real examples/group_switches.lua against a spy call
@@ -171,7 +175,7 @@ func (h *groupHarness) report(entityID, oldState, newState string) {
 
 func (h *groupHarness) expectCmd(service string) {
 	h.t.Helper()
-	want := "homeassistant." + service + " " + strings.Join(groupLamps, ",")
+	want := "homeassistant." + service + " " + strings.Join(groupCommanded, ",")
 	select {
 	case got := <-h.cmds:
 		if got != want {
@@ -330,6 +334,7 @@ func TestGroupSwitchesNotFollowingStillVoidsTheFreshCommand(t *testing.T) {
 	for _, lamp := range groupLamps { // the devices confirm
 		h.report(lamp, "on", "off")
 	}
+	h.report(groupSwitches[0], "on", "off") // the hall switch was driven too
 	h.expectSilence()
 
 	// Somebody turns the LED back on in the app. Not followed, by configuration
@@ -337,8 +342,33 @@ func TestGroupSwitchesNotFollowingStillVoidsTheFreshCommand(t *testing.T) {
 	h.report(groupLamps[0], "off", "on")
 	h.expectSilence()
 
-	h.report(groupSwitches[0], "on", "off")
+	h.report(groupSwitches[0], "off", "on") // the next press, in a lit room
 	h.expectCmd("turn_off")
+}
+
+// TestGroupSwitchesSyncsAPureInput is the reported case: switch the room on at
+// one switch and off at another, and the first switch was left reading "on" —
+// its relay, and the indicator on the wall, disagreeing with a dark room —
+// because nothing ever commanded it. It is driven with the lamps now, and its
+// report is our echo rather than a new press.
+func TestGroupSwitchesSyncsAPureInput(t *testing.T) {
+	const pureInput = "switch.halo_ajtokapcsolo"
+	h := newGroupHarness(t, "off", "off", "off")
+
+	h.report(pureInput, "off", "on") // on at the hall switch
+	h.expectCmd("turn_on")
+	for _, lamp := range groupLamps[1:] { // the relays confirm
+		h.report(lamp, "off", "on")
+	}
+	h.expectSilence()
+
+	h.report(groupWardrobe, "on", "off") // off at the wardrobe switch
+	h.expectCmd("turn_off")
+
+	// The hall switch was commanded off with the rest, so this is its echo and
+	// not a press — acted on as a press it would turn the room straight back on.
+	h.report(pureInput, "on", "off")
+	h.expectSilence()
 }
 
 // TestGroupSwitchesForcesHalfLitRoom: one lamp on is "the group is on", so the

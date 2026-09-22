@@ -23,6 +23,13 @@
 -- while the rest of the room is lit and the room goes dark, its own lamp
 -- included. A wall switch pressed in a lit room means "turn the room off".
 --
+-- Every switch is commanded along with the lamps, including one that is only an
+-- input. Its own state still says nothing about whether the room is lit — that
+-- is what LAMPS is for, and a pure input never votes — but leaving it wherever
+-- the last flip left it means the relay, and the indicator on the wall,
+-- disagrees with the room: switch the room on at one switch and off at another,
+-- and the first one still reads "on".
+--
 -- A lamp may also change with no switch involved — the app, a schedule, a
 -- voice assistant. FOLLOW_OUTSIDE_LAMP_CHANGE decides what that means: drag the
 -- rest of the group along with it, or just note it so the next press still
@@ -94,11 +101,26 @@ for _, entity_id in ipairs(SWITCHES) do
   is_switch[entity_id] = true
 end
 
--- FIFO of states we commanded and expect back, per lamp. Every lamp is
--- commanded, and every lamp is watched by one handler or the other, so every
--- lamp can echo at us.
-local expected_echoes = {}
+local is_lamp = {}
 for _, entity_id in ipairs(LAMPS) do
+  is_lamp[entity_id] = true
+end
+
+-- Everything a press drives: the lamps, then the switches that are only inputs.
+local COMMANDED = {}
+for _, entity_id in ipairs(LAMPS) do
+  table.insert(COMMANDED, entity_id)
+end
+for _, entity_id in ipairs(SWITCHES) do
+  if not is_lamp[entity_id] then
+    table.insert(COMMANDED, entity_id)
+  end
+end
+
+-- FIFO of states we commanded and expect back. Everything we command is also
+-- watched by one handler or the other, so everything can echo at us.
+local expected_echoes = {}
+for _, entity_id in ipairs(COMMANDED) do
   expected_echoes[entity_id] = {}
 end
 
@@ -111,10 +133,11 @@ local function prune_expired(queue)
   end
 end
 
--- The group's state as it stood just before `change`. The pressed entity
--- counts as its old state when it is itself a lamp; every other lamp counts as
--- what it currently reports, so a lamp moved outside this script is picked up
--- by the next press.
+-- The group's state as it stood just before `change` — a question about LAMPS
+-- only, never about the switches driving them. The pressed entity counts as its
+-- old state when it is itself a lamp; every other lamp counts as what it
+-- currently reports, so a lamp moved outside this script is picked up by the
+-- next press.
 local function group_was_on(change)
   if last_command and os.time() - last_command.at < COMMAND_FRESH_SECS then
     return last_command.state == "on"
@@ -160,27 +183,27 @@ local function is_our_echo(entity_id, new_state)
   return false
 end
 
--- Drive every lamp to `desired`. `source` is the entity whose report caused
+-- Drive everything to `desired`. `source` is the entity whose report caused
 -- this, and `source_state` the state it just reported.
 local function force_group(desired, source, source_state)
   last_command = { state = desired, at = os.time() }
-  for lamp, pending in pairs(expected_echoes) do
+  for entity_id, pending in pairs(expected_echoes) do
     -- A source already in the state we are commanding will report nothing, and
-    -- a phantom expectation would swallow the next real change on it. Every
-    -- other lamp is mid-flip by construction.
-    if not (lamp == source and source_state == desired) then
+    -- a phantom expectation would swallow the next real change on it. Everything
+    -- else is mid-flip by construction.
+    if not (entity_id == source and source_state == desired) then
       table.insert(pending, { state = desired, deadline = os.time() + ECHO_DEADLINE_SECS })
     end
   end
 
-  ha.log("debug", "group_switches: " .. source .. " -> all lamps " .. desired)
+  ha.log("debug", "group_switches: " .. source .. " -> everything " .. desired)
   -- homeassistant.turn_on/off, not light.* or switch.*: it forwards each
-  -- entity to its own domain, so one call covers a LAMPS list that mixes a
-  -- light with a relay. Commanding every lamp (rather than toggling each) is
+  -- entity to its own domain, so one call covers a list that mixes a light
+  -- with relays. Commanding every lamp (rather than toggling each) is
   -- what makes a half-lit room uniform again — a per-lamp toggle would only
   -- swap which lamp is on. wait = false so a second press is served without
   -- waiting out the round trip; failures reach ha.on_exception.
-  ha.call_service("homeassistant", "turn_" .. desired, { entity_id = LAMPS }, { wait = false })
+  ha.call_service("homeassistant", "turn_" .. desired, { entity_id = COMMANDED }, { wait = false })
 end
 
 for _, entity_id in ipairs(SWITCHES) do
