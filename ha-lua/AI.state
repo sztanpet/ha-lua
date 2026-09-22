@@ -10,7 +10,7 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**group_switches.lua** (5cdc0e5, detail: `state/bundled-examples.md`). Three
+**group_switches.lua** (9c7a20b, detail: `state/bundled-examples.md`). Three
 wall switches forcing three lamps (a light plus two relays, two of the switches
 being those relays) uniform. The last two commits are a field report worth not
 re-learning: a press must invert the room's AGGREGATE state, never the pressed
@@ -19,7 +19,9 @@ disagreeing with the room — press it in a lit room and the room got brighter. 
 pressed switch that is itself a lamp counts as its OLD state in that aggregate.
 The 5 s "trust our own last command" shortcut (which exists so a fast double
 press does not read the lagging mirror) gets voided as soon as an unwatched lamp
-reports something we never commanded. Still open behind that: **heating
+reports something we never commanded. A lamp moved with no switch involved now
+drags the group with it by default, behind `FOLLOW_OUTSIDE_LAMP_CHANGE` — the
+user asked for the knob rather than a verdict, seeing both sides. Still open behind that: **heating
 overshoot correction** (`state/overshoot.md`) is in and running observe-only per
 zone; the next step there is field data, not code.
 

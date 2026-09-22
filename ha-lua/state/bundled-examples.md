@@ -458,6 +458,15 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - `homeassistant.turn_on/off`, not `light.*`: LAMPS mixes a light with a relay
   in the switch domain, and a light.* call silently skips the relay — the exact
   half-lit room this script exists to prevent. One call, any mix of domains.
+- `FOLLOW_OUTSIDE_LAMP_CHANGE` (`9c7a20b`), default TRUE: a lamp that moves with
+  no switch involved (app, schedule, voice) drags the group with it. Before it,
+  a dual-role relay dragged the group (its report is a press) while the LED did
+  not — an accident of which entities had a handler, and the user spotted it.
+  False = previous behaviour, for a setup where something is supposed to drive
+  one lamp alone; it still voids the remembered command. Only NON-switch lamps
+  can be followed: on a relay in SWITCHES a report may equally be its own wall
+  switch, and a switch is a toggle, not a level. Every lamp is echo-tracked now,
+  not just the dual-role ones, because every lamp's handler can act.
 - Also not an automation because the group decision reads the lamps' state,
   which lags the command: two presses inside the round trip both see "all off"
   and both turn everything on. `last_command` wins for COMMAND_FRESH_SECS (5s),
@@ -483,5 +492,8 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   is forced off, the fast double press turns off instead of on again, a drifted
   relay's press still takes the room off (the field report, and it fails against
   the pre-b3b1deb script), an outside LED change beats the fresh command (fails
-  against the pre-5cdc0e5 script), and the unavailable round trip /
-  attribute-only update are silent.
+  against the pre-5cdc0e5 script), an outside LED change drives the group with
+  the option on and only voids the command with it off (the harness rewrites the
+  flag in the copied script and asserts the line exists, so renaming the option
+  fails loudly instead of testing the default twice), and the unavailable round
+  trip / attribute-only update are silent.
