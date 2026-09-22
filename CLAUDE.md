@@ -55,57 +55,12 @@ deletes the orphaned row rather than silently dropping it.
 - Rebase to fix up mistakes; never push a "fix previous commit" to main.
 - Use `git rebase -i` to squash or reorder before a milestone is declared done.
 
-## Go package documentation (pkg.go.dev API)
-
-Use the pkg.go.dev REST API to look up package docs, available versions, symbols, and vulnerabilities without leaving the terminal. The API is at `https://pkg.go.dev/v1beta/`.
-
-```bash
-# Package metadata (synopsis, version, redistributable, …)
-curl -s "https://pkg.go.dev/v1beta/package/github.com/yuin/gopher-lua" | jq .
-
-# Specific version
-curl -s "https://pkg.go.dev/v1beta/package/modernc.org/sqlite?version=v1.29.0" | jq .
-
-# All exported symbols (types, funcs, consts, vars)
-curl -s "https://pkg.go.dev/v1beta/symbols/github.com/coder/websocket" | jq .
-
-# Available versions for a module
-curl -s "https://pkg.go.dev/v1beta/versions/nhooyr.io/websocket" | jq .
-
-# All packages inside a module
-curl -s "https://pkg.go.dev/v1beta/packages/golang.org/x/pkgsite" | jq .
-
-# Search
-curl -s "https://pkg.go.dev/v1beta/search?q=lua+vm" | jq .
-
-# Known vulnerabilities for a module
-curl -s "https://pkg.go.dev/v1beta/vulns/github.com/yuin/gopher-lua" | jq .
-```
-
-Full OpenAPI spec: `https://pkg.go.dev/v1beta/openapi.yaml`
-
 ---
 
 ## Key commands
 
 The Go project lives in the `ha-lua/` add-on subfolder — run all `make`/`go`
-commands from there (`cd ha-lua`).
-
-```
-make build        # compile to ./ha-lua
-make check        # vet + staticcheck + lint + test (CI target)
-make test         # go test -race ./...
-make lint         # golangci-lint run
-make staticcheck  # staticcheck ./...
-make fmt          # gofmt -l -w . (all code must be gofmt-clean before commit)
-make tidy         # go mod tidy
-make hooks        # install the git pre-commit hook (gofmt + vet + staticcheck + lint)
-make bench        # run benchmarks → benchmarks/current.txt
-make bench-compare # benchstat baseline vs current (informational)
-make bench-update  # promote current.txt → baseline.txt
-make profile-cpu  # capture 30s CPU profile (needs debug.pprof_addr set)
-make trace        # capture 5s execution trace
-```
+commands from there (`cd ha-lua`). `make check` is the CI gate.
 
 ---
 
@@ -140,21 +95,8 @@ See `ha-lua/plan.md` for the full design. Short version:
 
 ## Packages
 
-Paths below are relative to the `ha-lua/` add-on subfolder (Go module root).
-
-| Path | Responsibility |
-|------|---------------|
-| `cmd/ha-lua/` | Entry point, wires all subsystems |
-| `internal/ha/` | HA WebSocket client, auth, reconnect, message types |
-| `internal/state/` | SQLite schema/migrations, state tracker |
-| `internal/store/` | Per-script + global KV over SQLite |
-| `internal/lua/` | LState lifecycle, all Lua API bindings, stdlib modules |
-| `internal/purge/` | Retention purge goroutine |
-| `internal/scheduler/` | SQLite-backed timer engine, catch-up on start |
-| `internal/debug/` | Optional pprof/trace HTTP server |
-| `internal/config/` | Config loading — `/data/options.json` in prod, YAML via `--config` in dev |
-| `internal/testutil/` | `NewTestDB`, seed helpers shared across test packages |
-| `internal/e2e/` | End-to-end latency benchmarks: fake HA WS server → full pipeline → `call_service` (test-only; see `event-latency-spec.md`) |
+Paths are relative to `ha-lua/` (the Go module root). `internal/e2e/` is
+test-only — see `event-latency-spec.md`.
 
 ---
 
@@ -177,37 +119,12 @@ In production the binary reads **`/data/options.json`** (written by Supervisor).
 
 ---
 
-## Release process
+## Releases
 
-Versions follow **SemVer**: a backwards-incompatible Lua API or add-on change
-is a **major** bump, new features are **minor**, fixes are **patch**.
-
-The single source of truth for the version is `ha-lua/config.yaml`'s `version:`
-field — no other file repeats it. Tag, `config.yaml`, and `CHANGELOG.md` must
-all agree before tagging.
-
-Steps for releasing `vX.Y.Z` (do not skip the per-step commits):
-
-1. **Changelog.** Prepend a `## X.Y.Z - YYYY-MM-DD` section to
-   `ha-lua/CHANGELOG.md` (Keep a Changelog format: `### Added` / `### Changed`
-   / `### Fixed` / `### Security`). Mark breaking changes with a bold
-   `**BREAKING: …**` lead. Commit as `docs: changelog for vX.Y.Z`.
-2. **Version bump.** Edit only `version:` in `ha-lua/config.yaml`. Commit as
-   `release: vX.Y.Z` — config.yaml only, nothing else in that commit.
-3. **Tag.** Annotated tag on the `release:` commit:
-   `git tag -a vX.Y.Z <release-commit> -m "vX.Y.Z"` (message is just the tag).
-   Later docs commits may sit on top of the tagged commit; that's fine.
-4. **Update the working state** to record the release: refresh the `## Latest` pointer in `ha-lua/AI.state` and note the release detail in the track's `ha-lua/state/<track>.md`. The changelog already carries what shipped — do not repeat it in `AI.state`.
-5. **Push.** There is **no auto-push** — push explicitly. Two remotes:
-   `origin` (private mirror) and `github` (github.com). Push `main` and the tag
-   to **both**: `git push origin main && git push github main`, then
-   `git push origin vX.Y.Z && git push github vX.Y.Z`.
-
-Pushing the `v*` tag to **`github`** triggers `.github/workflows/release.yml`
-(at the git root, not in `ha-lua/`), which builds the multi-arch images and
-pushes them to GHCR (`ghcr.io/sztanpet/{arch}-ha-lua`). The workflow reads the
-version from `config.yaml` at the tagged commit, so the tag must point at a
-commit whose `config.yaml` already carries `X.Y.Z`.
+Versions are SemVer; `ha-lua/config.yaml`'s `version:` is the single source of
+truth for the version number. **Never push automatically** — pushes to `origin`
+and `github` happen only when explicitly asked. Full checklist: the `release`
+skill (`.claude/skills/release/SKILL.md`).
 
 ---
 
