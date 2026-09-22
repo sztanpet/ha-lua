@@ -6,22 +6,22 @@
 -- domains: a light, a relay in the switch domain, or a single Home Assistant
 -- light group all behave the same here.
 --
--- A switch may also BE one of the lamps, which is the normal case for a relay
--- whose own wall switch still drives it (no detached mode). Those two roles
--- decide the direction between them:
+-- Direction always comes from the group's AGGREGATE state as it was just
+-- before the press: if any lamp was on, everything goes off, otherwise
+-- everything comes on. Never from the pressed switch's own state — several
+-- switches drift apart, and so do the lamps when something outside this
+-- script (the app, a schedule, a lost Zigbee command) moves one of them.
+-- Following one switch instead of the room is what makes a press in a lit
+-- room turn MORE lights on.
 --
---   * A switch that is NOT a lamp is a pure input — its on/off state means
---     nothing by itself, so a flip is a group toggle: if any lamp is on,
---     everything goes off, otherwise everything comes on. Copying such a
---     switch's state instead looks right with one switch and breaks with
---     several, because their states drift apart: pressing one that already
---     reads "on" while the lamps are on would do nothing at all, and a wall
---     switch that sometimes does nothing is indistinguishable from a broken
---     one.
---   * A switch that IS a lamp has already changed the light it controls, so
---     its new state is the intent and the other lamps are forced to match it.
---     Toggling the group here would fight the person, taking the lamp they
---     just switched on straight back off.
+-- A switch may also BE one of the lamps, which is the normal case for a relay
+-- whose own wall switch still drives it (no detached mode). Such a switch has
+-- already flipped the lamp it feeds by the time the event reaches us, so it
+-- counts as its OLD state in that aggregate — counted as its new state, every
+-- press would agree with itself and the room would follow the one lamp that is
+-- out of sync. The consequence is deliberate: press a relay whose lamp was off
+-- while the rest of the room is lit and the room goes dark, its own lamp
+-- included. A wall switch pressed in a lit room means "turn the room off".
 --
 -- Only real on<->off transitions count as a press. A relay that drops off the
 -- Zigbee mesh reports "unavailable" and reports its state again when it comes
@@ -97,13 +97,23 @@ local function prune_expired(queue)
   end
 end
 
-local function group_is_on()
+-- The group's state as it stood just before `change`. The pressed entity
+-- counts as its old state when it is itself a lamp; every other lamp counts as
+-- what it currently reports, so a lamp moved outside this script is picked up
+-- by the next press.
+local function group_was_on(change)
   if last_command and os.time() - last_command.at < COMMAND_FRESH_SECS then
     return last_command.state == "on"
   end
   for _, lamp in ipairs(LAMPS) do
-    local state = ha.get_state(lamp)
-    if state and state.state == "on" then
+    local value
+    if lamp == change.entity_id then
+      value = change.old_state.state
+    else
+      local state = ha.get_state(lamp)
+      value = state and state.state
+    end
+    if value == "on" then
       return true
     end
   end
@@ -140,10 +150,7 @@ for _, entity_id in ipairs(SWITCHES) do
       end
     end
 
-    local desired = new_state
-    if not is_lamp[change.entity_id] then
-      desired = group_is_on() and "off" or "on"
-    end
+    local desired = group_was_on(change) and "off" or "on"
 
     last_command = { state = desired, at = os.time() }
     for watched, pending in pairs(expected_echoes) do

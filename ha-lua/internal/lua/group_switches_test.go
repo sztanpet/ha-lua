@@ -183,12 +183,12 @@ func TestGroupSwitchesPureInputTogglesGroup(t *testing.T) {
 	}
 }
 
-// TestGroupSwitchesRelayPressFollowsIt: a relay's own wall switch has already
-// changed the lamp it feeds, so its new state is the intent and the rest are
-// forced to match. Toggling the group here would take the light the person just
-// switched on straight back off. Both dual-role relays must behave that way —
-// nothing about it is special to the first one.
-func TestGroupSwitchesRelayPressFollowsIt(t *testing.T) {
+// TestGroupSwitchesRelayPressDrivesTheGroup: a relay's own wall switch has
+// already flipped the lamp it feeds by the time we see it, so it counts as its
+// OLD state — a dark room lit by the press still reads as "was off" and the
+// rest come on with it. Both dual-role relays behave the same; nothing is
+// special about the first one.
+func TestGroupSwitchesRelayPressDrivesTheGroup(t *testing.T) {
 	for _, entityID := range []string{groupRelay, groupWardrobe} {
 		t.Run(entityID, func(t *testing.T) {
 			h := newGroupHarness(t, "off", "off", "off")
@@ -200,6 +200,33 @@ func TestGroupSwitchesRelayPressFollowsIt(t *testing.T) {
 			h.expectCmd("turn_off")
 		})
 	}
+}
+
+// TestGroupSwitchesRelayPressFollowsTheRoomNotItself is the reported bug: a
+// lamp moved outside the script (the app, a schedule, a lost Zigbee command)
+// drifts out of sync with the room, and a press on THAT lamp's own switch used
+// to take its new state as the intent — so pressing a switch in a lit room
+// turned more lights on instead of taking the room off. The aggregate decides,
+// always.
+func TestGroupSwitchesRelayPressFollowsTheRoomNotItself(t *testing.T) {
+	// LED and the gallery relay are lit; the wardrobe relay was switched off
+	// on its own somewhere else. Flipping its wall switch lights its lamp —
+	// and must still take the whole room off, that lamp included.
+	h := newGroupHarness(t, "on", "on", "off")
+
+	h.report(groupWardrobe, "off", "on")
+	h.expectCmd("turn_off")
+}
+
+// TestGroupSwitchesRelayPressWithOnlyItselfOn: the mirror image — the room is
+// dark apart from this one drifted relay, so its press still counts it as "was
+// on" and everything goes off, rather than lighting the room from a switch the
+// person just turned off.
+func TestGroupSwitchesRelayPressWithOnlyItselfOn(t *testing.T) {
+	h := newGroupHarness(t, "off", "off", "on")
+
+	h.report(groupWardrobe, "on", "off")
+	h.expectCmd("turn_off")
 }
 
 // TestGroupSwitchesSwallowsOwnEcho is the strobe regression: both relays are
