@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,14 +50,24 @@ type groupHarness struct {
 }
 
 // newGroupHarness seeds every lamp to lampStates[i] and every pure-input switch
-// to "off".
+// to "off", running the example as shipped.
 func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
+	return newGroupHarnessFollow(t, true, lampStates...)
+}
+
+// newGroupHarnessFollow can also run it with FOLLOW_OUTSIDE_LAMP_CHANGE turned
+// off, since both settings are a supported configuration and both have a rule
+// worth pinning.
+func newGroupHarnessFollow(t *testing.T, follow bool, lampStates ...string) *groupHarness {
 	if len(lampStates) != len(groupLamps) {
 		t.Fatalf("seed %d lamp states, the example has %d lamps", len(lampStates), len(groupLamps))
 	}
 	dir := t.TempDir()
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "group_switches.lua"),
-		filepath.Join(dir, "group_switches.lua"))
+	script := filepath.Join(dir, "group_switches.lua")
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "group_switches.lua"), script)
+	if !follow {
+		setFollowOutsideLampChange(t, script, false)
+	}
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -101,7 +113,7 @@ func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
 	reg.Add(r)
 
 	done := make(chan struct{})
-	go func() { defer close(done); r.Start(ctx, filepath.Join(dir, "group_switches.lua")) }()
+	go func() { defer close(done); r.Start(ctx, script) }()
 	t.Cleanup(func() { cancel(); <-done })
 	select {
 	case <-r.LoadedCh:
@@ -109,6 +121,26 @@ func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
 		t.Fatal("group_switches.lua did not finish loading")
 	}
 	return h
+}
+
+// setFollowOutsideLampChange rewrites the shipped default in the copied script.
+// It asserts the line is there, so renaming the option breaks the test loudly
+// rather than silently testing the default twice.
+func setFollowOutsideLampChange(t *testing.T, path string, follow bool) {
+	t.Helper()
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const shipped = "local FOLLOW_OUTSIDE_LAMP_CHANGE = true"
+	if !strings.Contains(string(src), shipped) {
+		t.Fatalf("%q not found in the example — was the option renamed?", shipped)
+	}
+	out := strings.Replace(string(src), shipped,
+		fmt.Sprintf("local FOLLOW_OUTSIDE_LAMP_CHANGE = %t", follow), 1)
+	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func isGroupLamp(entityID string) bool {
@@ -265,13 +297,33 @@ func TestGroupSwitchesRelayPressExpectsTheOtherEcho(t *testing.T) {
 	h.expectCmd("turn_off")
 }
 
-// TestGroupSwitchesOutsideLampChangeBeatsTheFreshCommand: for a few seconds
-// after a command the script trusts it over the lamps' reported state, which is
-// what stops a fast double press from reading the stale mirror. A lamp moved
-// outside the script inside that window makes the shortcut a lie — the room is
-// lit again and the next press must still take it off, not on.
-func TestGroupSwitchesOutsideLampChangeBeatsTheFreshCommand(t *testing.T) {
-	h := newGroupHarness(t, "on", "on", "on")
+// TestGroupSwitchesFollowsAnOutsideLampChange: with FOLLOW_OUTSIDE_LAMP_CHANGE
+// on (the shipped default), a lamp moved with no switch involved — the app, a
+// schedule, a voice assistant — takes the rest of the group with it, in both
+// directions. Otherwise turning one lamp on in the app is the half-lit room this
+// script exists to prevent.
+func TestGroupSwitchesFollowsAnOutsideLampChange(t *testing.T) {
+	h := newGroupHarness(t, "off", "off", "off")
+
+	h.report(groupLamps[0], "off", "on") // the LED, switched on in the app
+	h.expectCmd("turn_on")
+	for _, lamp := range groupLamps[1:] { // the relays confirm
+		h.report(lamp, "off", "on")
+	}
+	h.expectSilence()
+
+	h.report(groupLamps[0], "on", "off")
+	h.expectCmd("turn_off")
+}
+
+// TestGroupSwitchesNotFollowingStillVoidsTheFreshCommand: with the option off
+// the group only ever moves from a switch — but the change still has to be
+// noticed. For a few seconds after a command the script trusts it over the
+// lamps' reported state, which is what stops a fast double press from reading
+// the stale mirror; a lamp moved inside that window makes the shortcut a lie,
+// and the next press must still take the lit room off rather than on.
+func TestGroupSwitchesNotFollowingStillVoidsTheFreshCommand(t *testing.T) {
+	h := newGroupHarnessFollow(t, false, "on", "on", "on")
 
 	h.report(groupSwitches[0], "off", "on") // a lit room goes off
 	h.expectCmd("turn_off")
@@ -280,8 +332,8 @@ func TestGroupSwitchesOutsideLampChangeBeatsTheFreshCommand(t *testing.T) {
 	}
 	h.expectSilence()
 
-	// Somebody turns the LED back on in the app. It is not a switch, so this is
-	// not a press — it just means our "off" no longer describes the room.
+	// Somebody turns the LED back on in the app. Not followed, by configuration
+	// — but our "off" no longer describes the room.
 	h.report(groupLamps[0], "off", "on")
 	h.expectSilence()
 

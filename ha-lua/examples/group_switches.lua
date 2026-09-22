@@ -23,6 +23,13 @@
 -- while the rest of the room is lit and the room goes dark, its own lamp
 -- included. A wall switch pressed in a lit room means "turn the room off".
 --
+-- A lamp may also change with no switch involved — the app, a schedule, a
+-- voice assistant. FOLLOW_OUTSIDE_LAMP_CHANGE decides what that means: drag the
+-- rest of the group along with it, or just note it so the next press still
+-- reads the room correctly. Only lamps that are NOT also switches can be
+-- treated that way; a report on a relay that is in SWITCHES may equally be its
+-- own wall switch, and a wall switch is a toggle, not a level.
+--
 -- Only real on<->off transitions count as a press. A relay that drops off the
 -- Zigbee mesh reports "unavailable" and reports its state again when it comes
 -- back, and Home Assistant also sends a state_changed for an attribute-only
@@ -64,6 +71,14 @@ local LAMPS = {
   "switch.halo_ajtoszekrenykapcsolo",
 }
 
+-- Whether a lamp that moves with no switch involved drags the rest of the group
+-- with it: true means turning the LED on in the app switches the relays on with
+-- it, false means the change is only noted (the group then only ever moves from
+-- a switch). True keeps the promise this script exists for — the lamps are
+-- never left half-lit, whatever moved one of them — so set it false if you have
+-- an automation or schedule that is supposed to drive one lamp on its own.
+local FOLLOW_OUTSIDE_LAMP_CHANGE = true
+
 -- How long our own command outranks the lamps' reported state. Long enough to
 -- cover a Zigbee round trip and a slow bulb, short enough that a lamp somebody
 -- changed in the app is picked up by the next press.
@@ -74,23 +89,17 @@ local COMMAND_FRESH_SECS = 5
 -- reports, so the expectation has to time out.
 local ECHO_DEADLINE_SECS = 10
 
-local is_lamp = {}
-for _, entity_id in ipairs(LAMPS) do
-  is_lamp[entity_id] = true
-end
-
 local is_switch = {}
 for _, entity_id in ipairs(SWITCHES) do
   is_switch[entity_id] = true
 end
 
--- FIFO of states we commanded and expect back, per entity that is both
--- watched and commanded. Nothing else can echo at us.
+-- FIFO of states we commanded and expect back, per lamp. Every lamp is
+-- commanded, and every lamp is watched by one handler or the other, so every
+-- lamp can echo at us.
 local expected_echoes = {}
-for _, entity_id in ipairs(SWITCHES) do
-  if is_lamp[entity_id] then
-    expected_echoes[entity_id] = {}
-  end
+for _, entity_id in ipairs(LAMPS) do
+  expected_echoes[entity_id] = {}
 end
 
 local last_command = nil
@@ -130,6 +139,50 @@ local function switched(state)
   return value == "on" or value == "off"
 end
 
+-- True when this report is our own command coming back, which consumes the
+-- expectation. Anything else clears the queue: once an entity has reported a
+-- state we never asked for (a physical press racing our command, or a lost
+-- echo) the expectations are meaningless.
+local function is_our_echo(entity_id, new_state)
+  local queue = expected_echoes[entity_id]
+  if not queue then
+    return false
+  end
+  prune_expired(queue)
+  if not queue[1] then
+    return false
+  end
+  if queue[1].state == new_state then
+    table.remove(queue, 1)
+    return true
+  end
+  expected_echoes[entity_id] = {}
+  return false
+end
+
+-- Drive every lamp to `desired`. `source` is the entity whose report caused
+-- this, and `source_state` the state it just reported.
+local function force_group(desired, source, source_state)
+  last_command = { state = desired, at = os.time() }
+  for lamp, pending in pairs(expected_echoes) do
+    -- A source already in the state we are commanding will report nothing, and
+    -- a phantom expectation would swallow the next real change on it. Every
+    -- other lamp is mid-flip by construction.
+    if not (lamp == source and source_state == desired) then
+      table.insert(pending, { state = desired, deadline = os.time() + ECHO_DEADLINE_SECS })
+    end
+  end
+
+  ha.log("debug", "group_switches: " .. source .. " -> all lamps " .. desired)
+  -- homeassistant.turn_on/off, not light.* or switch.*: it forwards each
+  -- entity to its own domain, so one call covers a LAMPS list that mixes a
+  -- light with a relay. Commanding every lamp (rather than toggling each) is
+  -- what makes a half-lit room uniform again — a per-lamp toggle would only
+  -- swap which lamp is on. wait = false so a second press is served without
+  -- waiting out the round trip; failures reach ha.on_exception.
+  ha.call_service("homeassistant", "turn_" .. desired, { entity_id = LAMPS }, { wait = false })
+end
+
 for _, entity_id in ipairs(SWITCHES) do
   ha.on_state_change(entity_id, function(change)
     if not switched(change.old_state) or not switched(change.new_state) then
@@ -139,58 +192,38 @@ for _, entity_id in ipairs(SWITCHES) do
     if change.old_state.state == new_state then
       return
     end
-
-    local queue = expected_echoes[change.entity_id]
-    if queue then
-      prune_expired(queue)
-      if queue[1] then
-        if queue[1].state == new_state then
-          table.remove(queue, 1)
-          return
-        end
-        -- The device reported something we never commanded (a physical press
-        -- racing our command, or a lost echo). The expectations are
-        -- meaningless now — drop them and treat this as a real press.
-        expected_echoes[change.entity_id] = {}
-      end
+    if is_our_echo(change.entity_id, new_state) then
+      return
     end
 
-    local desired = group_was_on(change) and "off" or "on"
-
-    last_command = { state = desired, at = os.time() }
-    for watched, pending in pairs(expected_echoes) do
-      -- The pressed lamp is already in the state we are about to command, so
-      -- it will report nothing; a phantom expectation would swallow the next
-      -- real press. Every other watched lamp is mid-flip by construction.
-      if not (watched == change.entity_id and new_state == desired) then
-        table.insert(pending, { state = desired, deadline = os.time() + ECHO_DEADLINE_SECS })
-      end
-    end
-
-    ha.log("debug", "group_switches: " .. change.entity_id .. " -> all lamps " .. desired)
-    -- homeassistant.turn_on/off, not light.* or switch.*: it forwards each
-    -- entity to its own domain, so one call covers a LAMPS list that mixes a
-    -- light with a relay. Commanding every lamp (rather than toggling each) is
-    -- what makes a half-lit room uniform again — a per-lamp toggle would only
-    -- swap which lamp is on. wait = false so a second press is served without
-    -- waiting out the round trip; failures reach ha.on_exception.
-    ha.call_service("homeassistant", "turn_" .. desired, { entity_id = LAMPS }, { wait = false })
+    force_group(group_was_on(change) and "off" or "on", change.entity_id, new_state)
   end)
 end
 
--- Lamps we command but never trigger on. A report that contradicts our last
--- command came from somewhere else — the app, a schedule, a command that never
--- landed — so the shortcut that lets a fresh command stand in for the room has
--- stopped being true. Drop it and let the next press read the lamps. (The lamps
--- that are also switches need nothing here: a contradicting report on one of
--- those is a press, and takes the press path above.)
+-- Lamps that are not switches. Nobody presses these: a report is either our own
+-- command coming back, or the lamp moving on its own.
 for _, lamp in ipairs(LAMPS) do
   if not is_switch[lamp] then
     ha.on_state_change(lamp, function(change)
-      local value = change.new_state.state
-      if last_command and (value == "on" or value == "off") and value ~= last_command.state then
-        last_command = nil
+      if not switched(change.old_state) or not switched(change.new_state) then
+        return
       end
+      local new_state = change.new_state.state
+      if change.old_state.state == new_state then
+        return
+      end
+      if is_our_echo(change.entity_id, new_state) then
+        return
+      end
+
+      if FOLLOW_OUTSIDE_LAMP_CHANGE then
+        force_group(new_state, change.entity_id, new_state)
+        return
+      end
+      -- Not following it, but our remembered command has just become a lie:
+      -- the room is not where we left it, and the next press must read the
+      -- lamps rather than that command.
+      last_command = nil
     end)
   end
 end
