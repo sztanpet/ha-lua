@@ -458,6 +458,13 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
 - `homeassistant.turn_on/off`, not `light.*`: LAMPS mixes a light with a relay
   in the switch domain, and a light.* call silently skips the relay — the exact
   half-lit room this script exists to prevent. One call, any mix of domains.
+- ONE GROUP, not two tiers (`5fdb934`, third field report — "all three switches
+  should mirror the same state always"). SWITCHES and LAMPS are two halves of
+  the same set: everything listed is commanded together AND counts towards the
+  aggregate; being in SWITCHES only adds that a change there is a press. The
+  intermediate state (`45e489a`) commanded the switches but still asked "is any
+  LAMP on", so a switch left on over dark lamps read as off, the press turned
+  everything on, and the group came out of the press still split.
 - EVERYTHING is commanded, not just LAMPS (`45e489a`, second field report):
   the lamps plus the switches that are only inputs. A pure input is a relay
   too, so leaving it uncommanded meant switching the room on at the hall switch
@@ -506,6 +513,8 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   against the pre-5cdc0e5 script), an outside LED change drives the group with
   the option on and only voids the command with it off (the harness rewrites the
   flag in the copied script and asserts the line exists, so renaming the option
-  fails loudly instead of testing the default twice), a pure input is driven
-  with the room and its report is an echo rather than a new press, and the
+  fails loudly instead of testing the default twice), every switch is driven
+  with the group and its report is an echo rather than a new press, a switch
+  left on over dark lamps still counts in the aggregate (fails against the
+  pre-5fdb934 script), and the
   unavailable round trip / attribute-only update are silent.
