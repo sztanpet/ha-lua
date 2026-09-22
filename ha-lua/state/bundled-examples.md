@@ -444,18 +444,28 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
     mirrored_switches' FIFO of expected states, minus the entry for the pressed
     lamp itself (already in the commanded state, so no report will come and a
     phantom entry would swallow the next real press).
-  - Direction depends on WHICH switch: a switch that is also a lamp has already
-    changed its light, so its new state is the intent and the rest follow it. A
-    group toggle there would take the light the person just switched on back
-    off. Pure inputs (their own state means nothing) keep the group toggle:
-    any lamp on -> all off.
+  - Direction from the pressed switch's own state was WRONG and was fixed in
+    `b3b1deb` after a field report. It is right only while nothing has drifted,
+    and something always drifts (a lamp moved in the app, a schedule, a Zigbee
+    command that never landed): with its own lamp off and the rest of the room
+    lit, flipping that switch turned MORE lights on, because the press agreed
+    with itself instead of reading the room. Direction now ALWAYS inverts the
+    group's aggregate as it stood just before the press, with a pressed switch
+    that is itself a lamp counting as its OLD state — counting the new one
+    makes every press agree with itself again. Consequence, deliberate: press a
+    relay whose lamp was off in a lit room and the room goes dark, that lamp
+    included.
 - `homeassistant.turn_on/off`, not `light.*`: LAMPS mixes a light with a relay
   in the switch domain, and a light.* call silently skips the relay — the exact
   half-lit room this script exists to prevent. One call, any mix of domains.
 - Also not an automation because the group decision reads the lamps' state,
   which lags the command: two presses inside the round trip both see "all off"
   and both turn everything on. `last_command` wins for COMMAND_FRESH_SECS (5s),
-  reported state only after that.
+  reported state only after that. That shortcut has its own hole, closed in
+  `5cdc0e5`: a lamp moved outside the script inside those 5 s makes the
+  remembered command a lie, so lamps that are NOT also switches carry a watcher
+  that drops it when one reports a state we never asked for. Lamps that are
+  switches need nothing — an uncommanded report there is already a press.
 - `ha.immediate_events()` + `wait = false`, and nothing in the handler touches
   the DB — the user asked twice for low latency and specifically for immediate
   mode; it was already there from the first version.
@@ -470,5 +480,8 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   expects the OTHER relay's echo but queues nothing for itself, the echo is
   swallowed
   once and the next report on the same entity is a press again, a half-lit room
-  is forced off, the fast double press turns off instead of on again, and the
-  unavailable round trip / attribute-only update are silent.
+  is forced off, the fast double press turns off instead of on again, a drifted
+  relay's press still takes the room off (the field report, and it fails against
+  the pre-b3b1deb script), an outside LED change beats the fresh command (fails
+  against the pre-5cdc0e5 script), and the unavailable round trip /
+  attribute-only update are silent.

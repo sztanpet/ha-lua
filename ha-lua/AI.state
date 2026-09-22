@@ -10,18 +10,18 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**group_switches.lua** (c6e13c2, detail: `state/bundled-examples.md`). Three
-wall switches forcing three lamps (a light plus two relays) uniform. The design
-driver: two of those switches are themselves lamps — their relays feed a light —
-which is expressed by listing them in LAMPS as well, so the script needs mirrored_switches' echo attribution or the room
-strobes — our command reports back, reads as a press, and flips the still-fresh
-verdict — and the direction must come from the pressed switch's new state when
-that switch IS a lamp, since toggling the group would fight the person. Commands
-go out as `homeassistant.turn_*` because the lamp list mixes domains. Replaced
-and deleted `galeria_stairs.lua` (e26266f), which fought it over the same relay.
-Still open behind that: **heating overshoot correction**
-(`state/overshoot.md`) is in and running observe-only per zone; the next step
-there is field data, not code.
+**group_switches.lua** (5cdc0e5, detail: `state/bundled-examples.md`). Three
+wall switches forcing three lamps (a light plus two relays, two of the switches
+being those relays) uniform. The last two commits are a field report worth not
+re-learning: a press must invert the room's AGGREGATE state, never the pressed
+switch's own state, because one lamp moved outside the script leaves that switch
+disagreeing with the room — press it in a lit room and the room got brighter. A
+pressed switch that is itself a lamp counts as its OLD state in that aggregate.
+The 5 s "trust our own last command" shortcut (which exists so a fast double
+press does not read the lagging mirror) gets voided as soon as an unwatched lamp
+reports something we never commanded. Still open behind that: **heating
+overshoot correction** (`state/overshoot.md`) is in and running observe-only per
+zone; the next step there is field data, not code.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
