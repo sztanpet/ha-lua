@@ -1,41 +1,34 @@
 -- group_switches.lua
 --
--- Wall switches driving one set of lamps: any flip of any switch in SWITCHES
--- forces every lamp in LAMPS to the same state — all on, or all off, never
--- half-lit. LAMPS may hold as many entities as you like, in any mix of
--- domains: a light, a relay in the switch domain, or a single Home Assistant
--- light group all behave the same here.
+-- One group of entities that is always in one state — all on, or all off, never
+-- half of each. SWITCHES and LAMPS are two halves of that same group, not two
+-- tiers: everything listed is commanded together and everything counts towards
+-- the group's state. The only thing being in SWITCHES adds is that a change
+-- there is a press, because somebody can flip it. Entities may be in any mix of
+-- domains — a light, a relay in the switch domain, a Home Assistant light group
+-- — and a switch that feeds a lamp belongs in both lists.
 --
 -- Direction always comes from the group's AGGREGATE state as it was just
--- before the press: if any lamp was on, everything goes off, otherwise
--- everything comes on. Never from the pressed switch's own state — several
--- switches drift apart, and so do the lamps when something outside this
--- script (the app, a schedule, a lost Zigbee command) moves one of them.
--- Following one switch instead of the room is what makes a press in a lit
+-- before the press: if anything in it was on, everything goes off, otherwise
+-- everything comes on. Never from the pressed switch's own state — switches
+-- drift apart from each other, and from the lamps, whenever something outside
+-- this script (the app, a schedule, a lost Zigbee command) moves one of them.
+-- Following one switch instead of the group is what makes a press in a lit
 -- room turn MORE lights on.
 --
--- A switch may also BE one of the lamps, which is the normal case for a relay
--- whose own wall switch still drives it (no detached mode). Such a switch has
--- already flipped the lamp it feeds by the time the event reaches us, so it
--- counts as its OLD state in that aggregate — counted as its new state, every
--- press would agree with itself and the room would follow the one lamp that is
--- out of sync. The consequence is deliberate: press a relay whose lamp was off
--- while the rest of the room is lit and the room goes dark, its own lamp
--- included. A wall switch pressed in a lit room means "turn the room off".
+-- The pressed entity counts as its OLD state in that aggregate: its relay has
+-- already flipped by the time the event reaches us, and counting the new state
+-- would make every press agree with itself and change nothing. The consequence
+-- is deliberate: press a relay that was off while the rest of the group is on,
+-- and everything goes off, that relay included, a moment after its own switch
+-- turned it on. A wall switch pressed in a lit room means "turn the room off".
 --
--- Every switch is commanded along with the lamps, including one that is only an
--- input. Its own state still says nothing about whether the room is lit — that
--- is what LAMPS is for, and a pure input never votes — but leaving it wherever
--- the last flip left it means the relay, and the indicator on the wall,
--- disagrees with the room: switch the room on at one switch and off at another,
--- and the first one still reads "on".
---
--- A lamp may also change with no switch involved — the app, a schedule, a
+-- An entity may also change with no switch involved — the app, a schedule, a
 -- voice assistant. FOLLOW_OUTSIDE_LAMP_CHANGE decides what that means: drag the
 -- rest of the group along with it, or just note it so the next press still
--- reads the room correctly. Only lamps that are NOT also switches can be
--- treated that way; a report on a relay that is in SWITCHES may equally be its
--- own wall switch, and a wall switch is a toggle, not a level.
+-- reads the room correctly. Only entities that are NOT in SWITCHES can be
+-- treated that way; a report on a switch may equally be somebody flipping it,
+-- and a flip is a toggle, not a level.
 --
 -- Only real on<->off transitions count as a press. A relay that drops off the
 -- Zigbee mesh reports "unavailable" and reports its state again when it comes
@@ -106,21 +99,21 @@ for _, entity_id in ipairs(LAMPS) do
   is_lamp[entity_id] = true
 end
 
--- Everything a press drives: the lamps, then the switches that are only inputs.
-local COMMANDED = {}
+-- The whole group: the lamps, then the switches that are not already in it.
+local GROUP = {}
 for _, entity_id in ipairs(LAMPS) do
-  table.insert(COMMANDED, entity_id)
+  table.insert(GROUP, entity_id)
 end
 for _, entity_id in ipairs(SWITCHES) do
   if not is_lamp[entity_id] then
-    table.insert(COMMANDED, entity_id)
+    table.insert(GROUP, entity_id)
   end
 end
 
 -- FIFO of states we commanded and expect back. Everything we command is also
 -- watched by one handler or the other, so everything can echo at us.
 local expected_echoes = {}
-for _, entity_id in ipairs(COMMANDED) do
+for _, entity_id in ipairs(GROUP) do
   expected_echoes[entity_id] = {}
 end
 
@@ -133,21 +126,22 @@ local function prune_expired(queue)
   end
 end
 
--- The group's state as it stood just before `change` — a question about LAMPS
--- only, never about the switches driving them. The pressed entity counts as its
--- old state when it is itself a lamp; every other lamp counts as what it
--- currently reports, so a lamp moved outside this script is picked up by the
+-- The group's state as it stood just before `change`: on if anything in it was
+-- on. The entity that just changed counts as its OLD state — its relay has
+-- already flipped by the time the event reaches us, and counting the new one
+-- would make every press agree with itself. Everything else counts as what it
+-- currently reports, so anything moved outside this script is picked up by the
 -- next press.
 local function group_was_on(change)
   if last_command and os.time() - last_command.at < COMMAND_FRESH_SECS then
     return last_command.state == "on"
   end
-  for _, lamp in ipairs(LAMPS) do
+  for _, entity_id in ipairs(GROUP) do
     local value
-    if lamp == change.entity_id then
+    if entity_id == change.entity_id then
       value = change.old_state.state
     else
-      local state = ha.get_state(lamp)
+      local state = ha.get_state(entity_id)
       value = state and state.state
     end
     if value == "on" then
@@ -203,7 +197,7 @@ local function force_group(desired, source, source_state)
   -- what makes a half-lit room uniform again — a per-lamp toggle would only
   -- swap which lamp is on. wait = false so a second press is served without
   -- waiting out the round trip; failures reach ha.on_exception.
-  ha.call_service("homeassistant", "turn_" .. desired, { entity_id = COMMANDED }, { wait = false })
+  ha.call_service("homeassistant", "turn_" .. desired, { entity_id = GROUP }, { wait = false })
 end
 
 for _, entity_id in ipairs(SWITCHES) do

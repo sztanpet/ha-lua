@@ -37,10 +37,12 @@ var (
 	// The relays that are both a trigger and a lamp.
 	groupRelay    = "switch.galeria_lepcsokapcsolo"
 	groupWardrobe = "switch.halo_ajtoszekrenykapcsolo"
-	// Everything a press drives: the lamps, then the switches that are only
-	// inputs. A pure input is commanded so its own relay tracks the room, but
-	// it never votes on whether the room is lit.
-	groupCommanded = append(append([]string{}, groupLamps...), "switch.halo_ajtokapcsolo")
+	// The one switch that is not also a lamp.
+	groupHall = "switch.halo_ajtokapcsolo"
+	// The whole group, in the order the example builds it: the lamps, then the
+	// switches not already among them. Everything here is commanded together
+	// and everything counts towards the group's state.
+	groupAll = append(append([]string{}, groupLamps...), groupHall)
 )
 
 // groupHarness runs the real examples/group_switches.lua against a spy call
@@ -56,13 +58,19 @@ type groupHarness struct {
 // newGroupHarness seeds every lamp to lampStates[i] and every pure-input switch
 // to "off", running the example as shipped.
 func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
-	return newGroupHarnessFollow(t, true, lampStates...)
+	return newGroupHarnessStates(t, true, "off", lampStates...)
 }
 
 // newGroupHarnessFollow can also run it with FOLLOW_OUTSIDE_LAMP_CHANGE turned
 // off, since both settings are a supported configuration and both have a rule
 // worth pinning.
 func newGroupHarnessFollow(t *testing.T, follow bool, lampStates ...string) *groupHarness {
+	return newGroupHarnessStates(t, follow, "off", lampStates...)
+}
+
+// newGroupHarnessStates also seeds the switch that is not a lamp, so a test can
+// start with it drifted out of step with the rest.
+func newGroupHarnessStates(t *testing.T, follow bool, hall string, lampStates ...string) *groupHarness {
 	if len(lampStates) != len(groupLamps) {
 		t.Fatalf("seed %d lamp states, the example has %d lamps", len(lampStates), len(groupLamps))
 	}
@@ -93,7 +101,7 @@ func newGroupHarnessFollow(t *testing.T, follow bool, lampStates ...string) *gro
 	}
 	for _, entityID := range groupSwitches {
 		if !isGroupLamp(entityID) {
-			seed = append(seed, seedEntity(entityID, "off", `{}`))
+			seed = append(seed, seedEntity(entityID, hall, `{}`))
 		}
 	}
 	if err := tracker.Seed(ctx, seed); err != nil {
@@ -175,7 +183,7 @@ func (h *groupHarness) report(entityID, oldState, newState string) {
 
 func (h *groupHarness) expectCmd(service string) {
 	h.t.Helper()
-	want := "homeassistant." + service + " " + strings.Join(groupCommanded, ",")
+	want := "homeassistant." + service + " " + strings.Join(groupAll, ",")
 	select {
 	case got := <-h.cmds:
 		if got != want {
@@ -195,10 +203,10 @@ func (h *groupHarness) expectSilence() {
 	}
 }
 
-// TestGroupSwitchesPureInputTogglesGroup: a switch that is not itself a lamp is
-// a pure input, so either direction of flip toggles the group — and every lamp
-// is commanded, in one homeassistant.* call that spans both domains.
-func TestGroupSwitchesPureInputTogglesGroup(t *testing.T) {
+// TestGroupSwitchesEverySwitchTogglesGroup: a flip of any switch toggles the
+// whole group, either direction, in one homeassistant.* call that spans every
+// domain in it.
+func TestGroupSwitchesEverySwitchTogglesGroup(t *testing.T) {
 	for _, entityID := range groupSwitches {
 		if isGroupLamp(entityID) {
 			continue
@@ -211,7 +219,7 @@ func TestGroupSwitchesPureInputTogglesGroup(t *testing.T) {
 			for _, lamp := range groupLamps { // the lamps confirm, as devices do
 				h.report(lamp, "off", "on")
 			}
-			h.expectSilence() // including the relay's echo of our own command
+			h.expectSilence() // including the relays' echoes of our own command
 
 			h.report(entityID, "on", "off") // a flip, not a copy of the state
 			h.expectCmd("turn_off")
@@ -346,16 +354,15 @@ func TestGroupSwitchesNotFollowingStillVoidsTheFreshCommand(t *testing.T) {
 	h.expectCmd("turn_off")
 }
 
-// TestGroupSwitchesSyncsAPureInput is the reported case: switch the room on at
+// TestGroupSwitchesSyncsEverySwitch is the reported case: switch the room on at
 // one switch and off at another, and the first switch was left reading "on" —
 // its relay, and the indicator on the wall, disagreeing with a dark room —
-// because nothing ever commanded it. It is driven with the lamps now, and its
-// report is our echo rather than a new press.
-func TestGroupSwitchesSyncsAPureInput(t *testing.T) {
-	const pureInput = "switch.halo_ajtokapcsolo"
+// because nothing ever commanded it. Every switch is driven with the group now,
+// and its report is our echo rather than a new press.
+func TestGroupSwitchesSyncsEverySwitch(t *testing.T) {
 	h := newGroupHarness(t, "off", "off", "off")
 
-	h.report(pureInput, "off", "on") // on at the hall switch
+	h.report(groupHall, "off", "on") // on at the hall switch
 	h.expectCmd("turn_on")
 	for _, lamp := range groupLamps[1:] { // the relays confirm
 		h.report(lamp, "off", "on")
@@ -367,8 +374,20 @@ func TestGroupSwitchesSyncsAPureInput(t *testing.T) {
 
 	// The hall switch was commanded off with the rest, so this is its echo and
 	// not a press — acted on as a press it would turn the room straight back on.
-	h.report(pureInput, "on", "off")
+	h.report(groupHall, "on", "off")
 	h.expectSilence()
+}
+
+// TestGroupSwitchesCountsASwitchInTheAggregate: a switch is part of the group,
+// so its state counts towards "was anything on" like everything else. With the
+// hall switch left on and every lamp off, a press must take the group off —
+// counting only the lamps turned everything on instead, and the group came out
+// of the press still split.
+func TestGroupSwitchesCountsASwitchInTheAggregate(t *testing.T) {
+	h := newGroupHarnessStates(t, true, "on", "off", "off", "off")
+
+	h.report(groupWardrobe, "off", "on")
+	h.expectCmd("turn_off")
 }
 
 // TestGroupSwitchesForcesHalfLitRoom: one lamp on is "the group is on", so the
