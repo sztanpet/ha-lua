@@ -293,9 +293,9 @@ local function changed_at(battery, series)
   end
   local parsed = time.parse(time.RFC3339, battery.last_changed or "")
   if parsed == nil then return sampled end
-  local reported = parsed:unix()
-  if sampled ~= nil and sampled < reported then return sampled end
-  return reported
+  local from_ha = parsed:unix()
+  if sampled ~= nil and sampled < from_ha then return sampled end
+  return from_ha
 end
 
 -- forget_removed drops series for entities Home Assistant no longer has, and
