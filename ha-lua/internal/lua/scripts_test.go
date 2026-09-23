@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -359,13 +360,55 @@ func writeThermostatScripts(t *testing.T) string {
 // (overshoot-spec.md §7). The two keys are seeded to different values here so
 // that distinction is pinned. It runs the shipped script in a real runner with
 // a captured call_service and a seeded climate entity.
-func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
+type windowSvcCall struct {
+	domain, service string
+	data            jsontext.Value
+}
+
+// windowHandoffHarness runs the shipped heating_windows.lua against a captured
+// call_service, with climate.bedroom heating and both setpoints published to
+// different values: 21 is what the user asked for, 20 is what is on the device.
+type windowHandoffHarness struct {
+	t       *testing.T
+	ctx     context.Context
+	tracker *state.Tracker
+	reg     *Registry
+	mu      *sync.Mutex
+	calls   *[]windowSvcCall
+}
+
+// windowZonesLua is a one-zone fixture whose window list the caller chooses;
+// heating_windows.lua reads only these three fields.
+const windowZonesLua = `local M = {}
+M.frost_temp = 15
+M.zones = { bedroom = { climate = "climate.bedroom", windows = { %s } } }
+function M.desired_key(zone) return "thermostat:desired:" .. zone end
+function M.written_key(zone) return "thermostat:written:" .. zone end
+return M
+`
+
+// newWindowHandoffHarness binds `windows` to the bedroom zone (defaulting to
+// one) and seeds the states in `seeded`. Everything is seeded in a single call
+// because Seed replaces the mirror rather than adding to it.
+func newWindowHandoffHarness(t *testing.T, windows []string, seeded map[string]string) *windowHandoffHarness {
+	t.Helper()
+	if len(windows) == 0 {
+		windows = []string{"binary_sensor.bedroom_window"}
+	}
 	dir := t.TempDir()
 	libDir := filepath.Join(dir, "lib")
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeTestZones(t, libDir)
+	quoted := make([]string, 0, len(windows))
+	for _, window := range windows {
+		quoted = append(quoted, strconv.Quote(window))
+	}
+	zonesLua := fmt.Sprintf(windowZonesLua, strings.Join(quoted, ", "))
+	if err := os.WriteFile(filepath.Join(libDir, "zones.lua"), []byte(zonesLua), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "heating_windows.lua"), filepath.Join(dir, "heating_windows.lua"))
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
@@ -377,16 +420,12 @@ func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 	reg := NewRegistry()
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	type svcCall struct {
-		domain, service string
-		data            jsontext.Value
-	}
 	var mu sync.Mutex
-	var calls []svcCall
+	var calls []windowSvcCall
 	cs := func(_ context.Context, domain, service string, data jsontext.Value) error {
 		mu.Lock()
 		defer mu.Unlock()
-		calls = append(calls, svcCall{domain, service, data})
+		calls = append(calls, windowSvcCall{domain, service, data})
 		return nil
 	}
 
@@ -401,13 +440,17 @@ func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer func() { cancel(); sup.Wait() }()
+	t.Cleanup(func() { cancel(); sup.Wait() })
 
-	// The zone must be heating, and the controller has published both setpoints.
-	// They differ: 21 is what the user asked for, 20 is what is on the device.
-	if err := tracker.Seed(ctx, []ha.StateData{
+	seed := []ha.StateData{
 		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value("{}")},
-	}); err != nil {
+	}
+	for entityID, stateVal := range seeded {
+		seed = append(seed, ha.StateData{
+			EntityID: entityID, State: stateVal, Attributes: jsontext.Value("{}"),
+		})
+	}
+	if err := tracker.Seed(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
 	if err := global.Set(ctx, "thermostat:desired:bedroom", 21.0); err != nil {
@@ -416,23 +459,29 @@ func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 	if err := global.Set(ctx, "thermostat:written:bedroom", 20.0); err != nil {
 		t.Fatal(err)
 	}
-
 	if err := sup.LoadAll(ctx); err != nil {
 		t.Fatal(err)
 	}
+	return &windowHandoffHarness{t: t, ctx: ctx, tracker: tracker, reg: reg, mu: &mu, calls: &calls}
+}
 
-	// The window closes: heating_windows must restore the published desired.
-	reg.Dispatch(ha.Event{
+func (h *windowHandoffHarness) report(entityID, oldState, newState string) {
+	h.t.Helper()
+	h.reg.Dispatch(ha.Event{
 		Type: "state_changed",
-		Data: jsontext.Value(`{"entity_id":"binary_sensor.bedroom_window",` +
-			`"old_state":{"state":"on"},"new_state":{"state":"off"}}`),
+		Data: jsontext.Value(`{"entity_id":"` + entityID + `",` +
+			`"old_state":{"state":"` + oldState + `"},"new_state":{"state":"` + newState + `"}}`),
 	})
+}
 
+// wroteSetpoint waits for a set_temperature(climate.bedroom, temp) call.
+func (h *windowHandoffHarness) wroteSetpoint(temp float64) bool {
+	h.t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		mu.Lock()
-		snapshot := append([]svcCall(nil), calls...)
-		mu.Unlock()
+		h.mu.Lock()
+		snapshot := append([]windowSvcCall(nil), *h.calls...)
+		h.mu.Unlock()
 		for _, c := range snapshot {
 			if c.domain != "climate" || c.service != "set_temperature" {
 				continue
@@ -441,15 +490,42 @@ func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 			if err := json.Unmarshal(c.data, &m); err != nil {
 				continue
 			}
-			if m["entity_id"] == "climate.bedroom" && m["temperature"] == float64(20) {
-				return // handoff worked
+			if m["entity_id"] == "climate.bedroom" && m["temperature"] == temp {
+				return true
 			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	t.Fatalf("no set_temperature(climate.bedroom, 20) call; got %+v", calls)
+	return false
+}
+
+// TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
+// (spec §4.2): on a window close, heating_windows.lua must restore the setpoint
+// the controller published to global:thermostat:written:<zone> — not a stale
+// saved value, and not the *requested* value, which may sit above the commanded
+// one while an overshoot correction is cutting a warmup short (overshoot-spec.md
+// §7).
+func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
+	h := newWindowHandoffHarness(t, nil, nil)
+
+	h.report("binary_sensor.bedroom_window", "on", "off")
+	if !h.wroteSetpoint(20) {
+		t.Fatal("no set_temperature(climate.bedroom, 20) on the window close")
+	}
+}
+
+// TestWindowHandoffWaitsForEveryWindow: the setpoint belongs to the zone, not to
+// the sensor that fired, so closing one window while another in the same zone is
+// still open must leave the frost guard in place.
+func TestWindowHandoffWaitsForEveryWindow(t *testing.T) {
+	h := newWindowHandoffHarness(t,
+		[]string{"binary_sensor.bedroom_window", "binary_sensor.bedroom_window_2"},
+		map[string]string{"binary_sensor.bedroom_window_2": "on"})
+
+	h.report("binary_sensor.bedroom_window", "on", "off")
+	if h.wroteSetpoint(20) {
+		t.Fatal("restored the setpoint with the second window still open")
+	}
 }
 
 // TestThermostatAPI loads the real thermostat.lua (with its libs, a real

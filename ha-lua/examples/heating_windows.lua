@@ -19,6 +19,7 @@
 -- when it is "off" the zone is left untouched.
 
 local zones = require "zones"
+local control = require "control"
 
 local FROST = zones.frost_temp
 local zone_defs = zones.zones
@@ -38,6 +39,18 @@ local function is_heating(zone)
   return state ~= nil and state.state == "heat"
 end
 
+-- A zone may list several sensors, and the setpoint belongs to the zone, not to
+-- whichever sensor fired: restoring when one of two windows closes would heat
+-- the room with the other still open. A not-yet-seeded sensor counts as closed.
+local function any_window_open(zone)
+  local states = {}
+  for _, window in ipairs(zone_defs[zone].windows) do
+    local state = ha.get_state(window)
+    states[#states + 1] = state and state.state or "off"
+  end
+  return control.window_open(states)
+end
+
 local function set_temp(zone, temp)
   ha.call_service("climate", "set_temperature", {
     entity_id = zone_defs[zone].climate,
@@ -48,18 +61,15 @@ end
 -- Door/window binary_sensor convention: "on" = open, "off" = closed.
 for window in pairs(by_window) do
   ha.on_state_change(window, function(data)
-    local new_state = data.new_state
-    if new_state == nil then return end
+    local new_state = data.new_state and data.new_state.state
     local zone = by_window[data.entity_id]
-    if not is_heating(zone) then return end -- mode must be "heat", not "off"
+    if not is_heating(zone) then return end
 
-    if new_state.state == "on" then
-      -- Opened: drop to the frost guard. No need to save anything — the
-      -- controller keeps publishing what it wants in global.
+    if new_state == "on" then
       set_temp(zone, FROST)
-    elseif new_state.state == "off" then
-      -- Closed: restore whatever the controller is currently commanding. This
-      -- is the live schedule/override value, never the stale pre-open setpoint.
+    elseif new_state == "off" and not any_window_open(zone) then
+      -- Whatever the controller is commanding now, never the pre-open
+      -- setpoint: a schedule transition or override during the airing wins.
       local commanded = global.get(zones.written_key(zone))
       if type(commanded) == "number" then set_temp(zone, commanded) end
     end
