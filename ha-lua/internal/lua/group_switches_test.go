@@ -61,7 +61,7 @@ func newGroupHarness(t *testing.T, lampStates ...string) *groupHarness {
 	return newGroupHarnessStates(t, true, "off", lampStates...)
 }
 
-// newGroupHarnessFollow can also run it with FOLLOW_OUTSIDE_LAMP_CHANGE turned
+// newGroupHarnessFollow can also run it with FOLLOW_OUTSIDE_CHANGE turned
 // off, since both settings are a supported configuration and both have a rule
 // worth pinning.
 func newGroupHarnessFollow(t *testing.T, follow bool, lampStates ...string) *groupHarness {
@@ -144,12 +144,12 @@ func setFollowOutsideLampChange(t *testing.T, path string, follow bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const shipped = "local FOLLOW_OUTSIDE_LAMP_CHANGE = true"
+	const shipped = "local FOLLOW_OUTSIDE_CHANGE = true"
 	if !strings.Contains(string(src), shipped) {
 		t.Fatalf("%q not found in the example — was the option renamed?", shipped)
 	}
 	out := strings.Replace(string(src), shipped,
-		fmt.Sprintf("local FOLLOW_OUTSIDE_LAMP_CHANGE = %t", follow), 1)
+		fmt.Sprintf("local FOLLOW_OUTSIDE_CHANGE = %t", follow), 1)
 	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestGroupSwitchesRelayPressExpectsTheOtherEcho(t *testing.T) {
 	h.expectCmd("turn_off")
 }
 
-// TestGroupSwitchesFollowsAnOutsideLampChange: with FOLLOW_OUTSIDE_LAMP_CHANGE
+// TestGroupSwitchesFollowsAnOutsideLampChange: with FOLLOW_OUTSIDE_CHANGE
 // on (the shipped default), a lamp moved with no switch involved — the app, a
 // schedule, a voice assistant — takes the rest of the group with it, in both
 // directions. Otherwise turning one lamp on in the app is the half-lit room this
