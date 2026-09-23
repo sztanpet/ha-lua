@@ -427,7 +427,7 @@ local function scan()
         eta_at_least = fit.eta_at_least,
         empty_at = fit.eta_seconds and now:add(fit.eta_seconds):unix() or nil,
         samples = #series,
-        steps = #series - 1,
+        steps = math.max(#series - 1, 0),
       }
     end
   end
@@ -464,7 +464,7 @@ end)
 -- them and the answer, and the trail. Read-only on purpose — inspecting a
 -- suspect row must not alter it.
 ha.serve("GET", "/api/detail", function(req)
-  local entity_id = (req.query or {}).entity_id
+  local entity_id = req.query.entity_id
   if type(entity_id) ~= "string" or entity_id == "" then
     return 400, json.encode({ error = "entity_id required" }), JSON_HDR
   end
@@ -530,7 +530,7 @@ ha.serve("GET", "/api/detail", function(req)
       eta_at_least = fit.eta_at_least,
       tier = tier_of(fit.eta_seconds, fit.eta_at_least),
       samples = #series,
-      steps = #series > 0 and #series - 1 or 0,
+      steps = math.max(#series - 1, 0),
     },
   }), JSON_HDR
 end)

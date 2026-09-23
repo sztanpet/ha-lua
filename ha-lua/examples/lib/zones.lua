@@ -21,13 +21,13 @@ M.frost_temp = 15
 M.default_override_temp = 23
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
--- `radiator` is the temperature sensor strapped to that zone's radiator; only
--- valve_watch.lua reads it (to spot a stuck/dead valve), the thermostat and
--- window scripts ignore it.
+-- `radiator` is the sensor strapped to that zone's radiator, read only by
+-- valve_watch.lua. `label` is what a notification calls the zone; it defaults to
+-- the key.
 M.zones = {
-  livingroom = { climate = "climate.living_room", windows = { "binary_sensor.living_room_window" }, radiator = "sensor.living_room_radiator_temp" },
-  bedroom    = { climate = "climate.bedroom",     windows = { "binary_sensor.sonoff_door_1_contact" }, radiator = "sensor.bedroom_radiator_temp" },
-  kitchen    = { climate = "climate.kitchen",     windows = { "binary_sensor.kitchen_window" },     radiator = "sensor.kitchen_radiator_temp" },
+  livingroom = { climate = "climate.living_room", windows = { "binary_sensor.living_room_window" }, radiator = "sensor.living_room_radiator_temp", label = "Living room" },
+  bedroom    = { climate = "climate.bedroom",     windows = { "binary_sensor.sonoff_door_1_contact" }, radiator = "sensor.bedroom_radiator_temp", label = "Bedroom" },
+  kitchen    = { climate = "climate.kitchen",     windows = { "binary_sensor.kitchen_window" },     radiator = "sensor.kitchen_radiator_temp", label = "Kitchen" },
 }
 
 -- The two global keys the scripts hand zone setpoints off through. Both are

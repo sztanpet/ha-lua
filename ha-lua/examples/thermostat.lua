@@ -497,7 +497,7 @@ ha.serve("PUT", "/api/order", function(req)
 end)
 
 ha.serve("GET", "/api/schedule", function(req)
-  local zone = req.query and req.query.zone
+  local zone = req.query.zone
   if type(zone) == "string" and zone ~= "" then
     if zone_defs[zone] == nil then return bad("unknown zone") end
     return json_ok({ zone = zone, days = load_schedule(zone) })
@@ -526,7 +526,7 @@ end)
 -- Everything needed to judge whether k can be trusted, including the episodes
 -- that taught it nothing (§9.6).
 ha.serve("GET", "/api/overshoot", function(req)
-  local zone = req.query and req.query.zone
+  local zone = req.query.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
   local rows = store.get(journal_key(zone))
   return json_ok({

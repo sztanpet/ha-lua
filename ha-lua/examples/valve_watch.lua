@@ -41,15 +41,8 @@ local DEMAND_HYSTERESIS = 0.1
 -- Cap on history rows per query; generous for a window this short.
 local HISTORY_LIMIT = 600
 
--- Human-readable zone names for the notification text.
-local zone_labels = {
-  bedroom    = "Bedroom",
-  livingroom = "Living room",
-  childrens  = "Children's room",
-}
-
 local function label(zone)
-  return zone_labels[zone] or zone
+  return zone_defs[zone].label or zone
 end
 
 -- Per-zone flag so a dead valve is reported once per episode, not once a
