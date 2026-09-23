@@ -177,26 +177,29 @@ end
 function M.tick()
   local pending = load_pending()
   local moment = now()
-  local dirty = false
+  local due = {}
 
   for key, entry in pairs(pending) do
     if entry.due <= moment then
       local step = entry.step or 1
       local final = entry.steps == nil or step >= #entry.steps
-      -- Re-arm or drop BEFORE running the action: the action can raise, and a
-      -- reminder left pending on a raising action fires again every tick.
       if final then
         pending[key] = nil
       else
         entry.step = step + 1
         entry.due = moment + seconds(entry.steps[entry.step])
       end
-      dirty = true
-      fire(key, entry, step, final)
+      due[#due + 1] = { key = key, entry = entry, step = step, final = final }
     end
   end
+  if #due == 0 then return end
 
-  if dirty then save_pending(pending) end
+  -- Persist the re-arm before running anything: an action that raises leaves
+  -- the store already advanced, so it fires once rather than every tick.
+  save_pending(pending)
+  for _, item in ipairs(due) do
+    fire(item.key, item.entry, item.step, item.final)
+  end
 end
 
 -- start installs the tick. Call once at load time, after every define().

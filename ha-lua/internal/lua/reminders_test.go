@@ -189,3 +189,28 @@ func TestRemindersUnknownActionIsDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A raising action must cost one reminder, not wedge the tick into re-firing it
+// forever: the store has to be advanced before the action runs.
+func TestRemindersRaisingActionFiresOnce(t *testing.T) {
+	L, _, _ := newRemindersState(t, nil, nil)
+
+	err := L.DoString(`
+		local reminders = require "reminders"
+		calls = 0
+		reminders.define("boom", function() calls = calls + 1; error("nope") end)
+		reminders.start()
+
+		reminders.schedule("bad", "boom", -1, {})
+		local ok = pcall(reminders.tick)
+		assert(not ok, "the action's error was swallowed")
+		assert(calls == 1, "action ran " .. calls .. " times")
+		assert(reminders.due_at("bad") == nil, "still pending after raising")
+
+		reminders.tick()
+		assert(calls == 1, "action re-fired on a later tick")
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
