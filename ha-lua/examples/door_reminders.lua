@@ -67,14 +67,20 @@ end)
 
 for entity_id, name in pairs(DOORS) do
   ha.on_state_change(entity_id, function(data)
-    if data.new_state.state == "on" then
+    local old_state = data.old_state and data.old_state.state
+    local new_state = data.new_state and data.new_state.state
+    -- Only the two real transitions. An attribute-only update (a battery
+    -- report on the same entity) would otherwise restart the ladder from step
+    -- one on every report, so the first nag would never come due; a sensor
+    -- dropping to "unavailable" would cancel a door that is still open.
+    if new_state == "on" and old_state ~= "on" then
       reminders.escalate(entity_id, "door_open", LADDER, {
         entity_id = entity_id,
         name = name,
       })
-    else
-      -- Closed: drop the ladder and reopen the throttle, so the next opening
-      -- notifies on its own merits instead of waiting out a stale window.
+    elseif new_state == "off" then
+      -- Reopen the throttle too, so the next opening notifies on its own
+      -- merits instead of waiting out a stale window.
       reminders.cancel(entity_id)
       reminders.forget("door_nag:" .. entity_id)
     end

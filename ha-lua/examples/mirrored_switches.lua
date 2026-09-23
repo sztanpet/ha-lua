@@ -81,7 +81,7 @@ end
 
 for _, entity_id in ipairs(SWITCHES) do
   ha.on_state_change(entity_id, function(change)
-    local new_state = change.new_state.state
+    local new_state = change.new_state and change.new_state.state
     if new_state ~= "on" and new_state ~= "off" then
       return
     end
