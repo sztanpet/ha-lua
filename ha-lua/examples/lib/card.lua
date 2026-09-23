@@ -21,46 +21,50 @@ local M = {}
 -- (defaults to ha.script_id). The returned table uses plain function fields
 -- (dot calls, not methods) so callers write card.on / card.publish.
 function M.new(opts)
-	opts = opts or {}
-	local kind = opts.kind or ha.script_id
-	local handlers = {}
+  opts = opts or {}
+  local kind = opts.kind or ha.script_id
+  local handlers = {}
 
-	local function entity_id(slug)
-		return "sensor.ha_lua_" .. kind .. "_" .. slug
-	end
+  local function entity_id(slug)
+    return "sensor.ha_lua_" .. kind .. "_" .. slug
+  end
 
-	local card = {}
+  local card = {}
 
-	-- on registers a handler for one command action. handler is called with the
-	-- command's data payload. Returns card for chaining.
-	function card.on(action, handler)
-		handlers[action] = handler
-		return card
-	end
+  -- on registers a handler for one command action. handler is called with the
+  -- command's data payload. Returns card for chaining.
+  function card.on(action, handler)
+    handlers[action] = handler
+    return card
+  end
 
-	-- publish creates/updates the companion sensor for slug, stamping the
-	-- ha_lua_script marker so the entity is identifiable as ours. Returns the
-	-- non-raising ha.set_state result (created:bool|nil, err).
-	function card.publish(slug, state, attrs)
-		attrs = attrs or {}
-		attrs.ha_lua_script = ha.script_id
-		return ha.set_state(entity_id(slug), state, attrs)
-	end
+  -- publish creates/updates the companion sensor for slug, stamping the
+  -- ha_lua_script marker so the entity is identifiable as ours. Returns the
+  -- non-raising ha.set_state result (created:bool|nil, err).
+  function card.publish(slug, state, attrs)
+    attrs = attrs or {}
+    attrs.ha_lua_script = ha.script_id
+    return ha.set_state(entity_id(slug), state, attrs)
+  end
 
-	-- remove deletes the companion sensor for slug. Returns the non-raising
-	-- ha.remove_state result (true|nil, err).
-	function card.remove(slug)
-		return ha.remove_state(entity_id(slug))
-	end
+  -- remove deletes the companion sensor for slug. Returns the non-raising
+  -- ha.remove_state result (true|nil, err).
+  function card.remove(slug)
+    return ha.remove_state(entity_id(slug))
+  end
 
-	ha.on_command(function(action, data)
-		local handler = handlers[action]
-		if handler then
-			handler(data)
-		end
-	end)
+  ha.on_command(function(action, data)
+    local handler = handlers[action]
+    if handler == nil then
+      -- A card button that does nothing is otherwise indistinguishable from a
+      -- broken one, from either side.
+      ha.log("warn", kind .. ": no handler for card action " .. tostring(action))
+      return
+    end
+    handler(data)
+  end)
 
-	return card
+  return card
 end
 
 return M

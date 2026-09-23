@@ -37,8 +37,6 @@
 -- from the level we last commanded while that is still fresh, and only then
 -- from the reported state. Same lesson as mirrored_switches.lua.
 
-ha.immediate_events()
-
 -- The Zigbee2MQTT friendly name, exactly as it appears in the topic —
 -- spaces included. Check yours with: mosquitto_sub -t 'zigbee2mqtt/#' -v
 local DIMMER = "ikea dimmer 1"
@@ -46,8 +44,8 @@ local ACTION_TOPIC = "zigbee2mqtt/" .. DIMMER .. "/action"
 local LIGHT = "light.konyha_konyha_led"
 
 local ON_BRIGHTNESS = 255 -- what a click on the on button sets; nil = the bulb's own last level
-local RAMP_STEP_SPEC = "150ms"
 local RAMP_STEP_SECS = 0.15
+local RAMP_STEP_SPEC = string.format("%dms", RAMP_STEP_SECS * 1000)
 local RAMP_FULL_SECS = 8 -- seconds a hold takes to cross the whole range
 local MIN_BRIGHTNESS = 3 -- a hold down dims to the bottom, it never switches off
 local MAX_BRIGHTNESS = 255
@@ -218,11 +216,12 @@ local light = ha.get_state(LIGHT)
 if not light then
   ha.log("warn", LIGHT .. " is unknown to the daemon — is that the right entity id?")
 else
-  local features = tonumber(light.attributes and light.attributes.supported_features) or 0
+  local attrs = light.attributes or {}
+  local features = tonumber(attrs.supported_features) or 0
   local supports_transition = features % 64 >= 32
   ha.log("info", string.format(
     "%s: supported_features=%d transition=%s color_modes=%s brightness=%s",
     LIGHT, features, tostring(supports_transition),
-    table.concat(light.attributes.supported_color_modes or {}, ","),
-    tostring(light.attributes.brightness)))
+    table.concat(attrs.supported_color_modes or {}, ","),
+    tostring(attrs.brightness)))
 end
