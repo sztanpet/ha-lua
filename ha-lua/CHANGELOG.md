@@ -4,6 +4,71 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.9.0 - 2026-09-23
+
+### Added
+- **`group_switches.lua`, an example holding several switches and lamps in one
+  state.** Any flip of any switch drives every entity in the group to all-on or
+  all-off, never half of each, and a switch that feeds a lamp is simply listed in
+  both halves. Two things make it worth a script rather than an automation: the
+  direction inverts the group's *aggregate* state as it stood before the press,
+  so one entity moved by the app or a failed Zigbee command cannot make the next
+  press drive the room the wrong way; and because a switch we command is also a
+  switch we watch, every command records the state it expects back so its own
+  echo is not mistaken for a press — untreated, that inverts the still-fresh
+  verdict and strobes the room. `FOLLOW_OUTSIDE_CHANGE` decides whether an entity
+  moved with no switch involved drags the group with it.
+- **`lib/climate.lua`** holds the climate-entity and clock reads that
+  `thermostat.lua` and `enhanced_climate.lua` each had a copy of, next to
+  `lib/control.lua`, which already holds the decisions taken on those values. The
+  weekday conversion off Go's Sunday-first ordering and the 5..35 bounds fallback
+  are the two that must not drift.
+
+### Changed
+- **`heating_windows.lua` now requires `lib/control.lua`.** If you copy the new
+  version into `scripts/`, copy `lib/` with it.
+- **Comments across every example are cut back to what the code cannot say.**
+  The headers were essays that narrated the implementation below them; what is
+  left is the reasoning a reader cannot recover from the code — why MQTT and not
+  an entity, why the dimmer's ramp is geometric, why the window restore reads the
+  written value and not the requested one.
+- **`lib/card.lua` warns about a card action with no handler** instead of
+  dropping it silently, which from either side looks like a broken button.
+- **`ikea_dimmer.lua` no longer calls `ha.immediate_events()`** — it registers no
+  state handler at all, its input being an MQTT topic, which never goes through
+  the batch window — and its step interval is written once rather than as both
+  `"150ms"` and `0.15`.
+- **A zone's display name lives in `lib/zones.lua`** as `label`, with
+  `valve_watch.lua` reading it from there; its own copy had drifted out of step
+  with the zone list.
+
+### Fixed
+- **A reminder whose action raised fired again on every tick, forever.**
+  `lib/reminders.lua` re-armed or dropped the reminder in memory and wrote the
+  pending table back only after every action had run, so an action that raised
+  never reached the write. The store is advanced before anything runs now, and a
+  failing action costs one reminder rather than a notification per cadence.
+- **`heating_windows.lua` restored a zone's setpoint while another window was
+  still open.** It acted on whichever sensor fired, so in a zone with two windows
+  closing one heated the room with the other up. The close path reduces every
+  sensor bound to the zone through the same any-open rule the controller writes
+  against.
+- **`door_reminders.lua` could nag never or stop early.** The ladder was re-armed
+  on every `on` report, so an attribute-only update (a battery level on the same
+  sensor) restarted it at step one and the first nag never came due; and anything
+  that was not `on` cancelled it, so a sensor dropping to `unavailable` dropped
+  the nag for a door that was still open.
+- **A timed override on a climate with nothing under it no longer sticks.** A
+  boost on an `enhanced_climate` entity with no schedule and no manual hold left
+  the dial at the boost temperature: once the override expired nothing was
+  controlling the climate, so no write ever put it back. A boost now snapshots
+  the setpoint it overwrote and restores it on the first uncontrolled pass, and
+  schedules its own expiry instead of waiting for the next minute tick — which
+  the card showed as a countdown frozen at 00:00.
+- **`mirrored_switches.lua` and `door_reminders.lua` raised on a removed
+  entity**, indexing `new_state`, which Home Assistant omits when an entity goes
+  away.
+
 ## 4.8.0 - 2026-09-02
 
 ### Added
