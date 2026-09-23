@@ -60,6 +60,7 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "card.lua"), filepath.Join(libDir, "card.lua"))
+	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "climate.lua"), filepath.Join(libDir, "climate.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "enhanced_climate.lua"), filepath.Join(dir, "enhanced_climate.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "enhanced_climate.html"), filepath.Join(dir, "enhanced_climate.html"))
 

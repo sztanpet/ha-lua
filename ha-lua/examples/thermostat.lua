@@ -14,6 +14,7 @@
 local zones = require "zones"
 local schedule = require "schedule"
 local control = require "control"
+local climate = require "climate"
 local overshoot = require "overshoot"
 
 local zone_defs = zones.zones
@@ -28,18 +29,11 @@ local function override_temp_key(zone) return "override_temp:" .. zone end
 -- One display order shared by every browser, so one fixed key, not per-zone.
 local ORDER_KEY = "zone_order"
 
--- The time, plus the schedule's weekday (0=Mon..6=Sun, converted from Go's
--- Sunday-first) and minute-of-day.
-local function now_parts()
-  local now = time.now()
-  local dow = (now:weekday() + 6) % 7
-  return now, dow, now:hour() * 60 + now:minute()
-end
+local now_parts, parse_time = climate.now_parts, climate.parse_time
 
-local function parse_time(text)
-  if type(text) ~= "string" then return nil end
-  local parsed = time.parse(time.RFC3339, text)
-  return parsed -- nil on parse failure
+-- The zone's climate entity, which every read below goes through.
+local function entity_of(zone)
+  return zone_defs[zone].climate
 end
 
 -- The temperature an override drives the zone to, seeded before the user first
@@ -50,38 +44,11 @@ local function override_temp(zone)
   return zones.default_override_temp
 end
 
--- The climate entity's hvac mode, or nil until it seeds.
-local function mode(zone)
-  local state = ha.get_state(zone_defs[zone].climate)
-  if state == nil then return nil end
-  return state.state
-end
+local function mode(zone) return climate.mode(entity_of(zone)) end
+local function current_target(zone) return climate.target(entity_of(zone)) end
+local function current_temp(zone) return climate.current_temp(entity_of(zone)) end
 
-local function current_target(zone)
-  local state = ha.get_state(zone_defs[zone].climate)
-  if state and state.attributes then return state.attributes.temperature end
-  return nil
-end
-
-local function current_temp(zone)
-  local state = ha.get_state(zone_defs[zone].climate)
-  if state and state.attributes then return state.attributes.current_temperature end
-  return nil
-end
-
--- The device's accepted setpoint range. HA silently rejects a set_temperature
--- outside min_temp/max_temp, so honouring the device's own limits is what keeps
--- the UI from offering a value it will refuse. The 5..35 fallback covers the
--- window before the entity seeds.
-local function temp_bounds(zone)
-  local lo, hi = 5, 35
-  local state = ha.get_state(zone_defs[zone].climate)
-  if state and state.attributes then
-    if type(state.attributes.min_temp) == "number" then lo = state.attributes.min_temp end
-    if type(state.attributes.max_temp) == "number" then hi = state.attributes.max_temp end
-  end
-  return lo, hi
-end
+local function temp_bounds(zone) return climate.bounds(entity_of(zone)) end
 
 -- Any window in the zone definitely open; an unseeded sensor counts as closed.
 local function any_window_open(zone)
@@ -152,7 +119,7 @@ end
 
 local function set_temp(zone, temp)
   ha.call_service("climate", "set_temperature", {
-    entity_id = zone_defs[zone].climate,
+    entity_id = entity_of(zone),
     temperature = temp,
   })
 end
@@ -370,7 +337,7 @@ end
 -- than from what we published, so it also shows the window script's frost value
 -- and exposes a write that never landed.
 local function zone_state(zone, now, dow, minute)
-  local state = ha.get_state(zone_defs[zone].climate)
+  local state = ha.get_state(entity_of(zone))
   local hvac_mode = state and state.state or "unknown"
   local current, commanded, hvac_action
   if state and state.attributes then

@@ -344,7 +344,7 @@ func writeThermostatScripts(t *testing.T) string {
 		t.Fatal(err)
 	}
 	writeTestZones(t, libDir)
-	for _, lib := range []string{"schedule.lua", "control.lua", "overshoot.lua"} {
+	for _, lib := range []string{"schedule.lua", "control.lua", "climate.lua", "overshoot.lua"} {
 		copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", lib), filepath.Join(libDir, lib))
 	}
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))

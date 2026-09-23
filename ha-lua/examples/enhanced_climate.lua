@@ -17,6 +17,7 @@
 
 local control = require "control"
 local schedule = require "schedule"
+local climate_lib = require "climate"
 local card = require("card").new { kind = "enhanced_climate" }
 
 -- Seed value (°C) for an enhanced climate's override temperature — the setpoint
@@ -74,18 +75,7 @@ local function slug_of(climate)
   return (climate:gsub("^climate%.", ""))
 end
 
--- The time, plus the schedule's weekday (0=Mon..6=Sun, converted from Go's
--- Sunday-first) and minute-of-day.
-local function now_parts()
-  local now = time.now()
-  local dow = (now:weekday() + 6) % 7
-  return now, dow, now:hour() * 60 + now:minute()
-end
-
-local function parse_time(text)
-  if type(text) ~= "string" then return nil end
-  return time.parse(time.RFC3339, text) -- nil on parse failure
-end
+local now_parts, parse_time = climate_lib.now_parts, climate_lib.parse_time
 
 local function override_temp(climate)
   local value = store.get(override_temp_key(climate))
@@ -93,29 +83,8 @@ local function override_temp(climate)
   return DEFAULT_OVERRIDE_TEMP
 end
 
-local function mode(climate)
-  local state = ha.get_state(climate)
-  if state == nil then return nil end
-  return state.state
-end
-
-local function current_target(climate)
-  local state = ha.get_state(climate)
-  if state and state.attributes then return state.attributes.temperature end
-  return nil
-end
-
--- The device's accepted setpoint range. HA silently drops a set_temperature
--- outside min_temp/max_temp. The 5..35 fallback covers an unseeded entity.
-local function temp_bounds(climate)
-  local lo, hi = 5, 35
-  local state = ha.get_state(climate)
-  if state and state.attributes then
-    if type(state.attributes.min_temp) == "number" then lo = state.attributes.min_temp end
-    if type(state.attributes.max_temp) == "number" then hi = state.attributes.max_temp end
-  end
-  return lo, hi
-end
+local mode, current_target = climate_lib.mode, climate_lib.target
+local temp_bounds = climate_lib.bounds
 
 -- The entity's friendly_name, falling back to the id while it has none.
 local function friendly_name(climate)
