@@ -1,19 +1,15 @@
 -- thermostat.lua
 --
--- The heating controller. It owns the schedule / override / manual
--- dimension of each zone's setpoint; heating_windows.lua owns the window
--- dimension. The split is clean: this script computes one desired setpoint per
--- zone, publishes it to global so the window script can restore it, and writes
--- it to the climate entity only while no window in the zone is open.
---
--- See thermostat-ui-spec.md for the full design. This file is the controller
--- (the 1-minute tick + desired() engine + manual-change detection); the HTTP
--- API and the single-page UI are added on top of it.
+-- The heating controller: it owns the schedule / override / manual dimension of
+-- each zone's setpoint, heating_windows.lua owns the window dimension. One
+-- desired setpoint per zone is computed here, published to global so the window
+-- script can restore it, and written to the climate entity only while no window
+-- in the zone is open. See thermostat-ui-spec.md for the design.
 --
 -- It also runs the overshoot learner (overshoot-spec.md): the number written to
 -- the device may sit below the requested one during a warmup, to stop a small
--- room sailing past its setpoint. It ships in observe-only mode, computing and
--- recording that correction without applying it.
+-- room sailing past its setpoint. It ships in observe-only mode, recording that
+-- correction without applying it.
 
 local zones = require "zones"
 local schedule = require "schedule"
@@ -22,20 +18,18 @@ local overshoot = require "overshoot"
 
 local zone_defs = zones.zones
 
--- Per-zone store keys. Schedule, the UI override (timed), the manual hold
--- (dial-detected) and the override setpoint all live in this script's KV store;
--- the published desired lives in `global` (shared).
+-- Schedule, timed override, manual hold and override setpoint live in this
+-- script's KV store; the published desired lives in `global`, shared.
 local function sched_key(zone) return "schedule:" .. zone end
 local function override_key(zone) return "override:" .. zone end
 local function manual_key(zone) return "manual:" .. zone end
 local function override_temp_key(zone) return "override_temp:" .. zone end
 
--- The card display order is a single UI preference shared by every browser, so
--- it lives under one fixed key (not per-zone): an array of zone ids.
+-- One display order shared by every browser, so one fixed key, not per-zone.
 local ORDER_KEY = "zone_order"
 
--- now_parts returns the current time userdata plus the schedule's weekday
--- (0=Mon..6=Sun, converted from Go's Sunday-first weekday) and minute-of-day.
+-- The time, plus the schedule's weekday (0=Mon..6=Sun, converted from Go's
+-- Sunday-first) and minute-of-day.
 local function now_parts()
   local now = time.now()
   local dow = (now:weekday() + 6) % 7
@@ -48,17 +42,15 @@ local function parse_time(text)
   return parsed -- nil on parse failure
 end
 
--- override_temp returns the zone's UI-settable override setpoint (the
--- temperature an override drives the zone to), seeding the default the first
--- time before the user touches the stepper.
+-- The temperature an override drives the zone to, seeded before the user first
+-- touches the stepper.
 local function override_temp(zone)
   local value = store.get(override_temp_key(zone))
   if type(value) == "number" then return value end
   return zones.default_override_temp
 end
 
--- mode returns the climate entity's hvac mode ("heat"/"off"/...) or nil if the
--- entity is not yet seeded.
+-- The climate entity's hvac mode, or nil until it seeds.
 local function mode(zone)
   local state = ha.get_state(zone_defs[zone].climate)
   if state == nil then return nil end
@@ -77,12 +69,10 @@ local function current_temp(zone)
   return nil
 end
 
--- temp_bounds returns the climate entity's accepted setpoint range. HA
--- advertises min_temp/max_temp on every climate entity, and writing a
--- temperature outside that range is silently rejected by HA (the setpoint just
--- stays put). We honour the device's own limits so the UI can never offer, nor
--- an override ever request, a value the device will refuse. Falls back to a
--- permissive 5..35 only while the entity has not seeded yet.
+-- The device's accepted setpoint range. HA silently rejects a set_temperature
+-- outside min_temp/max_temp, so honouring the device's own limits is what keeps
+-- the UI from offering a value it will refuse. The 5..35 fallback covers the
+-- window before the entity seeds.
 local function temp_bounds(zone)
   local lo, hi = 5, 35
   local state = ha.get_state(zone_defs[zone].climate)
@@ -93,9 +83,7 @@ local function temp_bounds(zone)
   return lo, hi
 end
 
--- any_window_open reports whether any window in the zone is definitely open.
--- A not-yet-seeded sensor (nil) counts as closed for the write decision. The
--- any-open/all-closed reduction itself is the shared control.window_open.
+-- Any window in the zone definitely open; an unseeded sensor counts as closed.
 local function any_window_open(zone)
   local states = {}
   for _, window in ipairs(zone_defs[zone].windows) do
@@ -105,8 +93,7 @@ local function any_window_open(zone)
   return control.window_open(states)
 end
 
--- any_window_unknown reports whether any window sensor has no state yet. Used
--- only to suppress manual-change detection until the sensors have seeded.
+-- Suppresses manual-change detection until every window sensor has seeded.
 local function any_window_unknown(zone)
   for _, window in ipairs(zone_defs[zone].windows) do
     if ha.get_state(window) == nil then return true end
@@ -120,8 +107,8 @@ local function load_schedule(zone)
   return {}
 end
 
--- active_override returns the live override table for the zone, or nil. An
--- expired override is cleared as a side effect so the zone reverts to schedule.
+-- The live override, or nil. An expired one is cleared here, so the zone reverts
+-- to schedule.
 local function active_override(zone, now)
   local override = store.get(override_key(zone))
   if type(override) ~= "table" or not override.active or type(override.ends_at) ~= "string" then
@@ -137,9 +124,8 @@ local function active_override(zone, now)
   return nil
 end
 
--- active_manual returns the live manual-hold table, or nil, clearing it once its
--- `expires` instant has passed. (We avoid the field name "until" because it is a
--- Lua keyword.)
+-- The live manual hold, or nil, clearing it once `expires` has passed. ("until"
+-- would be a Lua keyword.)
 local function active_manual(zone, now)
   local manual = store.get(manual_key(zone))
   if type(manual) ~= "table" or type(manual.temp) ~= "number" or type(manual.expires) ~= "string" then
@@ -155,11 +141,8 @@ local function active_manual(zone, now)
   return nil
 end
 
--- desired implements §4.1: override beats manual beats schedule. Returns the
--- temperature and its source string ("override"/"manual"/"schedule"), or nil if
--- the zone has no schedule at all. The priority pick is the shared
--- control.desired; this wrapper resolves each source's candidate temperature
--- (and expires stale override/manual holds as a side effect).
+-- §4.1: override beats manual beats schedule. Resolves each source's candidate
+-- for the shared control.desired, expiring stale holds on the way.
 local function desired(zone, now, dow, minute)
   local override = active_override(zone, now) and override_temp(zone) or nil
   local manual = active_manual(zone, now)
@@ -175,20 +158,13 @@ local function set_temp(zone, temp)
 end
 
 -- ---------------------------------------------------------------------------
--- Overshoot correction (overshoot-spec.md). A bang-bang thermostat cannot
--- anticipate the heat already in the radiator, so a small room sails past its
--- setpoint on every warmup. The fix is to command a lower number for the whole
--- climb and let the stored energy land the room on target; how much lower is
--- learned from the peak each episode actually reaches.
+-- Overshoot correction (overshoot-spec.md). lib/overshoot.lua holds the math;
+-- the state machine is here because the offset must be latched at the instant
+-- the episode is detected, and because store.* is per-script.
 --
--- The state machine lives here rather than in a second script because the
--- offset has to be latched at the same instant the episode is detected, and
--- because store.* is per-script. lib/overshoot.lua holds the math.
---
--- Everything below is diagnostics-first by design: this is the only script here
--- that can fail silently — a learner that discards every episode looks exactly
--- like one that has converged. So every episode is journaled, discards
--- included and with their reason, and discards log at warn.
+-- A learner that discards every episode looks exactly like one that has
+-- converged, which is why every episode is journaled with its reason and
+-- discards log at warn.
 -- ---------------------------------------------------------------------------
 
 local function k_key(zone) return "overshoot_k:" .. zone end
@@ -205,8 +181,8 @@ local function learned_k(zone)
   return overshoot.K_INIT
 end
 
--- How many episodes k has actually been learned from. Shown beside the
--- correction because "1.2° low" alone says nothing about whether to trust it.
+-- How many episodes k was learned from: "1.2° low" alone says nothing about
+-- whether to trust it.
 local function learned_samples(zone)
   local value = store.get(samples_key(zone))
   if type(value) == "number" then return value end
@@ -219,9 +195,8 @@ local function live_episode(zone)
   return episode
 end
 
--- An unset flag means observe-only is ON: the correction ships watching rather
--- than acting, so it can be judged on a week of what it would have done. Taking
--- a zone out of it is a deliberate act (§9.4).
+-- Unset means observe-only is ON: the correction ships watching rather than
+-- acting, so it can be judged on a week of what it would have done (§9.4).
 local function observe_only(zone)
   return store.get(observe_key(zone)) ~= false
 end
@@ -238,9 +213,8 @@ local function open_episode(zone, requested, current, at)
   local watching = observe_only(zone)
   local episode = overshoot.open(requested, current, learned_k(zone), watching, at)
   if episode == nil then return nil end
-  -- HA silently drops a setpoint outside the device's range, so an unclamped
-  -- command would simply never be applied and the episode would then wait for a
-  -- cutoff that cannot arrive.
+  -- An unclamped command HA drops would leave the episode waiting for a cutoff
+  -- that cannot arrive.
   local lo, hi = temp_bounds(zone)
   episode.commanded = control.clamp_bounds(episode.commanded, lo, hi)
   episode.applied = control.clamp_bounds(episode.applied, lo, hi)
@@ -256,9 +230,8 @@ local function close_episode(zone, episode, at)
   local k_before = learned_k(zone)
   local k_after, outcome, reason = overshoot.close(episode, k_before)
   if outcome == "discarded" then
-    -- warn, not debug: a run of discards is the silent failure this feature is
-    -- most likely to have, and needing to raise the log level to notice the
-    -- learner has never once run would defeat the point.
+    -- warn, not debug: needing to raise the log level to notice the learner has
+    -- never once run would defeat the point of journaling it.
     ha.log("warn", string.format(
       "overshoot %s: discarded (%s) requested=%.1f rise=%.1f peak=%.1f",
       zone, reason, episode.requested, episode.rise, episode.peak))
@@ -274,13 +247,12 @@ local function close_episode(zone, episode, at)
   store.delete(episode_key(zone))
 end
 
--- overshoot_step advances the zone's episode by one observation and returns the
--- setpoint to command, which is the request whenever no episode is running.
+-- Advances the zone's episode by one observation and returns the setpoint to
+-- command, which is the request whenever no episode is running.
 --
--- An episode opens when the REQUEST CHANGES to something above the room
--- temperature — a schedule transition, an override, a manual hold. Not merely
--- whenever the room sits below the setpoint, which is true on every tick of a
--- normal hold and would open an episode a minute.
+-- An episode opens when the REQUEST CHANGES to something above the room, not
+-- merely whenever the room sits below the setpoint — which is true on every tick
+-- of a normal hold and would open an episode a minute.
 local function overshoot_step(zone, now, requested, previous)
   local at = now:unix()
   local current = current_temp(zone)
@@ -312,33 +284,29 @@ local function overshoot_step(zone, now, requested, previous)
   return episode.applied
 end
 
--- apply_zone publishes the zone's desired setpoint and writes it to the climate
--- entity when the mode is heat and no window is open. The write is skipped when
--- the value is unchanged so we don't spam set_temperature.
+-- Publishes the zone's setpoints and writes to the climate entity when the mode
+-- is heat and no window is open.
 --
--- Two values are published, not one: `desired` is the request, `written` is
--- what we command the device to. They differ only while the overshoot
--- correction is cutting a warmup short (overshoot-spec.md §7); everything that
--- compares against the device reads `written`.
+-- Two values are published, not one: `desired` is the request, `written` is what
+-- the device is commanded to. They differ while the overshoot correction is
+-- cutting a warmup short (overshoot-spec.md §7), and everything that compares
+-- against the device reads `written`.
 local function apply_zone(zone, now, dow, minute)
   local desired_temp = desired(zone, now, dow, minute)
   if desired_temp == nil then return end
-  -- Read before the publish below overwrites it: a request that differs from
-  -- the last one published is what opens an overshoot episode.
+  -- Read before the publish overwrites it: a request differing from the last one
+  -- published is what opens an overshoot episode.
   local previous = global.get(zones.desired_key(zone))
   local commanded_temp = overshoot_step(zone, now, desired_temp, previous)
   global.set(zones.desired_key(zone), desired_temp)
   global.set(zones.written_key(zone), commanded_temp)
-  -- Write only in heat mode, with no window open (the window script's
-  -- territory), and only when the value actually changed — the shared
-  -- control.should_write gate.
   if control.should_write(mode(zone), any_window_open(zone), current_target(zone), commanded_temp) then
     set_temp(zone, commanded_temp)
   end
 end
 
--- The single tick that drives everything (§8): recompute, publish and (maybe)
--- write every zone. Override/manual expiry is handled inside desired().
+-- The single tick that drives everything (§8). Override/manual expiry happens
+-- inside desired().
 local function tick()
   local now, dow, minute = now_parts()
   for zone in pairs(zone_defs) do
@@ -349,10 +317,9 @@ end
 ha.every("1m", tick)
 
 -- Manual setpoint change detection (§9): the controller is the only thing that
--- writes the zone's setpoint, and it always writes exactly what it published as
--- `written`, so a climate target that differs from that is an external change
--- by the user. It becomes an ad-hoc manual hold that lasts until the next
--- schedule transition.
+-- writes the setpoint, and always writes what it published as `written`, so a
+-- target differing from that is the user at the dial. It becomes an ad-hoc
+-- manual hold lasting until the next schedule transition.
 for zone, conf in pairs(zone_defs) do
   ha.on_state_change(conf.climate, function(data)
     local new_state = data.new_state
@@ -362,14 +329,11 @@ for zone, conf in pairs(zone_defs) do
     if type(target) ~= "number" then return end
 
     local now, dow, minute = now_parts()
-    if active_override(zone, now) then return end -- override wins; ignore dial nudges
-    -- Window open or not-yet-seeded: that's the window script's 15°C territory.
+    if active_override(zone, now) then return end -- an override outranks the dial
+    -- Window open or unseeded: the window script's frost territory.
     if any_window_open(zone) or any_window_unknown(zone) then return end
 
     local published = global.get(zones.written_key(zone))
-    -- Float tolerance: our own write (and the window restore) set target ==
-    -- published exactly, but 21 vs 21.0 must not look like a manual change. The
-    -- predicate is the shared control.is_manual.
     if not control.is_manual(target, published) then return end
 
     local _, _, mins_to_next = schedule.resolve(load_schedule(zone), dow, minute)
@@ -383,9 +347,9 @@ for zone, conf in pairs(zone_defs) do
 end
 
 -- ---------------------------------------------------------------------------
--- HTTP API (§6). Handlers run on this script's goroutine, so they may use any
--- ha.*/store.* call directly. All mutating endpoints re-apply the affected zone
--- and return the full state so the UI can refresh in one round-trip.
+-- HTTP API (§6). Handlers run on this script's goroutine, so any ha.*/store.*
+-- call is safe. Mutating endpoints re-apply the zone and return the full state,
+-- so the UI refreshes in one round-trip.
 -- ---------------------------------------------------------------------------
 
 local JSON_HDR = { ["Content-Type"] = "application/json" }
@@ -399,13 +363,12 @@ local function bad(msg)
   return 400, msg, TEXT_HDR
 end
 
--- zone_state builds the per-zone status block for GET /api/state.
+-- The per-zone status block for GET /api/state.
 --
--- `target` and `commanded` are the two halves of the split (overshoot-spec.md
--- §8): `target` is what the user asked for, `commanded` is the number actually
--- on the device. They are equal today. `commanded` is read back from the
--- climate entity rather than from what we published, so it also shows the
--- window script's frost value and exposes a write that never landed.
+-- `target` is what the user asked for, `commanded` the number on the device
+-- (overshoot-spec.md §8). `commanded` is read back from the climate entity rather
+-- than from what we published, so it also shows the window script's frost value
+-- and exposes a write that never landed.
 local function zone_state(zone, now, dow, minute)
   local state = ha.get_state(zone_defs[zone].climate)
   local hvac_mode = state and state.state or "unknown"
@@ -413,15 +376,12 @@ local function zone_state(zone, now, dow, minute)
   if state and state.attributes then
     current = state.attributes.current_temperature
     commanded = state.attributes.temperature
-    -- hvac_action ("heating"/"idle"/...) is what the device is doing right
-    -- now, distinct from the mode; the UI uses it to show "heating" vs "on".
+    -- What the device is doing now, distinct from the mode: "heating" vs "on".
     hvac_action = state.attributes.hvac_action
   end
-  -- Computed rather than read back from global so a schedule transition shows
-  -- immediately instead of waiting for the next tick. A zone with no schedule
-  -- and no override has no request at all; it falls back to the device value
-  -- so the field is never empty (and such a zone is never corrected either,
-  -- because apply_zone leaves it alone).
+  -- Computed rather than read from global, so a schedule transition shows at once
+  -- instead of at the next tick. A zone with no schedule and no override has no
+  -- request at all and falls back to the device value.
   local target = desired(zone, now, dow, minute) or commanded
   local episode = live_episode(zone)
   local days = load_schedule(zone)
@@ -446,8 +406,7 @@ local function zone_state(zone, now, dow, minute)
     current_temp = current,
     target = target,
     commanded = commanded,
-    -- The learner's state, for the UI's on-tap disclosure (§8). `offset` is the
-    -- cut currently latched, zero when no episode is running.
+    -- `offset` is the cut currently latched, zero when no episode is running.
     offset = episode and episode.offset or 0,
     k = learned_k(zone),
     samples = learned_samples(zone),
@@ -463,11 +422,9 @@ local function zone_state(zone, now, dow, minute)
   }
 end
 
--- ordered_zones returns the zone ids in the user-chosen display order. The
--- stored order is filtered to zones that still exist; any zone missing from it
--- (e.g. one newly added to zones.lua) is appended alphabetically. The result
--- therefore always covers exactly the current zone set, however stale the
--- stored order has become, so the UI can render straight from it.
+-- The zone ids in the user-chosen display order: stored order filtered to zones
+-- that still exist, then anything missing appended alphabetically. The result
+-- always covers exactly the current zone set, however stale the stored order.
 local function ordered_zones()
   local stored = store.get(ORDER_KEY)
   local seen, order = {}, {}
@@ -554,10 +511,8 @@ ha.serve("PUT", "/api/settings", function(req)
   return json_ok(full_state())
 end)
 
--- PUT /api/order persists the card display order so every browser and user
--- sees the same arrangement. Body is { order = ["zone", ...] }; unknown ids are
--- rejected and duplicates collapsed. A partial list is accepted (ordered_zones
--- appends any omitted zones), so the UI may send only the zones it rendered.
+-- Body is { order = ["zone", ...] }: unknown ids rejected, duplicates collapsed.
+-- A partial list is fine, since ordered_zones appends whatever is omitted.
 ha.serve("PUT", "/api/order", function(req)
   local body = decode_body(req)
   if body == nil then return bad("invalid JSON body") end
@@ -601,9 +556,8 @@ ha.serve("PUT", "/api/schedule", function(req)
   return json_ok(full_state())
 end)
 
--- The learner's own state, for the UI's disclosure and for curl. Everything
--- needed to judge whether k should be trusted is here, including the episodes
--- that taught it nothing (spec §9.6).
+-- Everything needed to judge whether k can be trusted, including the episodes
+-- that taught it nothing (§9.6).
 ha.serve("GET", "/api/overshoot", function(req)
   local zone = req.query and req.query.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
@@ -618,15 +572,15 @@ ha.serve("GET", "/api/overshoot", function(req)
   })
 end)
 
--- Recovery must not be `sqlite3 /data/ha-lua.db` (§9.5): when a zone's learning
--- has gone wrong, this zeroes it from the UI with no restart and no reload.
+-- Recovery must not be `sqlite3 /data/ha-lua.db` (§9.5): this zeroes a zone's
+-- learning from the UI, with no restart and no reload.
 ha.serve("POST", "/api/overshoot/reset", function(req)
   local body = decode_body(req)
   if body == nil then return bad("invalid JSON body") end
   local zone = body.zone
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
-  -- The in-flight episode goes too: left behind, it would close against a k
-  -- that no longer exists and journal a row nobody could account for.
+  -- The in-flight episode goes too: it would close against a k that no longer
+  -- exists and journal a row nobody could account for.
   store.delete(episode_key(zone))
   store.delete(k_key(zone))
   store.delete(samples_key(zone))
@@ -644,9 +598,8 @@ ha.serve("POST", "/api/overshoot/observe", function(req)
   if type(zone) ~= "string" or zone_defs[zone] == nil then return bad("unknown zone") end
   if type(body.observe_only) ~= "boolean" then return bad("observe_only must be a boolean") end
   store.set(observe_key(zone), body.observe_only)
-  -- A running episode latched its setpoint from the old flag. End it rather
-  -- than let the change land half way through a warmup, and journal it so the
-  -- gap in the record has a reason against it.
+  -- A running episode latched its setpoint from the old flag, so end it rather
+  -- than let the change land half way through a warmup.
   local episode = live_episode(zone)
   local now, dow, minute = now_parts()
   if episode ~= nil then
@@ -659,12 +612,10 @@ ha.serve("POST", "/api/overshoot/observe", function(req)
 end)
 
 -- ---------------------------------------------------------------------------
--- The single-page UI (§7) lives in thermostat.html next to this script: one
--- self-contained HTML document (inline vanilla JS/CSS, no build step, no
--- external assets, all fetches RELATIVE so it works under both the stable LAN
--- port and the rotating ingress base path). It is read once at load via the
--- sandboxed fs module. Editing only the .html does not hot-reload — re-save
--- this .lua (the watcher watches .lua files) or restart the daemon.
+-- The single-page UI (§7) is one self-contained HTML document in
+-- thermostat.html: inline vanilla JS/CSS, no build step, and every fetch
+-- RELATIVE so it works under both the LAN port and the rotating ingress base
+-- path. Editing only the .html does not hot-reload — re-save this .lua.
 -- ---------------------------------------------------------------------------
 
 local PAGE = assert(fs.read("thermostat.html"),
@@ -675,15 +626,14 @@ ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
 
--- Publish each zone's setpoints once at load time so the window script has a
--- value to restore, and the manual detector a value to compare against, before
--- the first tick fires.
+-- Publish at load so the window script has a value to restore, and the manual
+-- detector one to compare against, before the first tick.
 do
   local now, dow, minute = now_parts()
   for zone in pairs(zone_defs) do
-    -- An episode in flight when the daemon stopped is abandoned rather than
-    -- resumed: its timing is broken, and one lost sample costs far less than a
-    -- corrupted k (§6). It is journaled so the gap is visible.
+    -- An episode in flight when the daemon stopped is abandoned, not resumed:
+    -- its timing is broken, and one lost sample costs less than a corrupted k
+    -- (§6). Journaled, so the gap is visible.
     local episode = live_episode(zone)
     if episode ~= nil then
       overshoot.invalidate(episode, "restart")

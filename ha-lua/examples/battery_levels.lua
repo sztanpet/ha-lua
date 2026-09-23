@@ -4,26 +4,20 @@
 -- last changed, and an estimate of when it will hit empty — sorted so the
 -- battery that dies first is at the top.
 --
--- Home Assistant shows you the level. It does not tell you which of your forty
--- sensors is about to go flat, which is the only question worth asking before a
--- trip to the shop. That needs a drain RATE, and a rate needs history measured
--- in weeks — while the daemon's own state history is purged after
--- `retention_days` (2 by default). So this script keeps its own series in the
--- script KV store: one sample per observed level change, which for a battery is
--- a handful of rows a month. Nothing here writes to Home Assistant; it only
--- reads, samples, and serves a page.
+-- Home Assistant shows the level, not which of forty sensors is about to go
+-- flat. That needs a drain RATE, and a rate needs weeks of history, while the
+-- daemon's own history is purged after `retention_days`. So the series lives in
+-- this script's KV store: one sample per observed level change, a handful of rows
+-- a month per battery. Nothing here writes to Home Assistant.
 --
--- Two kinds of entity are picked up automatically, with no configuration:
---   * `device_class: battery` sensors, whose state IS the percentage;
---   * anything carrying a numeric `battery_level` attribute (device_tracker,
---     vacuum, some locks), whose state is something else entirely.
--- The ones you do not care about (a phone you charge nightly, a test device)
--- can be ignored from the page: they stay listed, sorted last, but are no
--- longer sampled and get no forecast.
+-- Two kinds of entity are picked up with no configuration: `device_class:
+-- battery` sensors, whose state IS the percentage, and anything carrying a
+-- numeric `battery_level` attribute, whose state is something else. A battery you
+-- do not care about can be ignored from the page: still listed, sorted last, no
+-- longer sampled.
 
--- How often the levels are sampled. Batteries move in whole percent steps over
--- days, so a coarse tick is plenty and keeps the series small. The page also
--- samples on every load, so opening it never shows a stale reading.
+-- Batteries move in whole percent steps over days, so a coarse tick keeps the
+-- series small. The page also samples on load, so it never shows a stale reading.
 local SCAN_INTERVAL = "15m"
 
 -- Most hardware goes flaky well above zero, so "empty" is not 0%.
@@ -45,11 +39,9 @@ local RECHARGE_RISE = 10
 -- full 100→0 discharge; older rows fall off the front.
 local MAX_SAMPLES = 120
 
--- Debug trail: events kept per entity. The forecast is a pure function of the
--- oldest sample and the current level, so every jump in it has a cause — but
--- the cause is a mutation of the series, which by the time anyone opens the
--- page has already overwritten the evidence. Hence a trail that is always
--- recording rather than a switch nobody flips until after the fact.
+-- Events kept per entity. Every jump in a forecast has a cause, but the cause is
+-- a mutation of the series that has overwritten its own evidence by the time
+-- anyone looks — hence a trail that is always recording.
 local MAX_EVENTS = 40
 
 -- Log a forecast that moved by more than this fraction with no sample behind
@@ -66,9 +58,8 @@ local IGNORED_KEY = "ignored"
 local function series_key(entity_id) return "series:" .. entity_id end
 local function events_key(entity_id) return "events:" .. entity_id end
 
--- Last forecast reported per entity, in memory only: it exists to decide
--- whether the next one is worth writing down, and a restart re-baselining it
--- costs one extra event.
+-- Last forecast per entity, in memory only: it decides whether the next one is
+-- worth writing down, and a restart re-baselining it costs one extra event.
 local reported = {}
 
 local function ignored_set()
@@ -93,11 +84,9 @@ local function numeric(value)
   return nil
 end
 
--- battery_level returns the entity's percentage plus whether that percentage is
--- the entity's own state. The flag matters for "last changed": a battery sensor
--- changes state only when the level moves, but a device_tracker carrying a
--- battery_level attribute changes state every time the phone moves, so its
--- last_changed says nothing about the battery.
+-- The percentage, plus whether it is the entity's own state. That flag matters
+-- for "last changed": a battery sensor changes state only when the level moves,
+-- while a device_tracker changes every time the phone does.
 local function battery_level(state)
   local attrs = state.attributes or {}
   if attrs.device_class == "battery" then
@@ -109,9 +98,8 @@ local function battery_level(state)
   return nil, false
 end
 
--- batteries collects every entity currently reporting a plausible percentage.
--- Unavailable/unknown entities simply drop out for this pass (their state is
--- not numeric); their stored series is untouched.
+-- Every entity currently reporting a plausible percentage. An unavailable one
+-- drops out of this pass with its stored series untouched.
 local function batteries()
   local found = {}
   for _, state in ipairs(ha.get_entities("*")) do
@@ -143,10 +131,9 @@ local function lowest_level(series)
   return low
 end
 
--- record appends a sample when the level actually moved, and returns the series
--- plus a description of what it did to it (nil when nothing moved). A flat
--- reading is deliberately NOT stored: the dwell is implied by "the newest
--- sample is old", and the fit adds the current instant itself.
+-- Appends a sample when the level moved, returning the series and what it did to
+-- it. A flat reading is deliberately not stored: the dwell is implied by the
+-- newest sample being old, and the fit adds the current instant itself.
 local function record(entity_id, level, now_unix)
   local series = load_series(entity_id)
   local newest = series[#series]
@@ -170,11 +157,8 @@ local function record(entity_id, level, now_unix)
   return series, change
 end
 
--- note appends one line to an entity's debug trail. Every line carries the
--- whole computation — the endpoints, the span, the drop, the rate it implied —
--- so a forecast can be checked against its own inputs long after the scan that
--- produced it. Only real events are written; a scan that changes nothing must
--- not fill the ring with copies of itself.
+-- One line on an entity's trail, carrying the whole computation, so a forecast
+-- can be checked against its own inputs long after the scan that produced it.
 local function note(entity_id, entry)
   local events = store.get(events_key(entity_id))
   if type(events) ~= "table" then events = {} end
@@ -183,24 +167,17 @@ local function note(entity_id, entry)
   store.set(events_key(entity_id), events)
 end
 
--- The drain rate is the MEDIAN of the slopes between every pair of samples
--- (Theil-Sen). The secant this replaces read the rate off two single readings,
--- which is exact for a staircase and worthless for a real sensor: plenty report
--- a level that breathes a point either way with temperature, and then the
--- answer depended on which side of the wobble each endpoint happened to be
--- caught on — the same battery forecasting nothing, then a month, then a
--- fortnight, twice a day. A median has to see better than a quarter of the
--- pairs disagree before it moves at all.
+-- The drain rate is the MEDIAN slope over the pairs of samples (Theil-Sen), not
+-- the secant between the endpoints: plenty of sensors report a level that
+-- breathes a point either way with temperature, and a secant then answers from
+-- whichever side of the wobble each endpoint was caught on. A median needs better
+-- than a quarter of the pairs to disagree before it moves at all.
 --
--- Cost is one pair per two samples, so MAX_SAMPLES bounds it; real series are a
--- few dozen samples.
--- ...but only over pairs far enough apart to carry a trend. Half a day of a
--- 0.25 %/day drain is an eighth of a point, well under the one-point
--- granularity a sensor reports, so a closer pair describes the day's
--- temperature and nothing else. Those pairs are also what defeats the median
--- outright: with three distinct levels in the data most of them sit at exactly
--- zero slope, and on a real series 19 of 55 pairs did — enough for the median
--- to land in the pile of zeros and report a battery that never drains.
+-- Only pairs this far apart count. Half a day of a 0.25 %/day drain is an eighth
+-- of a point, well under the granularity a sensor reports, so a closer pair
+-- describes the day's temperature and nothing else. Such pairs also sit at
+-- exactly zero slope in numbers large enough to land the median in the pile of
+-- zeros and report a battery that never drains.
 local MIN_PAIR_SPAN = 12 * time.hour
 
 local function pairwise_rate(series)
@@ -215,8 +192,8 @@ local function pairwise_rate(series)
       end
     end
   end
-  -- A battery draining fast enough to step twice inside half a day has no wide
-  -- pair yet and would otherwise get nothing at all.
+  -- A battery stepping twice inside MIN_PAIR_SPAN has no wide pair yet, and
+  -- would otherwise get no rate at all.
   if #slopes == 0 then slopes = every end
   if #slopes == 0 then return nil end
 
@@ -226,12 +203,10 @@ local function pairwise_rate(series)
   return (slopes[middle] + slopes[middle + 1]) / 2
 end
 
--- Every pair above ends at a sample, so the rate only ever describes steps that
--- have already completed — it says nothing about the step in progress. That is
--- what this bounds: the level has held for `dwell`, so it cannot still be
--- draining faster than one granularity step per dwell, whatever it did before.
--- The bound is loose right after a step, meets the measured rate exactly when
--- the next step falls due, and tightens from there, which is what stops a pack
+-- Every pair above ends at a sample, so the measured rate says nothing about the
+-- step in progress. The level has held for `dwell`, so it cannot be draining
+-- faster than one granularity step per dwell whatever it did before. The bound is
+-- loose right after a step and tightens from there, which is what stops a pack
 -- that stopped moving from forecasting last month's rate forever.
 local function dwell_cap(series, now_unix)
   local newest = series[#series]
@@ -239,8 +214,8 @@ local function dwell_cap(series, now_unix)
   local dwell = now_unix - newest.at
   if dwell <= 0 then return nil end
 
-  -- The smallest step the sensor has actually taken is its granularity: 1 point
-  -- for a phone, 10 for the coarse hardware the floor below is written around.
+  -- The smallest step the sensor has taken is its granularity: 1 point for a
+  -- phone, 10 for coarse hardware.
   local step = nil
   for index = 2, #series do
     local delta = math.abs(series[index].level - series[index - 1].level)
@@ -250,11 +225,10 @@ local function dwell_cap(series, now_unix)
   return -step / dwell
 end
 
--- MIN_SPAN is measured to NOW, not to the newest sample: the question it asks
--- is how long we have been watching, which keeps its meaning when the level has
--- been sitting still for a week.
--- Returns the rate to use, plus the two numbers it was chosen between, so the
--- inspector can say which one the answer came from.
+-- MIN_SPAN is measured to NOW, not to the newest sample: the question is how long
+-- we have been watching, which keeps its meaning when the level has sat still for
+-- a week. Returns the rate plus the two numbers it was chosen between, so the
+-- inspector can say where the answer came from.
 local function drain_rate(series, now_unix)
   local oldest = series[1]
   local measured = pairwise_rate(series)
@@ -278,12 +252,11 @@ local function lifetime_floor(remaining, moved_at, now_unix)
   return remaining / COARSEST_STEP * dwell
 end
 
--- changed_at returns the unix time the battery reading last moved. Two sources
--- disagree, and the OLDER one is right: Home Assistant's last_changed is exact
--- but resets to "just now" on every HA restart, while our newest sample is
--- honest about the age but up to SCAN_INTERVAL late. Entities that only carry
--- battery_level as an attribute have no usable last_changed at all, and their
--- first sample only marks when we started looking — nil, not "just now".
+-- When the reading last moved. Two sources disagree and the OLDER one is right:
+-- HA's last_changed is exact but resets to "just now" on every HA restart, while
+-- our newest sample is honest about the age but up to SCAN_INTERVAL late. An
+-- attribute-only battery has no usable last_changed, and its first sample marks
+-- when we started looking — nil, not "just now".
 local function changed_at(battery, series)
   local newest = series[#series]
   local sampled = newest and newest.at or nil
@@ -298,12 +271,9 @@ local function changed_at(battery, series)
   return from_ha
 end
 
--- forget_removed drops series for entities Home Assistant no longer has, and
--- for the ones just ignored — ignoring means "stop tracking this", so the
--- samples go with it. An entity that is merely unavailable keeps its history —
--- a device offline for an afternoon must not lose weeks of samples — so removal
--- is judged by the entity being gone from the state mirror entirely, not by it
--- missing from this pass.
+-- Drops the series of entities HA no longer has, and of the ones just ignored.
+-- Removal is judged by absence from the state mirror, not from this pass: a
+-- device offline for an afternoon must not lose weeks of samples.
 local function forget_removed(present, ignored)
   local tracked = {}
   for _, entity_id in ipairs(present) do tracked[entity_id] = true end
@@ -347,9 +317,8 @@ local function by_urgency(left, right)
   return left.name < right.name
 end
 
--- forecast is the whole derivation in one place. The page and the inspector
--- must arrive at the same numbers from the same series, or the inspector is
--- describing a calculation nobody ran.
+-- The whole derivation in one place: the page and the inspector must reach the
+-- same numbers, or the inspector describes a calculation nobody ran.
 local function forecast(battery, series, now_unix)
   local slope, measured, cap = drain_rate(series, now_unix)
   local moved_at = changed_at(battery, series)
@@ -370,20 +339,18 @@ local function forecast(battery, series, now_unix)
            eta_seconds = eta_seconds, eta_at_least = eta_at_least }
 end
 
--- Which of the three answers the page is about to show. A forecast crossing
--- between these is the loudest thing that can happen to a row, and it can
--- happen with no sample behind it — a span that finally reaches MIN_SPAN turns
--- "measuring" into a number on its own.
+-- Which of the three answers the page will show. Crossing between them is the
+-- loudest thing that can happen to a row, and it can happen with no sample
+-- behind it: a span reaching MIN_SPAN turns "measuring" into a number on its own.
 local function tier_of(eta_seconds, eta_at_least)
   if eta_seconds ~= nil then return "eta" end
   if eta_at_least ~= nil then return "floor" end
   return "none"
 end
 
--- trace writes the debug trail. Three things earn a line: the series changed,
--- the answer changed kind, or the forecast moved further than the window's own
--- growth explains. The last one is the interesting case — it means the number
--- on the page swung while nothing visible happened.
+-- Three things earn a line on the trail: the series changed, the answer changed
+-- kind, or the forecast moved further than the window's growth explains. The last
+-- is the interesting one — the number swung while nothing visible happened.
 local function trace(battery, series, change, fit, now_unix)
   local tier = tier_of(fit.eta_seconds, fit.eta_at_least)
   local previous = reported[battery.entity_id]
@@ -425,9 +392,8 @@ local function trace(battery, series, change, fit, now_unix)
   })
 end
 
--- scan samples every battery and builds the page payload. It is both the timer
--- job and the API handler: sampling is idempotent (record only appends on a
--- real change), so an impatient browser refreshing the page costs nothing.
+-- Samples every battery and builds the page payload. It is both the timer job and
+-- the API handler: sampling is idempotent, so a browser refreshing costs nothing.
 local function scan()
   local now = time.now()
   local now_unix = now:unix()
@@ -494,10 +460,9 @@ ha.serve("POST", "/api/ignore", function(req)
   return 200, json.encode(scan()), JSON_HDR
 end)
 
--- Everything behind one battery's forecast: the stored samples it was computed
--- from, the arithmetic between them and the answer, and the trail of every
--- earlier change. Read-only on purpose — inspecting a battery must not sample
--- it, or looking at a suspect row would alter the thing being looked at.
+-- Everything behind one battery's forecast: its samples, the arithmetic between
+-- them and the answer, and the trail. Read-only on purpose — inspecting a
+-- suspect row must not alter it.
 ha.serve("GET", "/api/detail", function(req)
   local entity_id = (req.query or {}).entity_id
   if type(entity_id) ~= "string" or entity_id == "" then
@@ -570,9 +535,8 @@ ha.serve("GET", "/api/detail", function(req)
   }), JSON_HDR
 end)
 
--- The page lives in battery_levels.html next to this script and is read once at
--- load through the sandboxed fs module. Editing only the .html does not
--- hot-reload — re-save this .lua (the watcher watches .lua files).
+-- Editing only the .html does not hot-reload: re-save this .lua, which is what
+-- the watcher watches.
 local PAGE = assert(fs.read("battery_levels.html"),
   "battery_levels.html missing next to battery_levels.lua")
 

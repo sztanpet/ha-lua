@@ -14,40 +14,33 @@
 --     -d '{"service":"notify.mobile_app_phone","message":"backup done","title":"nas"}' \
 --     http://homeassistant.local:8100/s/service_api/call
 --
--- The service can come from the path (`/call/<domain>/<service>`), from a
--- dotted `service` field, or from separate `domain` + `service` fields. Every
--- other field is passed to Home Assistant as service data verbatim, so the
--- endpoint needs no knowledge of the service being called and never needs
--- updating when Home Assistant grows a new one.
+-- The service comes from the path, a dotted `service` field, or separate
+-- `domain` + `service` fields. Every other field is passed to Home Assistant
+-- verbatim, so nothing here needs updating when HA grows a new service.
 --
--- Fields may arrive as URL query parameters, as a form-encoded body (what
--- `curl -d key=value` sends), or as a JSON object body. Query and form values
--- are text, so obvious types are reconstructed: `true`/`false` become booleans,
--- a number becomes a number when the text round-trips exactly (`0123` stays a
--- string — alarm codes have leading zeros), and a value starting with `[` or
--- `{` is parsed as JSON (`rgb_color=[255,0,0]`). Use a JSON body when you need
--- exact control; on a collision the body wins over the query.
+-- Fields arrive as query parameters, a form-encoded body, or a JSON object body.
+-- Query and form values are text, so obvious types are reconstructed:
+-- `true`/`false` become booleans, a number becomes a number when the text
+-- round-trips exactly (`0123` stays a string — alarm codes have leading zeros),
+-- and a `[` or `{` value is parsed as JSON. Use a JSON body for exact control; on
+-- a collision the body wins over the query.
 --
--- Replies are always JSON: `{"ok":true,...}` with 200, or `{"ok":false,
--- "error":"..."}` with 400 (malformed request), 401 (bad token) or 502 (Home
--- Assistant refused the call). By default the reply waits for HA's verdict, so
--- a shell script that gets a 200 knows the service actually ran; pass
--- `wait=false` for fire-and-forget.
+-- Replies are always JSON: 200 with `{"ok":true,...}`, or `{"ok":false,...}` with
+-- 400 (malformed), 401 (bad token) or 502 (HA refused). The reply waits for HA's
+-- verdict, so a 200 means the service ran; pass `wait=false` for
+-- fire-and-forget.
 --
--- The script also serves a **Service API** tab: a form that assembles a call
--- from your real entity ids and hands back the finished URL and curl command,
--- with copy buttons, token already filled in. It builds commands; it never
--- fires one.
+-- It also serves a **Service API** tab: a form that assembles a call from your
+-- real entity ids and hands back the finished URL and curl command, token filled
+-- in. It builds commands; it never fires one.
 --
--- SECURITY. The LAN port serves all of this without any Home Assistant login,
--- so the endpoint is guarded by a shared token — without one, anyone on your
--- network could unlock your doors. The token is generated on first load, put
--- in the daemon log, and **written into the page**, so anyone who can open
--- the page on the LAN port has it. That is the deal being made for a builder
--- you never have to paste a token into: the token stops a stranger who
--- guesses the URL, not one who loads the page. Plain HTTP on your LAN: fine
--- for a script on the same network, never something to port-forward. Put your
--- own token in TOKEN below if you would rather pick it yourself.
+-- SECURITY. The LAN port serves all of this with no Home Assistant login, so a
+-- shared token guards it — without one, anyone on the network could unlock your
+-- doors. The token is generated on first load, logged, and **written into the
+-- page**, so anyone who can open the page on the LAN port has it: it stops a
+-- stranger who guesses the URL, not one who loads the page. That is the deal for
+-- a builder you never paste a token into. Plain HTTP on a LAN is fine for a
+-- script on the same network and is never something to port-forward.
 
 -- Your own token instead of the generated one: `openssl rand -hex 16`.
 local TOKEN = ""
@@ -97,7 +90,7 @@ local function authorized(req)
       supplied = string.match(bearer, "^[Bb]earer%s+(.+)$")
     end
   end
-  -- crypto.equal is constant time; a plain == leaks the token a byte at a time.
+  -- Constant time: a plain == leaks the token a byte at a time.
   return supplied ~= nil and crypto.equal(supplied, token)
 end
 
@@ -111,7 +104,7 @@ local function coerce(text)
     return text
   end
   local number = tonumber(text)
-  -- Only when the text round-trips: "0123" is a code, not the number 123.
+  -- Only when it round-trips: "0123" is a code, not the number 123.
   if number and tostring(number) == text then return number end
   return text
 end
@@ -176,8 +169,8 @@ local function resolve_service(path, fields)
   return nil, nil, 'name the service as /call/<domain>/<service>, "service": "light.turn_on", or "domain" plus "service"'
 end
 
--- gopher-lua prefixes raised errors with the script position, which means
--- nothing to whoever is reading the JSON on the other end.
+-- gopher-lua prefixes a raised error with the script position, which means
+-- nothing to whoever reads the JSON.
 local function clean_error(err)
   return (string.gsub(tostring(err), "^.-:%d+:%s*", ""))
 end
@@ -209,7 +202,7 @@ local function handle(req)
     end
   end
   -- Only entity_id: a comma cannot occur in an id, but is ordinary text in a
-  -- notification message.
+  -- message.
   if type(data.entity_id) == "string" and strings.contains(data.entity_id, ",") then
     data.entity_id = strings.split(data.entity_id, ",")
   end
@@ -230,7 +223,7 @@ end
 
 ha.serve("POST", "/call", handle)
 -- GET calls a service, which is not REST. Deliberate: quoting a JSON body in a
--- shell script is the friction this whole endpoint exists to remove.
+-- shell script is the friction this endpoint exists to remove.
 ha.serve("GET", "/call", handle)
 
 -- A probe that checks the token without switching anything on.
@@ -250,18 +243,18 @@ ha.serve("GET", "/entities", function(req)
 end)
 
 -- Nothing can authenticate a page load on the LAN port, so serving the page is
--- serving the token -- see the SECURITY note at the top.
+-- serving the token — see SECURITY above.
 local PAGE = assert(fs.read("service_api.html"),
   "service_api.html missing next to service_api.lua")
 
 -- The slash matters as much as the quotes: without it a token containing
--- "</script>" would end the script block.
+-- "</script>" ends the script block.
 local function js_escape(text)
   return (string.gsub(text, "[\\\"/]", function(char) return "\\" .. char end))
 end
 
--- A replacement function, so a "%" in a hand-picked token is not read as a
--- capture reference.
+-- A replacement function, so a "%" in a hand-picked token is not a capture
+-- reference.
 PAGE = string.gsub(PAGE, "__SERVICE_API_TOKEN__", function() return js_escape(token) end, 1)
 
 ha.ui("Service API")

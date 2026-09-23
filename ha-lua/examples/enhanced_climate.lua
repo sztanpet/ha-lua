@@ -1,19 +1,19 @@
 -- enhanced_climate.lua
 --
--- A card-configured heating controller: each enhanced climate is one HA
--- `climate` entity wrapped with scheduling, timed overrides, manual-change
--- detection, and optional window cooperation — all provisioned at RUNTIME from
--- a Lovelace card (custom:ha-lua-enhanced-climate-card), never by editing this
--- file. See enhanced-climate-spec.md for the full design.
+-- A card-configured heating controller: each enhanced climate is one HA `climate`
+-- entity wrapped with scheduling, timed overrides, manual-change detection and
+-- optional window cooperation, all provisioned at RUNTIME from a Lovelace card
+-- (custom:ha-lua-enhanced-climate-card) rather than by editing this file. See
+-- enhanced-climate-spec.md for the design.
 --
--- This is a NEW, standalone example, parallel to thermostat.lua (which keeps
--- its static lib/zones.lua model + Ingress editor). Both share the pure
--- lib/control.lua and lib/schedule.lua; only the wiring differs. Here the zone
--- definitions live in the card config, mirrored into the daemon over the
--- ha_lua_command event and surfaced back as companion sensor entities.
+-- It runs parallel to thermostat.lua, which keeps the static lib/zones.lua model
+-- and an Ingress editor; both share lib/control.lua and lib/schedule.lua and
+-- differ only in wiring. Here the definitions live in the card config, mirrored
+-- into the daemon over the ha_lua_command event and surfaced back as companion
+-- sensors.
 --
--- To use it: copy this file (and lib/) into /config/ha-lua/scripts/, add the
--- card to a dashboard, and point it at a climate entity.
+-- To use it: copy this file and lib/ into /config/ha-lua/scripts/, add the card
+-- to a dashboard, and point it at a climate entity.
 
 local control = require "control"
 local schedule = require "schedule"
@@ -23,26 +23,21 @@ local card = require("card").new { kind = "enhanced_climate" }
 -- a timed override drives it to — until the user edits it via the card.
 local DEFAULT_OVERRIDE_TEMP = 23
 
--- Setpoint (°C) held while any bound window is open, clamped to the device's
--- min on entities that won't accept it. Writing a low setpoint is how a
--- self-contained controller actually PAUSES heating (just skipping the write
--- would leave the device coasting at its last target); the desired is restored
--- once every window closes again.
+-- Setpoint held while any bound window is open, clamped to the device's own min.
+-- Writing a low setpoint is how a self-contained controller PAUSES heating:
+-- skipping the write would leave the device coasting at its last target.
 local FROST_TEMP = 15
 
--- published caches, per climate entity, the JSON of the last companion payload
--- we actually wrote and when (os.time seconds). publish_companion consults it to
--- skip rewriting an unchanged sensor every minute; PUBLISH_HEARTBEAT bounds how
--- long an unchanged sensor goes without a refresh so it still self-heals after
--- an HA restart drops it.
+-- Per climate entity, the last companion payload written and when, so an
+-- unchanged sensor is not rewritten every minute. PUBLISH_HEARTBEAT bounds how
+-- long it goes unrefreshed, so it still self-heals after an HA restart drops it.
 local published = {}
 local PUBLISH_HEARTBEAT = 5 * 60
 
 -- ---------------------------------------------------------------------------
--- Registry (§7.1). The set of enhanced climates, keyed by climate entity id,
--- each { climate_entity, window_sensors, presets }. Global-scoped (shared)
--- under one namespaced key so the whole set round-trips as a single value that
--- the control tick and the Ingress removal page can both iterate.
+-- Registry (§7.1): the enhanced climates, keyed by climate entity id. Global and
+-- under one key, so the whole set round-trips as a single value that both the
+-- control tick and the Ingress removal page iterate.
 -- ---------------------------------------------------------------------------
 
 local REGISTRY_KEY = "enhanced_climate:registry"
@@ -62,9 +57,8 @@ local function is_registered(climate_entity)
 end
 
 -- ---------------------------------------------------------------------------
--- Per-climate dynamic state (schedule / timed override / manual hold /
--- override temp / last-published desired) lives in this script's own KV store,
--- keyed by climate entity id.
+-- Per-climate dynamic state lives in this script's own KV store, keyed by
+-- climate entity id.
 -- ---------------------------------------------------------------------------
 
 local function sched_key(climate) return "schedule:" .. climate end
@@ -74,15 +68,14 @@ local function override_temp_key(climate) return "override_temp:" .. climate end
 local function desired_key(climate) return "desired:" .. climate end
 local function restore_key(climate) return "restore:" .. climate end
 
--- slug_of derives the companion-sensor slug from a climate entity id:
--- climate.living_room -> living_room (so the card can derive the companion id
--- without it being configured).
+-- climate.living_room -> living_room, so the card can derive the companion id
+-- rather than having it configured.
 local function slug_of(climate)
   return (climate:gsub("^climate%.", ""))
 end
 
--- now_parts returns the current time userdata plus the schedule's weekday
--- (0=Mon..6=Sun, converted from Go's Sunday-first weekday) and minute-of-day.
+-- The time, plus the schedule's weekday (0=Mon..6=Sun, converted from Go's
+-- Sunday-first) and minute-of-day.
 local function now_parts()
   local now = time.now()
   local dow = (now:weekday() + 6) % 7
@@ -112,9 +105,8 @@ local function current_target(climate)
   return nil
 end
 
--- temp_bounds returns the climate entity's accepted setpoint range. HA silently
--- drops a set_temperature outside min_temp/max_temp, so we honour the device's
--- own limits. Falls back to a permissive 5..35 while the entity has not seeded.
+-- The device's accepted setpoint range. HA silently drops a set_temperature
+-- outside min_temp/max_temp. The 5..35 fallback covers an unseeded entity.
 local function temp_bounds(climate)
   local lo, hi = 5, 35
   local state = ha.get_state(climate)
@@ -125,8 +117,7 @@ local function temp_bounds(climate)
   return lo, hi
 end
 
--- friendly_name resolves a climate entity's HA friendly_name, falling back to
--- the entity id itself while the entity has not seeded or carries no name.
+-- The entity's friendly_name, falling back to the id while it has none.
 local function friendly_name(climate)
   local state = ha.get_state(climate)
   if state and state.attributes and type(state.attributes.friendly_name) == "string" then
@@ -141,17 +132,14 @@ local function load_schedule(climate)
   return {}
 end
 
--- window_sensors_of returns the bound window sensor ids for a climate (the list
--- the card stored at configure time), or an empty list.
+-- The window sensors the card bound to this climate at configure time.
 local function window_sensors_of(climate)
   local cfg = load_registry()[climate]
   if cfg == nil or type(cfg.window_sensors) ~= "table" then return {} end
   return cfg.window_sensors
 end
 
--- window_open reduces a climate's bound sensors to one boolean via the shared
--- control.window_open: open if ANY sensor reads "on", clear only when ALL are
--- closed. A not-yet-seeded sensor (nil) counts as closed.
+-- Open if ANY bound sensor reads "on"; an unseeded one counts as closed.
 local function window_open(climate)
   local states = {}
   for _, sensor in ipairs(window_sensors_of(climate)) do
@@ -161,8 +149,7 @@ local function window_open(climate)
   return control.window_open(states)
 end
 
--- window_unknown reports whether any bound sensor has not seeded yet. Used only
--- to suppress manual-change detection until the windows are known.
+-- Suppresses manual-change detection until every bound sensor has seeded.
 local function window_unknown(climate)
   for _, sensor in ipairs(window_sensors_of(climate)) do
     if ha.get_state(sensor) == nil then return true end
@@ -170,8 +157,8 @@ local function window_unknown(climate)
   return false
 end
 
--- active_override returns the live timed-override table, or nil, clearing an
--- expired one so the climate reverts to schedule.
+-- The live timed override, or nil, clearing an expired one so the climate
+-- reverts to schedule.
 local function active_override(climate, now)
   local override = store.get(override_key(climate))
   if type(override) ~= "table" or not override.active or type(override.ends_at) ~= "string" then
@@ -187,8 +174,8 @@ local function active_override(climate, now)
   return nil
 end
 
--- active_manual returns the live manual-hold table, or nil, clearing it once its
--- `expires` instant has passed. ("expires" not "until" — until is a keyword.)
+-- The live manual hold, or nil, clearing it once `expires` has passed. ("until"
+-- would be a Lua keyword.)
 local function active_manual(climate, now)
   local manual = store.get(manual_key(climate))
   if type(manual) ~= "table" or type(manual.temp) ~= "number" or type(manual.expires) ~= "string" then
@@ -204,8 +191,8 @@ local function active_manual(climate, now)
   return nil
 end
 
--- desired picks override > manual > schedule via the shared control.desired,
--- resolving each source's candidate temperature (and expiring stale holds).
+-- override > manual > schedule via control.desired, resolving each source's
+-- candidate and expiring stale holds on the way.
 local function desired(climate, now, dow, minute)
   local override = active_override(climate, now) and override_temp(climate) or nil
   local manual = active_manual(climate, now)
@@ -218,11 +205,9 @@ local function set_temp(climate, temp)
   ha.call_service("climate", "set_temperature", { entity_id = climate, temperature = temp })
 end
 
--- publish_companion writes the sensor.ha_lua_enhanced_climate_<slug> companion
--- entity (§6) that the card reads: its state is the current desired setpoint
--- when controlled, else "off"; its attributes carry the schedule, override,
--- manual, window and preset detail plus the device range and identity markers.
--- desired_temp is the already-clamped value (or nil when not controlled).
+-- Writes the companion entity (§6) the card reads: state is the desired setpoint
+-- when controlled, else "off", with the schedule, override, manual, window and
+-- preset detail in its attributes. desired_temp arrives already clamped.
 local function publish_companion(climate, now, desired_temp)
   local cfg = load_registry()[climate]
   if cfg == nil then return end
@@ -262,22 +247,17 @@ local function publish_companion(climate, now, desired_temp)
     removal = "Deleting the card keeps this running — remove it in the ha-lua panel",
   }
 
-  -- The 1-minute tick re-publishes every companion, but rewriting an unchanged
-  -- sensor each minute is pure noise: every set_state is a state_changed event
-  -- (and a recorder row). So skip the write when state+attrs match the last one
-  -- we actually sent. We still re-publish unchanged data on a slow heartbeat so
-  -- the sensor self-heals after an HA restart drops it (these states are not
-  -- integration-backed). The heartbeat stays even though the daemon now prunes
-  -- ghost entities from its mirror on reconnect: a blind periodic write is
-  -- simpler and more robust than probing get_state for our own sensor.
+  -- Every set_state is a state_changed event and a recorder row, so an unchanged
+  -- sensor is not rewritten each minute. The slow heartbeat still re-publishes
+  -- unchanged data, because these states are not integration-backed and an HA
+  -- restart drops them; a blind periodic write beats probing for our own sensor.
   local snapshot = json.encode({ state = state_value, attrs = attrs })
   local prev = published[climate]
   if prev and prev.snapshot == snapshot and (os.time() - prev.at) < PUBLISH_HEARTBEAT then
     return
   end
 
-  -- set_state is non-raising, so log the result here: warn on failure (else an
-  -- outage is invisible), info on first create, debug for the heartbeat refresh.
+  -- set_state is non-raising, so an outage is invisible unless logged here.
   local created, err = card.publish(slug_of(climate), state_value, attrs)
   if err then
     ha.log("warn", "publish companion for " .. climate .. " failed: " .. err)
@@ -291,17 +271,15 @@ local function publish_companion(climate, now, desired_temp)
   end
 end
 
--- apply_climate is the per-climate control step: compute the desired setpoint,
--- clamp it to the device range, remember it (so manual detection can compare),
--- and write it when the shared gate allows. While any bound window is open the
--- climate is held at a frost setpoint instead — that is what pauses heating;
--- the desired (still remembered) is restored once every window closes. Every
--- pass re-publishes the companion, so configure / tick / mutation all refresh
--- it through this one path.
+-- The per-climate control step: compute the desired setpoint, clamp it, remember
+-- it for manual detection, and write it when the shared gate allows. While any
+-- bound window is open the frost setpoint is held instead, and the remembered
+-- desired is restored once they all close. Configure, tick and every mutation
+-- refresh the companion through this one path.
 local function apply_climate(climate, now, dow, minute)
   local desired_temp, source = desired(climate, now, dow, minute)
-  -- The pre-boost snapshot only matters while the boost is the active source:
-  -- any other source takes the climate over from here, so drop it unused.
+  -- The pre-boost snapshot matters only while the boost is the active source:
+  -- anything else takes the climate over from here.
   local previous = nil
   if source ~= "override" then
     previous = store.get(restore_key(climate))
@@ -314,7 +292,6 @@ local function apply_climate(climate, now, dow, minute)
     if mode(climate) == "heat" then
       local current = current_target(climate)
       if window_open(climate) then
-        -- Pause: hold the frost setpoint while any window is open.
         local frost = control.clamp_bounds(FROST_TEMP, lo, hi)
         if current == nil or math.abs(current - frost) > 0.05 then
           set_temp(climate, frost)
@@ -324,8 +301,8 @@ local function apply_climate(climate, now, dow, minute)
       end
     end
   else
-    -- A boost that ends with no schedule or hold under it still has to put the
-    -- dial back where it found it, or the boost temperature sticks forever.
+    -- A boost ending with no schedule or hold under it must still put the dial
+    -- back where it found it, or the boost temperature sticks forever.
     local restored = type(previous) == "number" and control.clamp_bounds(previous, lo, hi) or nil
     if restored and control.should_write(mode(climate), false, current_target(climate), restored) then
       set_temp(climate, restored)
@@ -337,16 +314,14 @@ local function apply_climate(climate, now, dow, minute)
   publish_companion(climate, now, desired_temp)
 end
 
--- apply_all runs the control step over every registered climate. Shared by the
--- 1-minute tick and the load-time resume so both go through one path.
+-- Shared by the tick and the load-time resume, so both take one path.
 local function apply_all(now, dow, minute)
   for climate_entity in pairs(load_registry()) do
     apply_climate(climate_entity, now, dow, minute)
   end
 end
 
--- The 1-minute tick that drives every registered climate. Override/manual
--- expiry is handled inside desired().
+-- Override/manual expiry happens inside desired().
 local function tick()
   apply_all(now_parts())
 end
@@ -354,12 +329,12 @@ end
 ha.every("1m", tick)
 
 -- ---------------------------------------------------------------------------
--- Manual setpoint change detection (§7.2): this controller is the only thing
--- that writes the desired, and it writes exactly the desired, so a climate
--- target that differs from the published desired is an external (user) change.
--- It becomes an ad-hoc manual hold lasting until the next schedule transition.
--- One wildcard handler covers every registered climate (they are added at
--- runtime, so a per-entity registration at load time can't see them).
+-- Manual setpoint change detection (§7.2): this controller is the only thing that
+-- writes the desired, and writes exactly it, so a target differing from the
+-- published desired is the user at the dial. It becomes an ad-hoc manual hold
+-- lasting until the next schedule transition. One wildcard handler, because
+-- climates are registered at runtime and a load-time registration cannot see
+-- them.
 -- ---------------------------------------------------------------------------
 
 ha.on_state_change("climate.*", function(data)
@@ -390,9 +365,8 @@ ha.on_state_change("climate.*", function(data)
   apply_climate(climate_entity, now, dow, minute) -- republish the new desired immediately
 end)
 
--- Window immediacy: a bound window opening or closing re-applies the affected
--- climate(s) within seconds rather than waiting for the next 1-minute tick. One
--- wildcard handler covers sensors bound to climates added at runtime.
+-- A bound window opening or closing re-applies its climate within seconds rather
+-- than at the next tick. Wildcard for the same reason as above.
 ha.on_state_change("binary_sensor.*", function(data)
   local sensor = data.entity_id
   if type(sensor) ~= "string" then return end
@@ -410,13 +384,12 @@ ha.on_state_change("binary_sensor.*", function(data)
 end)
 
 -- ---------------------------------------------------------------------------
--- Command handlers (card → daemon, §5). Every handler validates, mutates only
--- when valid, then re-applies the climate; a rejected command leaves state
--- unchanged and the card snaps back from the next hass update (optimism-free).
+-- Command handlers (card → daemon, §5). Each validates, mutates only when valid,
+-- then re-applies the climate; a rejected command leaves state unchanged and the
+-- card snaps back from the next hass update.
 -- ---------------------------------------------------------------------------
 
--- normalize coerces a configure payload into the stored shape, defaulting the
--- optional lists so later code never has to type-check them.
+-- Defaults the optional lists, so later code never type-checks them.
 local function normalize(data)
   return {
     climate_entity = data.climate_entity,
@@ -434,8 +407,8 @@ local function list_equal(a, b)
   return true
 end
 
--- config_equal compares two stored configs so configure can no-op when nothing
--- changed (a card re-firing on every tab focus must not thrash the registry).
+-- So configure can no-op: a card re-firing on every tab focus must not thrash
+-- the registry.
 local function config_equal(x, y)
   if x == nil or y == nil then return x == y end
   return x.climate_entity == y.climate_entity
@@ -443,9 +416,7 @@ local function config_equal(x, y)
       and list_equal(x.presets, y.presets)
 end
 
--- configure provisions (idempotent upsert) an enhanced climate. Fired by the
--- card on load / config change. Only mutates + re-applies when the effective
--- config actually changed.
+-- Idempotent upsert, fired by the card on load and on any config change.
 card.on("configure", function(data)
   if type(data) ~= "table" or type(data.climate_entity) ~= "string" or data.climate_entity == "" then
     return
@@ -458,20 +429,17 @@ card.on("configure", function(data)
     ha.log("info", "configure " .. cfg.climate_entity ..
       " (windows: " .. #cfg.window_sensors .. ", presets: " .. #cfg.presets .. ")")
   end
-  -- Always (re)publish the companion, even when the config was unchanged. The
-  -- card sends configure precisely when it does NOT see a matching companion —
-  -- e.g. HA dropped the non-integration entity on restart while our registry
-  -- (and the publish dedup cache) still think it exists. Clearing the cache
-  -- forces a write so the companion reappears and the card's reconcile loop
-  -- terminates instead of re-sending configure forever.
+  -- Republish even when the config was unchanged: the card sends configure
+  -- precisely when it does NOT see a matching companion, so clearing the dedup
+  -- cache is what makes the companion reappear and ends the card's reconcile
+  -- loop instead of it re-sending configure forever.
   published[cfg.climate_entity] = nil
   local now, dow, minute = now_parts()
   apply_climate(cfg.climate_entity, now, dow, minute) -- start controlling at once
 end)
 
--- remove_climate deprovisions an enhanced climate: drop it from the registry,
--- forget its desired, and remove the companion. Shared by the card's remove
--- command and the Ingress removal page so both go through one path.
+-- Deprovisions an enhanced climate, for both the card's remove command and the
+-- Ingress removal page.
 local function remove_climate(climate)
   if type(climate) ~= "string" then return end
   local reg = load_registry()
@@ -489,14 +457,13 @@ local function remove_climate(climate)
   end
 end
 
--- remove deprovisions an enhanced climate (also reachable from the Ingress page,
--- §8). Deleting the card does NOT fire this — removal is deliberately explicit.
+-- Deleting the card does NOT fire this: removal is deliberately explicit (§8).
 card.on("remove", function(data)
   if type(data) ~= "table" then return end
   remove_climate(data.climate_entity)
 end)
 
--- schedule replaces the 7-day schedule, bounded by the device's range.
+-- Replaces the 7-day schedule, bounded by the device's range.
 card.on("schedule", function(data)
   local climate = data.climate_entity
   if not is_registered(climate) then return end
@@ -518,8 +485,8 @@ card.on("override", function(data)
     ha.log("info", "override cancelled for " .. climate)
   else
     if type(data.minutes) ~= "number" or data.minutes <= 0 or data.minutes > 1440 then return end
-    -- Snapshot the dial once per boost, before it is overwritten: extending a
-    -- running boost must not snapshot the boost temperature as the way back.
+    -- Once per boost, before it is overwritten: extending a running boost must
+    -- not snapshot the boost temperature as the way back.
     if not active_override(climate, now) then
       local current = current_target(climate)
       if type(current) == "number" then store.set(restore_key(climate), current) end
@@ -529,10 +496,9 @@ card.on("override", function(data)
       ends_at = now:add(data.minutes * 60):format(time.RFC3339),
     })
     store.delete(manual_key(climate)) -- an override outranks and clears any manual hold
-    -- Wake up when it ends. The 1-minute tick would notice up to a minute
-    -- late, which the card shows as a countdown frozen at 00:00 and a boost
-    -- that refuses to finish; the tick stays as the backstop for an ha.after
-    -- lost to a restart.
+    -- The tick would notice up to a minute late, which the card shows as a
+    -- countdown frozen at 00:00 and a boost that refuses to finish. The tick
+    -- stays as the backstop for an ha.after lost to a restart.
     ha.after(string.format("%gm", data.minutes), function()
       local ends_now, ends_dow, ends_minute = now_parts()
       apply_climate(climate, ends_now, ends_dow, ends_minute)
@@ -542,8 +508,7 @@ card.on("override", function(data)
   apply_climate(climate, now, dow, minute)
 end)
 
--- settings edits the override temperature (the target a boost jumps to),
--- bounded by the device's range.
+-- Edits the temperature a boost jumps to, bounded by the device's range.
 card.on("settings", function(data)
   local climate = data.climate_entity
   if not is_registered(climate) then return end
@@ -559,16 +524,14 @@ end)
 
 -- ---------------------------------------------------------------------------
 -- Ingress removal page (§8). An enhanced climate outlives any card, so removal
--- is explicit and lives here: a minimal page listing the registry with a remove
--- button. This covers deliberate teardown and orphans (a card deleted from a
--- dashboard can't send remove) alike. Served on this example's Ingress panel.
+-- lives here: a page listing the registry with a remove button, covering both
+-- deliberate teardown and orphans, since a deleted card cannot send remove.
 -- ---------------------------------------------------------------------------
 
 local JSON_HDR = { ["Content-Type"] = "application/json" }
 local TEXT_HDR = { ["Content-Type"] = "text/plain" }
 
--- list_climates returns the registry as a flat array for the page, resolving a
--- friendly name from the climate entity when one is available.
+-- The registry as a flat array for the page.
 local function list_climates()
   local out = {}
   for climate, cfg in pairs(load_registry()) do
@@ -603,9 +566,8 @@ ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
 
--- Re-publish every registered climate at load so the companions reappear after
--- a restart (REST-set states are dropped by an HA restart) before the first
--- tick — and resume controlling them.
+-- Re-publish at load, before the first tick: an HA restart drops REST-set states,
+-- so this is what makes the companions reappear.
 do
   local count = 0
   for _ in pairs(load_registry()) do count = count + 1 end
