@@ -1,33 +1,29 @@
 -- nappali_switches.lua
 --
--- Two Aqara WXKG03LM single-rocker buttons driving the two living-room
--- lights straight off the MQTT broker — no Home Assistant automation in the
--- path.
+-- Two Aqara WXKG03LM rockers driving the two living-room lights straight off
+-- the MQTT broker:
 --
 --   switch1 single  -> toggle light.zbminir2_nappaliablak
 --   switch2 single  -> toggle light.zbminir2_nappalicsillar
 --   double or hold  -> both lights, as a group
 --
 -- WHY MQTT AND NOT AN ENTITY. Zigbee2MQTT 2.x publishes a button as an MQTT
--- **device trigger**: it creates no entity, and Home Assistant consumes the
--- press inside its automation engine, so it never reaches the event bus and
--- nothing on the HA WebSocket API can see it. The broker is the only place
--- the press exists — which is why this subscribes to it directly rather than
--- watching an entity.
+-- device trigger: it creates no entity, and Home Assistant consumes the press
+-- inside its automation engine, so it never reaches the event bus and nothing on
+-- the HA WebSocket API can see it. The broker is the only place the press
+-- exists.
 --
--- "Both", for a double or a hold, is a GROUP toggle rather than two
--- independent toggles: if either light is on both go off, otherwise both come
--- on. Toggling each one independently would leave a half-lit room half-lit —
--- the gesture meant to kill the whole room would only swap which lamp is on.
+-- "Both" is a GROUP toggle: if either light is on both go off, otherwise both
+-- come on. Toggling each independently would leave a half-lit room half-lit,
+-- swapping which lamp is on instead of clearing the room.
 --
--- The device sends exactly one word per gesture ("single", "double", "hold")
--- and never a "single" ahead of a "double", so a click acts immediately
--- instead of waiting out a double-click window. The action topic is not
--- retained either, so reloading this script does not replay the last press.
+-- The device sends one word per gesture and never a "single" ahead of a
+-- "double", so a click acts immediately rather than waiting out a double-click
+-- window. The action topic is not retained either, so a reload cannot replay
+-- the last press.
 --
--- Topics carry the Zigbee2MQTT friendly name verbatim, not the underscored
--- entity id. Both of these were confirmed against the live broker
--- (2026-08-29) with:
+-- Topics carry the Zigbee2MQTT friendly name verbatim, spaces included, not the
+-- underscored entity id. Confirm yours against the broker before editing:
 --
 --   mosquitto_sub -h <broker> -t 'zigbee2mqtt/switch+/#' -v
 
@@ -41,15 +37,14 @@ for _, button in ipairs(BUTTONS) do
   table.insert(ALL_LIGHTS, button.light)
 end
 
--- One press turns into a service call a beat later; when it misbehaves the
--- only useful question is what the button sent and what we made of it. Run
--- the add-on at log_level: debug to get that trace.
+-- When a press misbehaves the only useful question is what the button sent and
+-- what we made of it. Run the add-on at log_level: debug for that trace.
 local function trace(message)
   ha.log("debug", "nappali: " .. message)
 end
 
 -- wait = false: a wall button must not park the event loop for the Zigbee
--- round trip. Failures still reach ha.on_exception.
+-- round trip.
 local function command(service, entity_id)
   ha.call_service("light", service, { entity_id = entity_id }, { wait = false })
 end

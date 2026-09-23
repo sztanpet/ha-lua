@@ -1,41 +1,37 @@
 -- ikea_dimmer.lua
 --
--- An IKEA E1743 / RODRET two-button dimmer driving one light, straight off
--- the MQTT broker — no Home Assistant automation in the path.
+-- An IKEA E1743 / RODRET two-button dimmer driving one light straight off the
+-- MQTT broker.
 --
--- The dimmer sends "on" / "off" for a click, and for a hold the pair
--- "brightness_move_up" / "brightness_move_down" at press plus
--- "brightness_stop" at release. It never sends a level: it expects whoever is
--- listening to keep stepping the light until the release arrives. That is all
--- start_ramp/ramp_tick do — a chain of ha.after steps, each nudging
--- brightness by one geometric step and scheduling the next, cancelled by
--- bumping a generation counter that the pending step checks. (The daemon has
--- no timer-cancel API, so a stale step must disarm itself.)
+-- The dimmer sends "on"/"off" for a click, and for a hold the pair
+-- "brightness_move_up"/"brightness_move_down" at press plus "brightness_stop"
+-- at release. It never sends a level: it expects whoever is listening to keep
+-- stepping the light until the release arrives. That is what start_ramp and
+-- ramp_tick do, as a chain of ha.after steps cancelled by bumping a generation
+-- counter the pending step checks (the daemon has no timer-cancel API, so a
+-- stale step must disarm itself).
 --
 -- WHY MQTT AND NOT AN ENTITY. Zigbee2MQTT 2.x publishes a button as an MQTT
--- **device trigger**: it produces no entity, and Home Assistant consumes the
--- press inside its automation engine, so it never reaches the event bus and
--- nothing on the HA WebSocket API can see it. The broker is the only place
--- that press exists. Subscribing here also drops two hops (MQTT → HA →
--- automation → bus → WS) from the most latency-sensitive thing in the house.
+-- device trigger: it produces no entity, and Home Assistant consumes the press
+-- inside its automation engine, so nothing on the HA WebSocket API can see it.
+-- The broker is the only place that press exists, and going there directly also
+-- drops the MQTT -> HA -> automation -> bus -> WS hops from the most
+-- latency-sensitive thing in the house.
 --
--- Zigbee2MQTT publishes each press twice: as a bare word on
--- "<base>/<device>/action" and inside the JSON state object on
--- "<base>/<device>". This subscribes to the action topic only — one message
--- per press, no dedup needed. Note the topic carries the friendly name
--- VERBATIM, spaces and all ("zigbee2mqtt/ikea dimmer 1/action"), which is not
--- the underscored entity id HA would show you.
+-- Zigbee2MQTT publishes each press twice, as a bare word on
+-- "<base>/<device>/action" and inside the JSON state object on "<base>/<device>".
+-- Only the action topic is subscribed, so there is nothing to de-duplicate. The
+-- topic carries the friendly name VERBATIM, spaces and all ("zigbee2mqtt/ikea
+-- dimmer 1/action"), not the underscored entity id.
 --
--- The light is driven through HA rather than MQTT because it is not a
--- Zigbee2MQTT device. If yours is, publishing {"brightness_move": ±rate} to
--- "<base>/<light>/set" (and 0 to stop) is better still: the bulb ramps
--- itself, and the step chain below disappears entirely.
+-- The light is driven through HA because it is not a Zigbee2MQTT device. If
+-- yours is, publishing {"brightness_move": ±rate} to "<base>/<light>/set" (and
+-- 0 to stop) is better: the bulb ramps itself and the step chain disappears.
 --
--- The other hard-won detail is that the light's REPORTED brightness lags what
--- we commanded by the Zigbee round trip, so seeding a new ramp from it right
--- after the previous one ended would jump the level backwards. A ramp seeds
--- from the level we last commanded while that is still fresh, and only then
--- from the reported state. Same lesson as mirrored_switches.lua.
+-- A light's REPORTED brightness lags what we commanded by the Zigbee round trip,
+-- so a ramp starting right after the previous one ended would seed from a stale
+-- level and jump backwards. A ramp seeds from our own last commanded level while
+-- that is fresh, and only then from the reported state.
 
 -- The Zigbee2MQTT friendly name, exactly as it appears in the topic —
 -- spaces included. Check yours with: mosquitto_sub -t 'zigbee2mqtt/#' -v
@@ -51,23 +47,19 @@ local MIN_BRIGHTNESS = 3 -- a hold down dims to the bottom, it never switches of
 local MAX_BRIGHTNESS = 255
 local COMMAND_FRESH_SECS = 5
 
--- The ramp is geometric, not linear, because the eye is: brightness 20 -> 36
--- is an obvious jump while 200 -> 216 is invisible, yet both are +16. Each
--- step multiplies (or divides) the level by STEP_FACTOR, so every step looks
--- the same size and the whole range still takes RAMP_FULL_SECS. A linear step
--- is exactly what makes a ramp look like a staircase at the dim end.
---
--- RAMP_FULL_SECS is the only knob worth turning: raising it slows the ramp AND
--- shrinks each step, because the step count grows to fill the time.
+-- The ramp is geometric because the eye is: 20 -> 36 is an obvious jump while
+-- 200 -> 216 is invisible, yet both are +16. Multiplying by STEP_FACTOR makes
+-- every step look the same size, where a linear step reads as a staircase at the
+-- dim end. RAMP_FULL_SECS is the only knob worth turning — raising it slows the
+-- ramp and shrinks each step, since the step count grows to fill the time.
 local STEP_FACTOR = (MAX_BRIGHTNESS / MIN_BRIGHTNESS) ^ (RAMP_STEP_SECS / RAMP_FULL_SECS)
 
 local ramp = { generation = 0, level = nil }
 local commanded = { level = nil, at = 0 }
 
--- Everything this script does is one press turning into a burst of service
--- calls a second later; when it misbehaves the only useful question is "what
--- did the dimmer send and what did we compute from it". Run the add-on at
--- log_level: debug to get that trace.
+-- One press becomes a burst of service calls, and the only useful question
+-- afterwards is what the dimmer sent and what we computed from it. Run the
+-- add-on at log_level: debug for that trace.
 local function trace(msg)
   ha.log("debug", DIMMER .. ": " .. msg)
 end
@@ -77,8 +69,7 @@ local function set_brightness(level)
   ha.call_service("light", "turn_on", {
     entity_id = LIGHT,
     brightness = level,
-    -- Glide over the whole step so the ramp reads as one movement instead of
-    -- a staircase.
+    -- Glide over the step so the ramp reads as one movement.
     transition = RAMP_STEP_SECS,
   }, { wait = false })
 end
@@ -109,9 +100,8 @@ local function current_level()
   return brightness
 end
 
--- scale moves one geometric step. The +/-1 floor matters at the bottom of the
--- range, where a multiplicative step rounds back to the level it started from
--- and the ramp would stall instead of reaching the minimum.
+-- One geometric step. The +/-1 floor matters at the bottom of the range, where
+-- a multiplicative step rounds back to where it started and the ramp stalls.
 local function scale(level, direction)
   if direction > 0 then
     return math.max(math.floor(level * STEP_FACTOR + 0.5), level + 1)
@@ -132,7 +122,7 @@ local ramp_tick
 ramp_tick = function(generation, direction)
   if generation ~= ramp.generation then
     trace(string.format("step %d cancelled (generation is %d)", generation, ramp.generation))
-    return -- released, or reversed, before this step got its turn
+    return -- released or reversed before this step got its turn
   end
   local next_level = clamp(scale(ramp.level, direction))
   if next_level == ramp.level then
@@ -155,8 +145,8 @@ local function start_ramp(direction)
       trace("nothing to dim, light is off")
       return
     end
-    -- Holding up on a dark light lights it at the bottom and ramps from
-    -- there, which is what the dimmer would do driving the bulb directly.
+    -- Holding up on a dark light lights it at the bottom and ramps from there,
+    -- as the dimmer would do driving the bulb directly.
     level = MIN_BRIGHTNESS
     ramp.level = level
     set_brightness(level)
@@ -207,11 +197,9 @@ end)
 
 ha.log("info", DIMMER .. ": watching " .. ACTION_TOPIC .. " for " .. LIGHT)
 
--- Whether the light honours `transition` decides how smooth a ramp can be:
--- with it, each step glides into the next; without it, every step is an
--- instant jump and the only cure is smaller steps. HA's TRANSITION feature
--- bit (32) is what says which, and it is worth one line at load rather than
--- a guess.
+-- Whether the light honours `transition` decides how smooth a ramp can be, and
+-- HA's TRANSITION feature bit (32) is what says so — worth a line at load
+-- rather than a guess.
 local light = ha.get_state(LIGHT)
 if not light then
   ha.log("warn", LIGHT .. " is unknown to the daemon — is that the right entity id?")

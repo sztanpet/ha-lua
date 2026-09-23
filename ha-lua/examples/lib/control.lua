@@ -1,21 +1,15 @@
 -- lib/control.lua
 --
--- Pure heating-control helpers, deliberately free of any ha.* / store.* / time
--- access so they can be unit-tested directly from Go (like lib/schedule.lua).
--- The controller does the clock and I/O work and calls in here with plain
--- values. These five decisions — the desired-setpoint priority pick, the
--- manual-hold predicate, the write gate, the device-bounds clamp, and the
--- window any-open/all-closed reduction — are identical across thermostat.lua
--- and enhanced_climate.lua, so they live here once rather than as drifting
--- copies (the silent out-of-range fix and the manual tolerances are hard-won).
+-- Pure heating-control helpers, free of any ha.* / store.* / time access so they
+-- can be unit-tested directly from Go. The callers do the clock and I/O work and
+-- pass plain values. These five decisions are identical in thermostat.lua and
+-- enhanced_climate.lua, so they live here once rather than as drifting copies.
 
 local M = {}
 
--- desired implements the setpoint priority: a timed UI override beats a manual
--- (dial-detected) hold, which beats the schedule. Each argument is the candidate
--- temperature for that source, or nil when that source is not active. Returns
--- the winning temperature and its source string ("override"/"manual"/
--- "schedule"), or nil, nil when no source has a value.
+-- Setpoint priority: a timed override beats a dial-detected manual hold, which
+-- beats the schedule. Each argument is that source's candidate temperature or
+-- nil. Returns the winner and its source name, or nil, nil.
 function M.desired(override, manual, schedule_temp)
   if override ~= nil then return override, "override" end
   if manual ~= nil then return manual, "manual" end
@@ -23,14 +17,11 @@ function M.desired(override, manual, schedule_temp)
   return nil, nil
 end
 
--- is_manual reports whether a climate target reflects an external (user) change
--- rather than our own write. `published` is the value the controller last
--- commanded (zones.written_key), NOT what the user asked for: with the
--- overshoot correction active the two differ, and comparing against the
--- request would read our own correction as a dial nudge. A target within 0.1°
--- of it is our own write (or the window restore) — 21 vs 21.0 must not look
--- like a change. A non-numeric published value (never published yet) counts as
--- a manual change.
+-- Whether a climate target is an external change rather than our own write.
+-- `published` must be what the controller last COMMANDED, not what the user
+-- asked for: with an overshoot correction active the two differ and the
+-- correction would read as a dial nudge. The 0.1° tolerance keeps 21 vs 21.0
+-- from looking like a change; a never-published value counts as manual.
 function M.is_manual(target, published)
   if type(published) == "number" and math.abs(target - published) <= 0.1 then
     return false
@@ -38,11 +29,9 @@ function M.is_manual(target, published)
   return true
 end
 
--- should_write gates the set_temperature call: only write when the climate is
--- in heat mode, no bound window is open (that is the window script's territory),
--- and the new target differs from the current one by more than 0.05° (so we do
--- not spam set_temperature with no-op writes). A nil current target (not seeded)
--- always writes.
+-- Gates set_temperature: heat mode, no bound window open (the window script's
+-- territory), and a target that actually differs, so no-op writes are not spammed
+-- once a minute. An unseeded current target always writes.
 function M.should_write(mode, window_open, current, target)
   if mode ~= "heat" then return false end
   if window_open then return false end
@@ -50,20 +39,18 @@ function M.should_write(mode, window_open, current, target)
   return math.abs(current - target) > 0.05
 end
 
--- clamp_bounds clamps a setpoint to the device's accepted [lo, hi] range. HA
--- silently drops a set_temperature outside a climate entity's min_temp/max_temp,
--- so clamping keeps a schedule or override from becoming a no-op the user can
--- never see.
+-- Clamps a setpoint to the device's [lo, hi]. HA silently drops a
+-- set_temperature outside min_temp/max_temp, so without this a schedule or
+-- override becomes a no-op nobody can see.
 function M.clamp_bounds(value, lo, hi)
   if value < lo then return lo end
   if value > hi then return hi end
   return value
 end
 
--- window_open reduces a list of window sensor state strings to one boolean: open
--- if ANY sensor reads "on", clear only when ALL are closed. The caller resolves
--- each bound sensor to its state string (substituting a non-"on" placeholder for
--- a not-yet-seeded sensor, which counts as closed).
+-- Open if ANY sensor reads "on", clear only when ALL are closed. The caller
+-- resolves each sensor to its state string, substituting a non-"on" placeholder
+-- for an unseeded one.
 function M.window_open(states)
   for _, state in ipairs(states) do
     if state == "on" then return true end

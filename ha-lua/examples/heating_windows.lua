@@ -1,22 +1,20 @@
 -- heating_windows.lua
 --
--- Owns the *window* dimension of each zone's setpoint: while a window in a zone
--- is open the heating drops to the frost guard (15°C); when it closes again the
--- setpoint is restored. It cooperates with thermostat.lua instead of fighting
--- it (see thermostat-ui-spec.md §4.2):
+-- Owns the window dimension of each zone's setpoint: while a window in a zone is
+-- open the heating drops to the frost guard, and closing the last one restores
+-- it. It cooperates with thermostat.lua rather than fighting it (see
+-- thermostat-ui-spec.md §4.2):
 --
---   * on close it restores whatever the controller is currently commanding —
---     the value it publishes to global:thermostat:written:<zone> — not a stale
---     pre-open setpoint. So a schedule transition or an override that happened
---     while the window was open is honoured on close. It is deliberately the
---     *written* value and not the requested one: restoring the request would
---     wipe an active overshoot correction for the rest of the warmup
+--   * on close it restores what the controller is commanding NOW — the value it
+--     publishes to global:thermostat:written:<zone> — so a schedule transition
+--     or override during the airing is honoured. Deliberately the *written*
+--     value and not the requested one: restoring the request would wipe an
+--     active overshoot correction for the rest of the warmup
 --     (overshoot-spec.md §7).
---   * the controller, in turn, never writes the setpoint while a window is
---     open, so the two can never write conflicting values.
+--   * the controller never writes the setpoint while a window is open, so the
+--     two can never write conflicting values.
 --
--- Only acts while the climate entity is actually heating (hvac mode "heat");
--- when it is "off" the zone is left untouched.
+-- Only acts while the climate entity is in hvac mode "heat".
 
 local zones = require "zones"
 local control = require "control"
@@ -24,8 +22,7 @@ local control = require "control"
 local FROST = zones.frost_temp
 local zone_defs = zones.zones
 
--- Reverse lookup so a window callback can find its zone key from the sensor
--- that fired. A zone may list several window sensors.
+-- Which zone a firing sensor belongs to; a zone may list several sensors.
 local by_window = {}
 for zone, conf in pairs(zone_defs) do
   for _, window in ipairs(conf.windows) do
@@ -39,9 +36,9 @@ local function is_heating(zone)
   return state ~= nil and state.state == "heat"
 end
 
--- A zone may list several sensors, and the setpoint belongs to the zone, not to
--- whichever sensor fired: restoring when one of two windows closes would heat
--- the room with the other still open. A not-yet-seeded sensor counts as closed.
+-- The setpoint belongs to the zone, not to the sensor that fired: restoring when
+-- one of two windows closes would heat the room with the other still open. An
+-- unseeded sensor counts as closed.
 local function any_window_open(zone)
   local states = {}
   for _, window in ipairs(zone_defs[zone].windows) do

@@ -1,8 +1,7 @@
 -- lib/schedule.lua
 --
--- Pure schedule math, deliberately free of any ha.* / store.* / time access so
--- it can be unit-tested directly from Go. The controller does all the clock and
--- I/O work and calls into here with plain numbers.
+-- Pure schedule math, free of any ha.* / store.* / time access so it can be
+-- unit-tested directly from Go. Callers do the clock and I/O work.
 --
 -- A schedule is `days`: a table keyed by weekday string "0".."6" (0 = Monday,
 -- 6 = Sunday — NOT Go's Sunday-first ordering), each value a list of
@@ -23,9 +22,8 @@ function M.parse_hhmm(text)
   return hour * 60 + minute
 end
 
--- day_list returns a copy of the transitions for lua weekday dow (0=Mon..6=Sun)
--- sorted ascending by time. Malformed-time rows sort to the front but are
--- otherwise harmless; resolve() ignores them.
+-- The transitions for weekday dow, sorted by time. Malformed rows sort to the
+-- front and are ignored by resolve().
 function M.day_list(days, dow)
   local raw = days and days[tostring(dow)]
   if type(raw) ~= "table" then return {} end
@@ -98,11 +96,10 @@ function M.resolve(days, dow, minute)
   return active, idx, minutes_to_next
 end
 
--- validate checks a `days` table from the UI before it is persisted. Returns
--- true on success, or false plus an error message. Temperatures are bounded to
--- [lo, hi] (defaulting to a sane 5..35 heating range) so a typo can't drive a
--- radiator to 300° and so a value the climate device would reject is never
--- stored; callers pass the entity's min_temp/max_temp for the tighter bound.
+-- Checks a `days` table from the UI before it is persisted, returning false plus
+-- a message on error. Temperatures are bounded to [lo, hi] so a typo cannot drive
+-- a radiator to 300° and a value the device would reject is never stored; callers
+-- pass the entity's own min_temp/max_temp.
 function M.validate(days, lo, hi)
   lo = lo or 5
   hi = hi or 35

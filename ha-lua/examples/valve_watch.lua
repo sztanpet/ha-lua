@@ -1,25 +1,19 @@
 -- valve_watch.lua
 --
--- Catches a dead radiator valve. The thermostatic valves in each zone fail
--- roughly every two years: they seize shut, so the thermostat keeps calling for
--- heat but no hot water ever reaches the radiator and the room never warms up.
--- The tell-tale is physical: while a zone is calling for heat a *healthy*
--- radiator gets hot within a couple of minutes; a dead valve leaves it sitting
--- at room temperature. This script watches the radiator temperature sensors and
--- sends one notification per heating episode when a zone has been calling for
--- heat for a while but its radiator never warmed up.
+-- Catches a dead radiator valve. A thermostatic valve that seizes shut leaves
+-- the thermostat calling for heat while no hot water reaches the radiator, and
+-- the room simply never warms up. The tell-tale is physical: a healthy radiator
+-- gets hot within minutes of a zone calling for heat, a dead one stays at room
+-- temperature. This sends one notification per heating episode when a zone has
+-- called for heat for a while and its radiator never warmed.
 --
--- The judgement is read straight from the recorded history instead of a baseline
--- tracked in the store: each tick, if the zone is calling for heat now AND has
--- been continuously (from the climate entity's own history) for the warmup
--- window, we compare the radiator's current temperature against what it was at
--- the start of that window (its oldest reading in the window). The only thing
--- still kept in the store is a per-zone "already alerted this episode" flag —
--- a once-a-minute job that must notify once is inherently stateful, but that is
--- one boolean, not a baseline state machine.
+-- The judgement is read from recorded history rather than a baseline in the
+-- store: each tick, a zone calling for heat now AND continuously for the warmup
+-- window has its radiator compared against its oldest reading in that window.
+-- The only stored state is a per-zone "already alerted this episode" flag.
 --
 -- Zone definitions (climate + radiator sensor) live in lib/zones.lua. Edit the
--- knobs below and the NOTIFY_TARGET to match your setup.
+-- knobs below and NOTIFY_TARGET to match your setup.
 
 local zones = require "zones"
 
@@ -29,13 +23,11 @@ local zone_defs = zones.zones
 -- (e.g. "notify.pixel_9a" → notify.pixel_9a on your phone).
 local NOTIFY_TARGET = "notify.pixel_9a"
 
--- How long a zone must continuously call for heat before we judge the radiator.
--- A healthy valve warms the radiator well within this window; the slack is to
--- ride out the few minutes it takes hot water to actually reach the metal.
+-- How long a zone must call for heat before the radiator is judged. The slack
+-- is the few minutes it takes hot water to reach the metal.
 local WARMUP = 15 * time.minute
 
--- Minimum rise (°C) we expect at the radiator across the warmup window. A seized
--- valve produces a flat line; a healthy one climbs far more than this.
+-- Minimum rise (°C) expected across the window. A seized valve is a flat line.
 local MIN_RISE = 3.0
 
 -- If the radiator is already this many °C above room temperature, the valve is
@@ -46,8 +38,7 @@ local HOT_MARGIN = 8.0
 -- an hvac_action attribute: current temperature must be this far below target.
 local DEMAND_HYSTERESIS = 0.1
 
--- Cap on history rows pulled per query. The window is short (WARMUP) and entities
--- change at most every few seconds, so this is a generous ceiling.
+-- Cap on history rows per query; generous for a window this short.
 local HISTORY_LIMIT = 600
 
 -- Human-readable zone names for the notification text.
@@ -61,8 +52,8 @@ local function label(zone)
   return zone_labels[zone] or zone
 end
 
--- The single bit of state we keep: a per-zone flag so a dead valve is reported
--- once per heating episode, not once a minute. Cleared as soon as demand stops.
+-- Per-zone flag so a dead valve is reported once per episode, not once a
+-- minute. Cleared as soon as demand stops.
 local function alerted_key(zone)
   return "alerted:" .. zone
 end
@@ -88,11 +79,9 @@ local function calling_for_heat(zone)
   return demand_active(ha.get_state(zone_defs[zone].climate))
 end
 
--- demand_continuous confirms the zone has been calling for heat for the whole
--- window: every climate history row since `since` shows demand active. An empty
--- window (no recorded rows yet — e.g. just after startup) counts as NOT
--- confirmed, so we never judge before there is enough history; in practice the
--- climate entity's regular current_temperature updates fill the window quickly.
+-- True when every climate history row since `since` shows demand. An empty
+-- window (just after startup) counts as not confirmed, so a zone is never
+-- judged before there is history to judge it on.
 local function demand_continuous(zone, since)
   local rows = ha.get_history(zone_defs[zone].climate, since, HISTORY_LIMIT)
   if #rows == 0 then return false end
@@ -121,10 +110,9 @@ local function radiator_temp(zone)
   return tonumber(state.state)
 end
 
--- radiator_baseline returns the radiator temperature at the start of the window:
--- the oldest numeric reading recorded since `since`. nil when the sensor never
--- changed in the window (a flat sensor records nothing) — callers treat that as
--- "same as now", i.e. no rise.
+-- The radiator temperature at the start of the window: the oldest numeric
+-- reading since `since`, or nil when the sensor never changed in it — which
+-- callers read as "same as now", i.e. no rise.
 local function radiator_baseline(zone, since)
   local rows = ha.get_history(zone_defs[zone].radiator, since, HISTORY_LIMIT)
   for _, row in ipairs(rows) do
@@ -152,26 +140,24 @@ local function notify(zone, current_rad, base_rad)
   ha.log("warn", "valve_watch: " .. message)
 end
 
--- check_zone judges one zone for the current tick. No demand → drop the alert
--- flag so the next heating episode re-arms. Otherwise, once demand has held for
--- the warmup window, compare the radiator's current temperature against its
--- start-of-window reading and alert (once) if it neither rose nor is already hot.
+-- Judges one zone for this tick. No demand drops the alert flag, re-arming the
+-- next episode.
 local function check_zone(zone, now)
   if not calling_for_heat(zone) then
     store.delete(alerted_key(zone))
     return
   end
 
-  if store.get(alerted_key(zone)) then return end -- already alerted this episode
+  if store.get(alerted_key(zone)) then return end
 
   local since = now:add(-WARMUP)
-  if not demand_continuous(zone, since) then return end -- not heating long enough
+  if not demand_continuous(zone, since) then return end
 
   local current_rad = radiator_temp(zone)
-  if current_rad == nil then return end -- no usable radiator reading
+  if current_rad == nil then return end
 
-  -- A radiator already hot relative to the room proves the valve works,
-  -- regardless of how much it climbed inside the window.
+  -- Already hot relative to the room proves the valve works, whatever it
+  -- climbed inside the window.
   local room = room_temp(zone)
   if room ~= nil and (current_rad - room) >= HOT_MARGIN then return end
 

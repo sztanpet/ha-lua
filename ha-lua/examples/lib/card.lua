@@ -10,16 +10,14 @@
 --   card.publish(slug, state, attrs)   -- sensor.ha_lua_<kind>_<slug>
 --   card.remove(slug)                  -- removes that sensor
 --
--- `kind` is the published-entity prefix; it defaults to the script id. `data`
--- is passed through verbatim, so the helper mandates no field shape — only the
--- `script` routing (handled by ha.on_command) and the ha_lua_script marker it
--- stamps on every published sensor. Reusable by any future card-driven script.
+-- `kind` is the published-entity prefix, defaulting to the script id. `data` is
+-- passed through verbatim, so no field shape is mandated here — only the routing
+-- and the ha_lua_script marker stamped on every published sensor.
 
 local M = {}
 
--- new builds a card dispatcher. opts.kind sets the published-entity prefix
--- (defaults to ha.script_id). The returned table uses plain function fields
--- (dot calls, not methods) so callers write card.on / card.publish.
+-- Builds a card dispatcher. The returned table uses plain function fields (dot
+-- calls, not methods), so callers write card.on / card.publish.
 function M.new(opts)
   opts = opts or {}
   local kind = opts.kind or ha.script_id
@@ -31,24 +29,22 @@ function M.new(opts)
 
   local card = {}
 
-  -- on registers a handler for one command action. handler is called with the
-  -- command's data payload. Returns card for chaining.
+  -- Registers a handler for one action, called with the command's data payload.
+  -- Returns card for chaining.
   function card.on(action, handler)
     handlers[action] = handler
     return card
   end
 
-  -- publish creates/updates the companion sensor for slug, stamping the
-  -- ha_lua_script marker so the entity is identifiable as ours. Returns the
-  -- non-raising ha.set_state result (created:bool|nil, err).
+  -- Creates/updates the companion sensor for slug, stamped so the entity is
+  -- identifiable as ours. Returns the non-raising ha.set_state result.
   function card.publish(slug, state, attrs)
     attrs = attrs or {}
     attrs.ha_lua_script = ha.script_id
     return ha.set_state(entity_id(slug), state, attrs)
   end
 
-  -- remove deletes the companion sensor for slug. Returns the non-raising
-  -- ha.remove_state result (true|nil, err).
+  -- Removes the companion sensor for slug, with ha.remove_state's result.
   function card.remove(slug)
     return ha.remove_state(entity_id(slug))
   end
