@@ -560,3 +560,6 @@ Not done, deliberately: `mirrored_switches.lua` is now a special case of
 `group_switches.lua` (two entities in both lists behave identically), but it is
 referenced from README, DOCS and lua_api.md as the echo-attribution teaching
 example, so it stays.
+
+Shipped as **v4.9.0** (2026-09-23): group_switches.lua, lib/climate.lua, the
+four bug fixes and the comment pass. See CHANGELOG.md.

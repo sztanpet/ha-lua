@@ -10,7 +10,7 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Examples tree review** (`901fa5c`..`61d9c4f`, detail:
+**Examples tree review, released as v4.9.0** (`901fa5c`..`61d9c4f`, detail:
 `state/bundled-examples.md`). A requested sweep of `examples/` for bugs,
 architecture, simplification and comment discipline. Four real bugs, each now
 pinned by a test that fails against the old script: reminders re-fired forever
