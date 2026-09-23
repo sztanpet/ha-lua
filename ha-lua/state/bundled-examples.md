@@ -518,3 +518,45 @@ follows this same Materialize pattern — see `enhanced-climate.md`.
   left on over dark lamps still counts in the aggregate (fails against the
   pre-5fdb934 script), and the
   unavailable round trip / attribute-only update are silent.
+
+## Tree-wide review (2026-09-23, `901fa5c`..`61d9c4f`)
+Requested: simplification, architectural problems, bugs, and comments that
+neither narrate nor carry history. Bugs found and fixed, each with a test that
+fails against the previous script:
+- `lib/reminders.lua` wrote the re-armed pending table back only AFTER running
+  every action, so an action that raised never reached the write and the
+  reminder fired again every tick — forever. Collect, save, then fire.
+- `heating_windows.lua` restored a zone's setpoint on whichever sensor fired, so
+  closing one of two windows heated the room with the other open. It reduces the
+  zone's sensors through `control.window_open` now, which it should have used
+  from the start (the helper already existed).
+- `door_reminders.lua` re-armed its ladder on every "on" report, so an
+  attribute-only update restarted it at step one and the first nag never came
+  due; it also cancelled on "unavailable", dropping the nag for an open door.
+- `mirrored_switches.lua` and `door_reminders.lua` indexed `new_state` unguarded
+  (absent when an entity is removed).
+Architecture / simplification:
+- `lib/climate.lua` (new): the entity reads both controllers had copies of. The
+  weekday conversion and the 5..35 bounds fallback are the two worth not having
+  twice. lib/control.lua holds the decisions, this holds the reads.
+- `group_switches.lua`: one handler loop over GROUP instead of two near-identical
+  ones; `is_lamp`, a dead nil-queue branch and the warn dedup table went with it.
+  `FOLLOW_OUTSIDE_LAMP_CHANGE` -> `FOLLOW_OUTSIDE_CHANGE`.
+- `enhanced_climate.lua` passed the climate entity as `e` through forty
+  functions (against the project's own naming rule), and two locals shadowed
+  module-level caches (`published`, `reported` in battery_levels).
+- `ikea_dimmer.lua` called `ha.immediate_events()` with no state handler at all —
+  its input is MQTT, which never goes through the batch window — and wrote its
+  step interval twice, as "150ms" and 0.15.
+- `lib/card.lua` was the one file indented with tabs, and dropped an unhandled
+  card action in silence.
+- valve_watch's own zone-label table had drifted from lib/zones.lua; the label
+  lives with the zone now.
+Comments: every header was an essay, much of it narrating the code below it.
+What is left is what the code cannot say. Deliberately gone: rejected
+alternatives, "hard-won"/"same lesson as" asides, anecdotes ("19 of 55 pairs"),
+and a stale "they are equal today".
+Not done, deliberately: `mirrored_switches.lua` is now a special case of
+`group_switches.lua` (two entities in both lists behave identically), but it is
+referenced from README, DOCS and lua_api.md as the echo-attribution teaching
+example, so it stays.

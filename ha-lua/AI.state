@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-21
+Last updated: 2026-09-23
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,23 +10,20 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**group_switches.lua** (5fdb934, detail: `state/bundled-examples.md`). Three
-wall switches forcing three lamps (a light plus two relays, two of the switches
-being those relays) uniform. The last two commits are a field report worth not
-re-learning: a press must invert the room's AGGREGATE state, never the pressed
-switch's own state, because one lamp moved outside the script leaves that switch
-disagreeing with the room — press it in a lit room and the room got brighter. A
-pressed switch that is itself a lamp counts as its OLD state in that aggregate.
-The 5 s "trust our own last command" shortcut (which exists so a fast double
-press does not read the lagging mirror) gets voided as soon as an unwatched lamp
-reports something we never commanded. A lamp moved with no switch involved now
-drags the group with it by default, behind `FOLLOW_OUTSIDE_LAMP_CHANGE` — the
-user asked for the knob rather than a verdict, seeing both sides. And SWITCHES/LAMPS are two halves of ONE
-group, not two tiers: everything listed is commanded together and everything
-counts towards the aggregate, because these switches are relays that must always
-mirror the group. Being in SWITCHES only adds that a change there is a press. Still open behind that: **heating
-overshoot correction** (`state/overshoot.md`) is in and running observe-only per
-zone; the next step there is field data, not code.
+**Examples tree review** (`901fa5c`..`61d9c4f`, detail:
+`state/bundled-examples.md`). A requested sweep of `examples/` for bugs,
+architecture, simplification and comment discipline. Four real bugs, each now
+pinned by a test that fails against the old script: reminders re-fired forever
+when an action raised (the store was written after the action, not before), the
+window script restored a zone's setpoint while a second window was still open,
+the door ladder was restarted by attribute-only updates and cancelled by
+"unavailable", and two scripts indexed `new_state` unguarded. New
+`lib/climate.lua` holds the entity reads both heating controllers had copies of.
+Comments across the tree are cut to what the code cannot say — no narration, no
+history, no anecdotes. Before this, the group_switches work
+(`state/bundled-examples.md`) ended at one group of switches and lamps always
+sharing one state. Still open: **heating overshoot correction**
+(`state/overshoot.md`) runs observe-only per zone and needs field data, not code.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
