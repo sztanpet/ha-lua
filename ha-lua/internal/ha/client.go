@@ -451,10 +451,11 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 			continue
 		}
 		env.Event.ReceivedAt = time.Now()
+		// Dropping beats blocking the read loop: the next Read is what observes
+		// a cancelled ctx, and a consumer this far behind has already lost the
+		// event's meaning.
 		select {
 		case c.Events <- env.Event:
-		case <-ctx.Done():
-			return ctx.Err()
 		default:
 			slog.Warn("ha: event channel full, dropping event", "type", env.Event.Type)
 		}
