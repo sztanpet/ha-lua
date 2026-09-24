@@ -4,6 +4,33 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.9.1 - 2026-09-24
+
+### Fixed
+- **A script's UI title, routes and handler counts could be read while the
+  script was still loading.** The debug page polls every registered script, and
+  the MQTT fan-out walks every script's topic filters, but a script appears in
+  the registry from the moment it starts — before its own goroutine has finished
+  writing those fields. Both now report nothing until the load completes, which
+  is also what the debug page shows for a script that is mid-reload.
+- **`http.get` and `http.post` no longer read an unbounded response body.** The
+  body becomes one Lua string in the VM shared by every handler of the script,
+  and a remote decides its size; the cap is 8 MiB, the same as `fs.read`. An
+  oversized body is an error rather than a truncated document a script would
+  parse as the answer.
+- **The daemon log's rotation no longer records failures nobody reads.** A
+  failed rotate left the writer in a state it never reported; the next write now
+  reopens the file and returns the real error, and a rename that cannot happen
+  truncates instead, so the 5 MiB budget holds either way.
+
+### Changed
+- Internal only, no behaviour change for scripts: `store` and `global` share one
+  SQLite implementation, the `ha` module is registered per area instead of by one
+  460-line function, the `re` bindings lose five copies of their preamble, the
+  daemon builds a `call_service` frame in one place, and MQTT's background
+  goroutines are labelled like every other goroutine in the daemon. Comments
+  across the Go tree are cut back to what the code cannot say.
+
 ## 4.9.0 - 2026-09-23
 
 ### Added
