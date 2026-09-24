@@ -295,7 +295,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	// and stop collecting: ha.after may be called from callbacks for as long as
 	// the script lives, and every one of those IDs would otherwise be retained
 	// forever. See haAPI.keepTimer.
-	api.loaded = true
+	api.pruned = true
 	api.keepIDs = nil
 
 	r.cachedEventHandlers = api.eventHandlers

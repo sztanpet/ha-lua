@@ -840,7 +840,7 @@ func TestAfterFromCallbackDoesNotGrowKeepIDs(t *testing.T) {
 	}
 
 	// The runner does this once the main chunk has run and pruning is done.
-	api.loaded = true
+	api.pruned = true
 	api.keepIDs = nil
 
 	for range 50 {

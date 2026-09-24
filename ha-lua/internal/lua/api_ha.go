@@ -55,10 +55,10 @@ type haAPI struct {
 	// delete its row — including load-time ha.after rows, whose deletion
 	// would silently lose the restart-orphan warning.
 	keepIDs []string
-	// loaded is set by the runner once the main chunk has run and PruneScript
-	// has consumed keepIDs. See keepTimer: after that point keepIDs has no
-	// reader left, so registrations from callbacks must stop appending to it.
-	loaded bool
+	// pruned is set by the runner once PruneScript has consumed keepIDs. See
+	// keepTimer: after that point keepIDs has no reader left, so registrations
+	// from callbacks must stop appending to it.
+	pruned bool
 	// timerSeq numbers ha.every/ha.at registrations. It is a dedicated
 	// counter, NOT len(keepIDs): the seq is part of the stable timer ID
 	// that carries last_run/next_run across reloads, so an ha.after call
@@ -123,7 +123,7 @@ type eventHandler struct {
 // and a debounce firing a few times a second would otherwise retain one random
 // ID per call for the lifetime of the script.
 func (api *haAPI) keepTimer(id string) {
-	if api.loaded {
+	if api.pruned {
 		return
 	}
 	api.keepIDs = append(api.keepIDs, id)
