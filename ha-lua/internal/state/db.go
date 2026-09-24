@@ -12,9 +12,8 @@ import (
 )
 
 const schema = `
--- The states mirror table is retired: current state is memory-authoritative
--- (rebuilt from HA's seed on every connect) and only history is persisted.
--- The DROP sheds the table from installs that predate the change.
+-- Current state is memory-authoritative (rebuilt from HA's seed on every
+-- connect), so the mirror table older installs still carry is dead weight.
 DROP TABLE IF EXISTS states;
 
 CREATE TABLE IF NOT EXISTS state_history (

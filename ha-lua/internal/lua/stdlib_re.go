@@ -21,7 +21,6 @@ type reCache struct {
 func (c *reCache) Get(pattern string) (*regexp.Regexp, error) {
 	for i, entry := range c.entries {
 		if entry.pattern == pattern {
-			// Move to front (LRU)
 			if i > 0 {
 				copy(c.entries[1:i+1], c.entries[0:i])
 				c.entries[0] = entry
@@ -35,12 +34,10 @@ func (c *reCache) Get(pattern string) (*regexp.Regexp, error) {
 		return nil, err
 	}
 
+	// Newest at the front, so the least recently used falls off the end.
 	if len(c.entries) >= reCacheLimit {
-		// Remove last
 		c.entries = c.entries[:reCacheLimit-1]
 	}
-
-	// Insert at front
 	c.entries = append([]reCacheEntry{{pattern: pattern, re: re}}, c.entries...)
 	return re, nil
 }

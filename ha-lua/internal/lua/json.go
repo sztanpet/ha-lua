@@ -47,10 +47,10 @@ func luaToAnyDepth(L *lua.LState, v lua.LValue, depth int) (any, error) {
 // map[string]any (object). depth is this table's nesting level; see
 // maxTableDepth.
 func luaTableToAny(L *lua.LState, t *lua.LTable, depth int) (any, error) {
-	// Detect array: integer keys 1..n with no holes and no string keys
+	// An array is integer keys 1..n with no holes and no string keys; anything
+	// else is an object, because JSON has no third shape.
 	maxN := t.MaxN()
 	if maxN > 0 {
-		// Check if table is purely sequential
 		isArray := true
 		count := 0
 		t.ForEach(func(k, _ lua.LValue) {
@@ -72,7 +72,6 @@ func luaTableToAny(L *lua.LState, t *lua.LTable, depth int) (any, error) {
 		}
 	}
 
-	// Object
 	obj := make(map[string]any)
 	var retErr error
 	t.ForEach(func(k, v lua.LValue) {

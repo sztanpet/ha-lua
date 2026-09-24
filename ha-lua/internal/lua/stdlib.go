@@ -13,7 +13,7 @@ import (
 // and math augmentations. root is the os.Root backing the read-only fs module;
 // it may be nil (fs calls then error).
 func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
-	// 1. Selective open of standard libraries
+	// Only these libraries exist in a script: no io, no debug, no os.execute.
 	for _, lib := range []struct {
 		name string
 		open lua.LGFunction
@@ -30,8 +30,8 @@ func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
 		L.Call(1, 0)
 	}
 
-	// 2. Sandboxing: Remove/Nil dangerous functions
-	// Removed from _G
+	// Loading code at runtime, and the module system that would reach outside
+	// scripts/lib, are not a script's business.
 	L.SetGlobal("load", lua.LNil)
 	L.SetGlobal("loadstring", lua.LNil)
 	L.SetGlobal("loadfile", lua.LNil)
@@ -54,10 +54,8 @@ func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
 		})
 	}
 
-	// 3. Install restricted require
 	installRestrictedRequire(L, scriptsDir, root)
 
-	// 4. Register custom modules
 	registerMath(L)
 	registerStrings(L)
 	registerTime(L)
@@ -99,11 +97,10 @@ func installRestrictedRequire(L *lua.LState, scriptsDir string, root *os.Root) {
 		loading[clean] = true
 		defer delete(loading, clean)
 
-		// Resolve through the shared *os.Root: it confines the open to the
-		// scripts directory and rejects symlink escapes that the old lexical
-		// filepath.Abs + HasPrefix check could not see through. The path is
-		// relative to the root; the chunk name keeps the lib path for
-		// readable tracebacks.
+		// The shared *os.Root confines the open to the scripts directory and
+		// rejects symlink escapes, which no lexical path check can see through.
+		// The path is relative to the root; the chunk name keeps the lib path so
+		// tracebacks stay readable.
 		file, err := root.Open(filepath.Join("lib", clean+".lua"))
 		if err != nil {
 			L.RaiseError("require %q: %v", modName, err)

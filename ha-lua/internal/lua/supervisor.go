@@ -177,19 +177,16 @@ func (s *Supervisor) afterLoad(id string, h *scriptHandle, r *Runner) {
 // callback past stopTimeout get their context cancelled, which aborts
 // the Lua VM. No-op if the script is not running.
 func (s *Supervisor) StopScript(id string) {
-	// Dropping the handle from s.scripts and unregistering the runner must be
-	// ONE atomic transition, mirroring StartScript's add. With the removals
-	// outside the lock, a StartScript racing in behind us saw an empty
-	// s.scripts, installed a fresh runner in both maps, and then our stale
-	// removals unregistered *its* runner: a live script tracked by the
-	// supervisor but absent from the Registry, so it got no events, no timers,
-	// and 404'd in the UI — permanently, because s.scripts still tracked it and
-	// every later StartScript/Reload was therefore a no-op.
+	// Dropping the handle and unregistering the runner is ONE transition under
+	// s.mu, mirroring StartScript's add: a StartScript racing in between the two
+	// would otherwise have its fresh runner unregistered by our stale removals,
+	// leaving a script the supervisor tracks, the registry does not know, and no
+	// later Reload can repair.
 	//
-	// Registry.Remove still blocks until in-flight dispatches finish, so once
-	// this section returns nobody can Send to the runner and closing its
-	// channel is safe. Only the drain wait stays outside the lock: it can take
-	// stopTimeout, and no other script should be held up that long.
+	// Registry.Remove blocks until in-flight dispatches finish, so once this
+	// section returns nobody can Send to the runner and closing its channel is
+	// safe. Only the drain wait stays outside the lock: it can take stopTimeout,
+	// and no other script should be held up that long.
 	s.mu.Lock()
 	h, ok := s.scripts[id]
 	if ok {
@@ -218,9 +215,8 @@ func (s *Supervisor) StopScript(id string) {
 }
 
 // stopScriptHook runs between StopScript's critical section and the drain wait.
-// A no-op in production; the concurrency test swaps it in to park a stop in
-// exactly the window where the removals used to live, which is what made a
-// racing StartScript observable.
+// A no-op in production; the concurrency test swaps it out to park a stop there
+// and let a StartScript race it.
 var stopScriptHook = func() {}
 
 // Reload restarts the script from its current file, or starts it if it

@@ -83,16 +83,13 @@ func main() {
 	}
 	slog.Info("ha-lua starting", "version", version)
 
-	// Resolve the wall-clock zone and align the process with it before ANY
-	// goroutine exists: time.Local is a package variable, and every slog record
-	// reads it through time.Now(). Assigning it once the tracker's writer and
-	// the pprof server were already running was an unsynchronized write against
-	// their reads.
+	// Align the process with the configured zone before ANY goroutine exists:
+	// time.Local is a package variable that every time.Now() reads, so a later
+	// assignment races the tracker's writer and the pprof server.
 	//
-	// The alignment itself is so that scripts' time.now() (used by e.g. the
-	// thermostat's schedule) agrees with the scheduler's ha.at. Without it, a
-	// non-UTC user on a UTC container sees schedules fire at the wrong
-	// wall-clock time.
+	// The alignment itself is what makes a script's time.now() agree with the
+	// scheduler's ha.at; without it a non-UTC user on a UTC container sees
+	// schedules fire at the wrong wall-clock time.
 	loc, err := scheduler.ResolveLocation(cfg.Timezone)
 	if err != nil {
 		slog.Error("bad timezone", "err", err)

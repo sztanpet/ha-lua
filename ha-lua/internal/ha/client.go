@@ -47,10 +47,9 @@ type Client struct {
 	// Events is closed when the client shuts down.
 	Events chan Event
 
-	// States delivers one batch of get_states results per (re)connect —
-	// the plan requires re-seeding on every reconnect, the mirror goes
-	// stale across the disconnect window otherwise. Capacity 1, newest
-	// batch wins, never closed.
+	// States delivers one batch of get_states results per (re)connect: the
+	// mirror goes stale across the disconnect window, so every reconnect has
+	// to re-seed. Capacity 1, newest batch wins, never closed.
 	States chan []StateData
 
 	mu         sync.Mutex
@@ -391,7 +390,6 @@ func (c *Client) getStates(ctx context.Context, conn *websocket.Conn) ([]StateDa
 	if err := wsjson.Write(ctx, conn, commandMsg{ID: id, Type: "get_states"}); err != nil {
 		return nil, err
 	}
-	// Read until we get the result for our command ID
 	for {
 		raw, err := readRaw(ctx, conn)
 		if err != nil {

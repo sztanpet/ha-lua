@@ -279,14 +279,12 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	loadErr := L.DoFile(scriptPath)
 	if loadErr != nil {
 		slog.Error("lua: script load error", "script", r.scriptID, "err", loadErr)
-		// Record it like a callback exception: a load error is the one a user
-		// most needs to see, and it was reaching the log but never the debug
-		// page's per-script error.
+		// Recorded like a callback exception: it is the error a user most needs
+		// to find on the debug page.
 		msg, traceback := luaErrParts(loadErr)
 		r.recordError("load", msg, traceback)
 	}
 
-	// Persist timer functions for dispatch and prune old rows.
 	r.timerFns = api.timerFns
 	if r.scheduler != nil {
 		if err := r.scheduler.PruneScript(ctx, r.scriptID, api.keepIDs); err != nil {
@@ -300,8 +298,6 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	api.loaded = true
 	api.keepIDs = nil
 
-	// Cache event handlers and routes for the supervisor/router, then signal
-	// loaded. Both are safe to read once LoadedCh is closed.
 	r.cachedEventHandlers = api.eventHandlers
 	r.cachedMQTTHandlers = api.mqttHandlers
 	r.cachedRoutes = api.routeSpecs()
@@ -312,11 +308,9 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		slog.Warn("script asked for a UI tab but serves no GET \"/\" — its tab would open onto a 404",
 			"script", r.scriptID, "title", r.cachedUITitle)
 	}
-	// A silent successful load left "is my script even running?" unanswerable
-	// from the log — the first question anyone asks when a script does
-	// nothing. The counts answer the follow-up (did its handlers register)
-	// without a debug build. Skipped after a load error: that line already
-	// said what happened.
+	// "Is my script running, and did its handlers register?" is the first
+	// question anyone asks when a script does nothing; answer it in the log
+	// rather than only on the debug page. A load error already said its piece.
 	if loadErr == nil {
 		slog.Info("lua: script loaded", "script", r.scriptID,
 			"state_handlers", r.cachedStateHandlers,
@@ -329,7 +323,6 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 
 	close(r.LoadedCh)
 
-	// Deliver initial states for on_state_change with initial=true
 	r.deliverInitialStates(ctx, L, api)
 
 	// Events are coalesced over batchWindow before dispatch, unless the script
@@ -642,8 +635,8 @@ func stringMapToLua(L *lua.LState, m map[string]string) *lua.LTable {
 	return t
 }
 
-// newLState creates a Lua state with a basic set of libraries.
-// Full sandboxing (SkipOpenLibs + selective open) is applied in milestone 10.
+// newLState creates the sandboxed Lua state: no library is opened except the
+// ones RegisterStdlib opens itself.
 func (r *Runner) newLState(ctx context.Context) *lua.LState {
 	L := lua.NewState(lua.Options{SkipOpenLibs: true})
 	RegisterStdlib(L, r.scriptDir, r.root)
