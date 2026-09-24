@@ -51,18 +51,14 @@ func luaStringsSplit(L *lua.LState) int {
 	sep := L.CheckString(2)
 	var parts []string
 	if sep == "" {
+		// strings.Split would split into bytes; a Lua script wants characters.
 		for _, r := range s {
 			parts = append(parts, string(r))
 		}
 	} else {
 		parts = strings.Split(s, sep)
 	}
-	tbl := L.NewTable()
-	for _, p := range parts {
-		tbl.Append(lua.LString(p))
-	}
-	L.Push(tbl)
-	return 1
+	return pushStringTable(L, parts)
 }
 
 func luaStringsJoin(L *lua.LState) int {
@@ -91,9 +87,9 @@ func luaStringsTrim(L *lua.LState) int {
 
 func luaStringsReplaceAll(L *lua.LState) int {
 	s := L.CheckString(1)
-	old := L.CheckString(2)
-	new := L.CheckString(3)
-	L.Push(lua.LString(strings.ReplaceAll(s, old, new)))
+	from := L.CheckString(2)
+	to := L.CheckString(3)
+	L.Push(lua.LString(strings.ReplaceAll(s, from, to)))
 	return 1
 }
 
@@ -105,14 +101,7 @@ func luaStringsCount(L *lua.LState) int {
 }
 
 func luaStringsFields(L *lua.LState) int {
-	s := L.CheckString(1)
-	parts := strings.Fields(s)
-	tbl := L.NewTable()
-	for _, p := range parts {
-		tbl.Append(lua.LString(p))
-	}
-	L.Push(tbl)
-	return 1
+	return pushStringTable(L, strings.Fields(L.CheckString(1)))
 }
 
 func luaStringsToUpper(L *lua.LState) int {

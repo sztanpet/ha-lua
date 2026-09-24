@@ -92,13 +92,7 @@ func kvTable(L *lua.LState, name string, kv kvStore) *lua.LTable {
 	return t
 }
 
-// stateProxyData holds the in-memory cache for a store.state() proxy.
-type stateProxyData struct {
-	cache map[string]any
-	kv    *store.Store
-}
-
-// newStateProxy creates a persistent-proxy table: reads from in-memory cache
+// newStateProxy creates a persistent-proxy table: reads from an in-memory cache
 // (preloaded from SQLite at construction), writes to both cache and SQLite.
 func newStateProxy(L *lua.LState, kv *store.Store, defaults *lua.LTable) *lua.LTable {
 	// Load all existing values under the script's context, like every other
@@ -109,25 +103,22 @@ func newStateProxy(L *lua.LState, kv *store.Store, defaults *lua.LTable) *lua.LT
 		return L.NewTable()
 	}
 
-	// Seed cache from existing + defaults
+	// Stored values win over the defaults.
 	cache := make(map[string]any)
 	if defaults != nil {
 		defaults.ForEach(func(k, v lua.LValue) {
-			key := lua.LVAsString(k)
 			goVal, _ := luaToAny(L, v)
-			cache[key] = goVal
+			cache[lua.LVAsString(k)] = goVal
 		})
 	}
 	maps.Copy(cache, existing)
-
-	data := &stateProxyData{cache: cache, kv: kv}
 
 	proxy := L.NewTable()
 	mt := L.NewTable()
 
 	L.SetField(mt, "__index", L.NewFunction(func(L *lua.LState) int {
 		key := L.CheckString(2)
-		if v, ok := data.cache[key]; ok {
+		if v, ok := cache[key]; ok {
 			L.Push(anyToLua(L, v))
 		} else {
 			L.Push(lua.LNil)
@@ -143,7 +134,7 @@ func newStateProxy(L *lua.LState, kv *store.Store, defaults *lua.LTable) *lua.LT
 			L.RaiseError("store.state set %q: %v", key, err)
 			return 0
 		}
-		data.cache[key] = goVal
+		cache[key] = goVal
 		if err := kv.Set(L.Context(), key, goVal); err != nil {
 			L.RaiseError("store.state persist %q: %v", key, err)
 		}

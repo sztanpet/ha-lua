@@ -641,8 +641,6 @@ func dispatchException(L *lua.LState, api *haAPI, errMsg, traceback, callbackNam
 	info.RawSetString("timestamp", lua.LString(time.Now().UTC().Format(time.RFC3339)))
 	if eventTbl != nil {
 		info.RawSetString("event", eventTbl)
-	} else {
-		info.RawSetString("event", lua.LNil)
 	}
 
 	if api.onExceptionFn != nil {

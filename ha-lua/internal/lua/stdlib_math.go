@@ -23,15 +23,9 @@ func luaMathRound(L *lua.LState) int {
 
 func luaMathClamp(L *lua.LState) int {
 	x := L.CheckNumber(1)
-	min := L.CheckNumber(2)
-	max := L.CheckNumber(3)
-	if x < min {
-		L.Push(lua.LNumber(min))
-	} else if x > max {
-		L.Push(lua.LNumber(max))
-	} else {
-		L.Push(lua.LNumber(x))
-	}
+	low := L.CheckNumber(2)
+	high := L.CheckNumber(3)
+	L.Push(lua.LNumber(min(max(x, low), high)))
 	return 1
 }
 

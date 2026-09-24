@@ -1,6 +1,7 @@
 package lua
 
 import (
+	"bytes"
 	"encoding/json/v2"
 	"log/slog"
 
@@ -96,8 +97,7 @@ func (r *Runner) handleMQTTMessage(L *lua.LState, api *haAPI, msg mqtt.Message) 
 		if !mqtt.Match(h.filter, msg.Topic) {
 			continue
 		}
-		payload := string(msg.Payload)
-		args := []lua.LValue{lua.LString(msg.Topic), lua.LString(payload)}
+		args := []lua.LValue{lua.LString(msg.Topic), lua.LString(msg.Payload)}
 		// A JSON payload is handed over decoded as a third argument.
 		// Zigbee2MQTT publishes both shapes — a bare action string on
 		// <name>/action and a JSON object on <name> — so a script must not
@@ -114,7 +114,7 @@ func (r *Runner) handleMQTTMessage(L *lua.LState, api *haAPI, msg mqtt.Message) 
 // decodeMQTTPayload decodes a JSON object or array payload. Anything else
 // (a bare word, a number, malformed JSON) is left to the raw string argument.
 func decodeMQTTPayload(L *lua.LState, payload []byte) (lua.LValue, bool) {
-	trimmed := trimSpace(payload)
+	trimmed := bytes.TrimLeft(payload, " \t\r\n")
 	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
 		return lua.LNil, false
 	}
@@ -124,14 +124,6 @@ func decodeMQTTPayload(L *lua.LState, payload []byte) (lua.LValue, bool) {
 		return lua.LNil, false
 	}
 	return anyToLua(L, v), true
-}
-
-func trimSpace(b []byte) []byte {
-	start := 0
-	for start < len(b) && (b[start] == ' ' || b[start] == '\t' || b[start] == '\n' || b[start] == '\r') {
-		start++
-	}
-	return b[start:]
 }
 
 // MQTTFilters returns the topic filters this script subscribed to, or nothing
