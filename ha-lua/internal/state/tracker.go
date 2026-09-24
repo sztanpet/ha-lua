@@ -403,14 +403,15 @@ func (t *Tracker) historyPoints(ctx context.Context, entityID string, since time
 		if err := rows.Scan(&p.state, &at); err != nil {
 			return "", nil, false, err
 		}
-		p.at, err = time.Parse(time.RFC3339, at)
-		if err != nil {
+		parsed, perr := time.Parse(time.RFC3339, at)
+		if perr != nil {
 			// changed_at is HA's last_changed verbatim; an unparseable one is
 			// a single corrupt row, not a reason to fail the whole aggregate.
 			slog.Warn("state: skipping history row with unparseable timestamp",
 				"entity", entityID, "changed_at", at)
 			continue
 		}
+		p.at = parsed
 		if p.at.Before(since) {
 			// sinceLayout truncates to the second, so a row inside the same
 			// second as `since` can land just before it.
