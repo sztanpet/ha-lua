@@ -14,12 +14,11 @@ import (
 // files together never exceed the budget while at least the previous segment of
 // history is retained.
 type Rotating struct {
-	mu      sync.Mutex
-	path    string
-	segMax  int64
-	file    *os.File
-	size    int64
-	openErr error
+	mu     sync.Mutex
+	path   string
+	segMax int64
+	file   *os.File
+	size   int64
 }
 
 // RotateIfLarge bounds an append-per-write log (one that is opened, written,
@@ -64,42 +63,32 @@ func (w *Rotating) open() error {
 	return nil
 }
 
-// rotate closes the active file, renames it over the single backup, and starts
-// a fresh active file. Best-effort: on any error it tries to keep writing to
-// the existing file rather than losing the writer entirely.
+// rotate closes the active file and renames it over the single backup; the next
+// write creates a fresh one. A rename that fails leaves nowhere to rotate into,
+// so the file is truncated instead: the budget is the promise here, the tail of
+// the log is not.
 func (w *Rotating) rotate() {
-	if err := w.file.Close(); err != nil {
-		w.openErr = err
-	}
+	_ = w.file.Close()
+	w.file, w.size = nil, 0
 	// Rename is atomic on the same filesystem; a stale backup is replaced.
-	_ = os.Rename(w.path, w.path+".1")
-	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		// Could not start fresh; fall back to re-appending to whatever exists.
-		w.openErr = err
-		if reopened := w.open(); reopened != nil {
-			w.file = nil
-		}
-		return
+	if err := os.Rename(w.path, w.path+".1"); err != nil {
+		_ = os.Truncate(w.path, 0)
 	}
-	w.file = f
-	w.size = 0
-	w.openErr = nil
 }
 
 func (w *Rotating) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	// Rotate before writing when this write would push past the segment cap, so
+	// a single record is never split across files. An oversized lone record
+	// still goes to a freshly rotated file.
+	if w.file != nil && w.size > 0 && w.size+int64(len(p)) > w.segMax {
+		w.rotate()
+	}
 	if w.file == nil {
 		if err := w.open(); err != nil {
 			return 0, err
 		}
-	}
-	// Rotate before writing when this write would push past the segment cap, so
-	// a single record is never split across files. An oversized lone record
-	// still goes to a freshly rotated file.
-	if w.size > 0 && w.size+int64(len(p)) > w.segMax {
-		w.rotate()
 	}
 	n, err := w.file.Write(p)
 	w.size += int64(n)
