@@ -129,7 +129,9 @@ func (api *haAPI) keepTimer(id string) {
 	api.keepIDs = append(api.keepIDs, id)
 }
 
-// registerHaAPI installs the `ha` module on L.
+// registerHaAPI installs the `ha` module on L. The module is grouped rather
+// than written out here: one function per area, so a binding is found by what
+// it does instead of by scrolling.
 func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 	haTable := L.NewTable()
 
@@ -138,6 +140,22 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 	// having to thread it through every call.
 	L.SetField(haTable, "script_id", lua.LString(api.scriptID))
 
+	registerLogging(L, haTable, api)
+	registerStateQueries(L, haTable, api)
+	registerHistoryQueries(L, haTable, api)
+	registerCommands(L, haTable, api)
+	registerTimers(L, haTable, api)
+	registerHandlers(L, haTable, api)
+	registerServe(L, haTable, api)
+
+	exceptionsTable := L.NewTable()
+	registerExceptionHandlers(L, exceptionsTable, r.logsRoot)
+	L.SetField(haTable, "exceptions", exceptionsTable)
+
+	L.SetGlobal("ha", haTable)
+}
+
+func registerLogging(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "log", L.NewFunction(func(L *lua.LState) int {
 		level := L.CheckString(1)
 		msg := L.CheckString(2)
@@ -165,7 +183,10 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		slog.Info(strings.Join(parts, "\t"), "script", api.scriptID)
 		return 0
 	}))
+}
 
+// registerStateQueries installs the reads against the in-memory mirror.
+func registerStateQueries(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "get_state", L.NewFunction(func(L *lua.LState) int {
 		entityID := L.CheckString(1)
 		s, err := api.tracker.GetState(L.Context(), entityID)
@@ -177,8 +198,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			L.Push(lua.LNil)
 			return 1
 		}
-		tbl := stateToLua(L, s)
-		L.Push(tbl)
+		L.Push(stateToLua(L, s))
 		return 1
 	}))
 
@@ -189,12 +209,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			L.RaiseError("get_entities: %v", err)
 			return 0
 		}
-		tbl := L.NewTable()
-		for i, s := range states {
-			tbl.RawSetInt(i+1, stateToLua(L, &s))
-		}
-		L.Push(tbl)
-		return 1
+		return pushStates(L, states)
 	}))
 
 	L.SetField(haTable, "get_entity_ids", L.NewFunction(func(L *lua.LState) int {
@@ -204,14 +219,12 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			L.RaiseError("get_entity_ids: %v", err)
 			return 0
 		}
-		tbl := L.NewTable()
-		for i, id := range ids {
-			tbl.RawSetInt(i+1, lua.LString(id))
-		}
-		L.Push(tbl)
-		return 1
+		return pushStringTable(L, ids)
 	}))
+}
 
+// registerHistoryQueries installs the reads that go to SQLite.
+func registerHistoryQueries(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "get_history", L.NewFunction(func(L *lua.LState) int {
 		entityID := L.CheckString(1)
 		since := getTime(L, 2)
@@ -221,12 +234,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			L.RaiseError("get_history: %v", err)
 			return 0
 		}
-		tbl := L.NewTable()
-		for i, s := range states {
-			tbl.RawSetInt(i+1, stateToLua(L, &s))
-		}
-		L.Push(tbl)
-		return 1
+		return pushStates(L, states)
 	}))
 
 	// ha.duration_in_state(entity_id, state, since) — seconds spent in state,
@@ -299,7 +307,10 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		L.Push(tbl)
 		return 1
 	}))
+}
 
+// registerCommands installs everything that talks back to Home Assistant.
+func registerCommands(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "call_service", L.NewFunction(func(L *lua.LState) int {
 		domain := L.CheckString(1)
 		service := L.CheckString(2)
@@ -330,38 +341,7 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 			}
 			return 0
 		}
-
-		// wait=false: the command is written before this returns (send
-		// errors still raise inline, wire order is call order), but HA's
-		// verdict is awaited off the script goroutine, so the event loop
-		// keeps running while the device round trip completes. A rejection
-		// lands in ha.on_exception instead of raising here.
-		if api.callServiceAsync == nil {
-			L.RaiseError("call_service: wait=false not available")
-			return 0
-		}
-		ctx := L.Context()
-		verdict, err := api.callServiceAsync(ctx, domain, service, data)
-		if err != nil {
-			L.RaiseError("call_service: %v", err)
-			return 0
-		}
-		// ctx carries the runner's labels, so this waiter keeps the script
-		// name it was spawned under.
-		go pprof.Do(ctx, pprof.Labels("goroutine", "call-service-async"), func(ctx context.Context) {
-			err := <-verdict
-			if err == nil {
-				return
-			}
-			select {
-			case api.asyncErrCh <- asyncScriptError{
-				callback: "call_service",
-				errMsg:   fmt.Sprintf("call_service %s.%s (wait=false): %v", domain, service, err),
-			}:
-			case <-ctx.Done():
-			}
-		})
-		return 0
+		return api.callServiceNoWait(L, domain, service, data)
 	}))
 
 	L.SetField(haTable, "fire_event", L.NewFunction(func(L *lua.LState) int {
@@ -435,33 +415,43 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		L.Push(lua.LTrue)
 		return 1
 	}))
+}
 
-	// ha.on_command(handler) is sugar over on_event("ha_lua_command", …): it
-	// keeps only commands addressed to this script (data.script == script id)
-	// and calls handler(action, data) with the command's action and payload.
-	// One inbound event type carries every card-driven command. Load-time only.
-	L.SetField(haTable, "on_command", L.NewFunction(func(L *lua.LState) int {
-		handler := L.CheckFunction(1)
-		wrapper := L.NewFunction(func(L *lua.LState) int {
-			data := L.OptTable(1, nil)
-			if data == nil {
-				return 0
-			}
-			if s := data.RawGetString("script"); s.Type() != lua.LTString || s.String() != api.scriptID {
-				return 0
-			}
-			action := data.RawGetString("action")
-			payload := data.RawGetString("data")
-			L.Push(handler)
-			L.Push(action)
-			L.Push(payload)
-			L.Call(2, 0)
-			return 0
-		})
-		api.eventHandlers = append(api.eventHandlers, eventHandler{eventType: "ha_lua_command", fn: wrapper})
+// callServiceNoWait backs { wait = false }: the command is written before this
+// returns (send errors still raise inline, wire order is call order), but HA's
+// verdict is awaited off the script goroutine, so the event loop keeps running
+// while the device round trip completes. A rejection lands in ha.on_exception
+// instead of raising here.
+func (api *haAPI) callServiceNoWait(L *lua.LState, domain, service string, data jsontext.Value) int {
+	if api.callServiceAsync == nil {
+		L.RaiseError("call_service: wait=false not available")
 		return 0
-	}))
+	}
+	ctx := L.Context()
+	verdict, err := api.callServiceAsync(ctx, domain, service, data)
+	if err != nil {
+		L.RaiseError("call_service: %v", err)
+		return 0
+	}
+	// ctx carries the runner's labels, so this waiter keeps the script
+	// name it was spawned under.
+	go pprof.Do(ctx, pprof.Labels("goroutine", "call-service-async"), func(ctx context.Context) {
+		err := <-verdict
+		if err == nil {
+			return
+		}
+		select {
+		case api.asyncErrCh <- asyncScriptError{
+			callback: "call_service",
+			errMsg:   fmt.Sprintf("call_service %s.%s (wait=false): %v", domain, service, err),
+		}:
+		case <-ctx.Done():
+		}
+	})
+	return 0
+}
 
+func registerTimers(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "every", L.NewFunction(func(L *lua.LState) int {
 		if api.scheduler == nil {
 			L.RaiseError("scheduler not available")
@@ -514,14 +504,17 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		api.timerFns[id] = fn
 		return 0
 	}))
+}
 
-	// Registration functions — only valid at load time.
+// registerHandlers installs the callback registrations. All of them are
+// load-time only: nothing removes a handler once the main chunk has run.
+func registerHandlers(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "on_state_change", L.NewFunction(func(L *lua.LState) int {
 		pattern := L.CheckString(1)
 		fn := L.CheckFunction(2)
 		// Match's error depends only on the pattern. Catch typos at load
 		// time — dispatch silently ignores match errors, so a bad pattern
-		// would otherwise just never fire.
+		// would never fire.
 		if _, err := filepath.Match(pattern, ""); err != nil {
 			L.RaiseError("on_state_change: bad pattern %q: %v", pattern, err)
 			return 0
@@ -551,15 +544,47 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		return 0
 	}))
 
+	// ha.on_command(handler) is sugar over on_event("ha_lua_command", …): it
+	// keeps only commands addressed to this script (data.script == script id)
+	// and calls handler(action, data) with the command's action and payload.
+	// One inbound event type carries every card-driven command.
+	L.SetField(haTable, "on_command", L.NewFunction(func(L *lua.LState) int {
+		handler := L.CheckFunction(1)
+		wrapper := L.NewFunction(func(L *lua.LState) int {
+			data := L.OptTable(1, nil)
+			if data == nil {
+				return 0
+			}
+			if s := data.RawGetString("script"); s.Type() != lua.LTString || s.String() != api.scriptID {
+				return 0
+			}
+			L.Push(handler)
+			L.Push(data.RawGetString("action"))
+			L.Push(data.RawGetString("data"))
+			L.Call(2, 0)
+			return 0
+		})
+		api.eventHandlers = append(api.eventHandlers, eventHandler{eventType: "ha_lua_command", fn: wrapper})
+		return 0
+	}))
+
 	// ha.immediate_events() opts this script out of the default 100ms event
 	// coalescing: every state change is delivered as it arrives (no per-entity
-	// collapse, no batching delay). Call at load time. Use it only when a handler
-	// must see every transition; the default is cheaper and avoids dropped events.
+	// collapse, no batching delay). Use it only when a handler must see every
+	// transition; the default is cheaper and avoids dropped events.
 	L.SetField(haTable, "immediate_events", L.NewFunction(func(L *lua.LState) int {
 		api.immediateEvents = true
 		return 0
 	}))
 
+	L.SetField(haTable, "on_exception", L.NewFunction(func(L *lua.LState) int {
+		api.onExceptionFn = L.CheckFunction(1)
+		return 0
+	}))
+}
+
+// registerServe installs the script's HTTP surface.
+func registerServe(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	// ha.serve registers an HTTP handler for a method + path prefix. Load-time
 	// only. The handler receives a request table {method, path, query, headers,
 	// body} and returns status:int[, body:string[, headers:table]].
@@ -580,19 +605,16 @@ func (r *Runner) registerHaAPI(L *lua.LState, api *haAPI) {
 		api.uiTitle = L.CheckString(1)
 		return 0
 	}))
+}
 
-	L.SetField(haTable, "on_exception", L.NewFunction(func(L *lua.LState) int {
-		fn := L.CheckFunction(1)
-		api.onExceptionFn = fn
-		return 0
-	}))
-
-	// ha.exceptions built-in handlers
-	exceptionsTable := L.NewTable()
-	registerExceptionHandlers(L, exceptionsTable, r.logsRoot)
-	L.SetField(haTable, "exceptions", exceptionsTable)
-
-	L.SetGlobal("ha", haTable)
+// pushStates pushes states as an array-table of state tables.
+func pushStates(L *lua.LState, states []ha.StateData) int {
+	tbl := L.NewTable()
+	for i := range states {
+		tbl.RawSetInt(i+1, stateToLua(L, &states[i]))
+	}
+	L.Push(tbl)
+	return 1
 }
 
 // stateToLua converts a StateData to a Lua table.
