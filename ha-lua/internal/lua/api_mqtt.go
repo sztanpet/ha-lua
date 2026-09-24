@@ -134,10 +134,13 @@ func trimSpace(b []byte) []byte {
 	return b[start:]
 }
 
-// MQTTFilters returns the topic filters this script subscribed to. Only valid
-// once LoadedCh is closed; used by the registry to fan a message out only to
-// the scripts that asked for it.
+// MQTTFilters returns the topic filters this script subscribed to, or nothing
+// while it is still loading. The registry uses them to fan a message out only
+// to the scripts that asked for it.
 func (r *Runner) MQTTFilters() []string {
+	if !r.loaded() {
+		return nil
+	}
 	out := make([]string, 0, len(r.cachedMQTTHandlers))
 	for _, h := range r.cachedMQTTHandlers {
 		out = append(out, h.filter)

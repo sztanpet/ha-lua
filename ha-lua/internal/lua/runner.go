@@ -93,14 +93,11 @@ type Runner struct {
 
 	// LoadedCh is closed once the script has finished loading.
 	LoadedCh chan struct{}
-	// cachedEventHandlers is set after load; safe to read once LoadedCh is closed.
+	// The load-time shape of the script, written by the script goroutine before
+	// LoadedCh closes and read by other goroutines only through loaded().
 	cachedEventHandlers []eventHandler
-	// cachedRoutes is set after load; safe to read once LoadedCh is closed.
-	cachedRoutes []RouteSpec
-	// cachedUITitle is the ha.ui title, set after load; safe to read once
-	// LoadedCh is closed.
-	cachedUITitle string
-	// Set with the other cached fields, before LoadedCh closes.
+	cachedRoutes        []RouteSpec
+	cachedUITitle       string
 	cachedStateHandlers int
 	cachedMQTTHandlers  []mqttHandler
 	cachedImmediate     bool
@@ -184,19 +181,26 @@ func (r *Runner) SetRemoveState(fn func(ctx context.Context, entityID string) er
 	r.removeState = fn
 }
 
-// wantsHAEvent reports whether this script has a handler that could act on
-// ev. A script with no state handlers was still woken for every state change
-// in the house — queued, dispatched, and dropped on the floor by a handler
-// loop with nothing in it. An MQTT-only script paid that for every entity in
-// Home Assistant.
+// loaded reports whether the main chunk has finished. Until it has, the cached
+// load-time fields belong to the script goroutine alone.
+func (r *Runner) loaded() bool {
+	select {
+	case <-r.LoadedCh:
+		return true
+	default:
+		return false
+	}
+}
+
+// wantsHAEvent reports whether this script has a handler that could act on ev,
+// so a script with no state handlers is not woken for every entity in the house
+// only to walk an empty handler list.
 //
 // Before the load finishes the handler set is unknown, so everything is
 // accepted: the channel buffer exists precisely so events arriving during a
 // load are handled after it.
 func (r *Runner) wantsHAEvent(ev ha.Event) bool {
-	select {
-	case <-r.LoadedCh:
-	default:
+	if !r.loaded() {
 		return true
 	}
 	if ev.Type == "state_changed" {
@@ -210,9 +214,12 @@ func (r *Runner) wantsHAEvent(ev ha.Event) bool {
 	return false
 }
 
-// EventTypes returns the distinct custom event types this script handles.
-// Only valid once LoadedCh is closed.
+// EventTypes returns the distinct custom event types this script handles, or
+// nothing while the script is still loading.
 func (r *Runner) EventTypes() []string {
+	if !r.loaded() {
+		return nil
+	}
 	seen := make(map[string]struct{})
 	var out []string
 	for _, h := range r.cachedEventHandlers {
@@ -384,13 +391,23 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	}
 }
 
-// Routes returns the routes this script registered via ha.serve. Only valid
-// once LoadedCh is closed.
-func (r *Runner) Routes() []RouteSpec { return r.cachedRoutes }
+// Routes returns the routes this script registered via ha.serve, or nothing
+// while it is still loading.
+func (r *Runner) Routes() []RouteSpec {
+	if !r.loaded() {
+		return nil
+	}
+	return r.cachedRoutes
+}
 
 // UITitle returns the tab name set by ha.ui, or "" if the script did not opt
-// into the web shell. Only valid once LoadedCh is closed.
-func (r *Runner) UITitle() string { return r.cachedUITitle }
+// into the web shell (or has not finished loading).
+func (r *Runner) UITitle() string {
+	if !r.loaded() {
+		return ""
+	}
+	return r.cachedUITitle
+}
 
 // ScriptError is the most recent exception a script raised.
 type ScriptError struct {
@@ -415,22 +432,28 @@ type RunnerStats struct {
 	LastError     *ScriptError `json:"last_error,omitempty"`
 }
 
-// Stats is valid once LoadedCh is closed. Never touches the LState: the cached
-// fields are immutable after load and the counters are atomic.
+// Stats never touches the LState: the counters are atomic and the cached fields
+// are immutable once the load has finished. They are left out until then — the
+// debug page polls scripts that are still loading, and the script goroutine is
+// still writing them.
 func (r *Runner) Stats() RunnerStats {
-	return RunnerStats{
-		ScriptID:      r.scriptID,
-		UITitle:       r.cachedUITitle,
-		Routes:        r.cachedRoutes,
-		EventHandlers: len(r.cachedEventHandlers),
-		StateHandlers: r.cachedStateHandlers,
-		MQTTFilters:   r.MQTTFilters(),
-		Immediate:     r.cachedImmediate,
-		QueueLen:      len(r.ch),
-		QueueCap:      cap(r.ch),
-		Dropped:       r.dropped.Load(),
-		LastError:     r.lastError.Load(),
+	st := RunnerStats{
+		ScriptID:  r.scriptID,
+		QueueLen:  len(r.ch),
+		QueueCap:  cap(r.ch),
+		Dropped:   r.dropped.Load(),
+		LastError: r.lastError.Load(),
 	}
+	if !r.loaded() {
+		return st
+	}
+	st.UITitle = r.cachedUITitle
+	st.Routes = r.cachedRoutes
+	st.EventHandlers = len(r.cachedEventHandlers)
+	st.StateHandlers = r.cachedStateHandlers
+	st.MQTTFilters = r.MQTTFilters()
+	st.Immediate = r.cachedImmediate
+	return st
 }
 
 func (r *Runner) recordError(callback, errMsg, traceback string) {

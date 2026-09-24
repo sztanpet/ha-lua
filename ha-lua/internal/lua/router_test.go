@@ -396,6 +396,35 @@ func TestRunnerStatsCountsDroppedEvents(t *testing.T) {
 	}
 }
 
+// The debug page and the MQTT fan-out poll every registered runner, including
+// one whose goroutine is still writing its cached load-time fields.
+func TestLoadTimeFieldsAreHiddenWhileLoading(t *testing.T) {
+	r := &Runner{
+		scriptID:            "ui",
+		ch:                  make(chan Event, 1),
+		LoadedCh:            make(chan struct{}),
+		cachedUITitle:       "Panel",
+		cachedRoutes:        []RouteSpec{{Method: "GET", Prefix: "/"}},
+		cachedStateHandlers: 2,
+		cachedMQTTHandlers:  []mqttHandler{{filter: "home/#"}},
+	}
+	if st := r.Stats(); st.UITitle != "" || st.Routes != nil || st.StateHandlers != 0 {
+		t.Errorf("loading script reported load-time fields: %+v", st)
+	}
+	if r.UITitle() != "" || r.Routes() != nil || r.MQTTFilters() != nil || r.EventTypes() != nil {
+		t.Error("accessors answered before the load finished")
+	}
+
+	close(r.LoadedCh)
+	st := r.Stats()
+	if st.UITitle != "Panel" || len(st.Routes) != 1 || st.StateHandlers != 2 {
+		t.Errorf("loaded stats = %+v", st)
+	}
+	if got := r.MQTTFilters(); len(got) != 1 || got[0] != "home/#" {
+		t.Errorf("filters = %v", got)
+	}
+}
+
 func TestRegistryAllIsOrderedByScriptID(t *testing.T) {
 	reg := NewRegistry()
 	for _, id := range []string{"zulu", "alpha", "mike", "bravo"} {
