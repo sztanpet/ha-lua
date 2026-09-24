@@ -268,6 +268,9 @@ func TestREModule(t *testing.T) {
 		assert(not re.match("^world", "hello world"))
 		
 		assert(re.find("o..o", "hello world") == "o wo")
+		assert(re.find("zzz", "hello world") == nil)
+		-- an empty match is still a match, and must not read as "no match"
+		assert(re.find("x*", "hello world") == "")
 		
 		local all = re.find_all("a.", "banana")
 		assert(#all == 2)

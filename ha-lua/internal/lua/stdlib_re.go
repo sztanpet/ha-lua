@@ -71,83 +71,63 @@ var reFuncs = map[string]lua.LGFunction{
 	"split":    luaRESplit,
 }
 
-func luaREMatch(L *lua.LState) int {
+// compiled returns the compiled pattern from argument 1, raising re.<name> if
+// it does not compile. RaiseError unwinds, so a nil return never reaches the
+// caller.
+func compiled(L *lua.LState, name string) *regexp.Regexp {
 	pattern := L.CheckString(1)
-	s := L.CheckString(2)
-	cache := getRECache(L)
-	re, err := cache.Get(pattern)
+	re, err := getRECache(L).Get(pattern)
 	if err != nil {
-		L.RaiseError("re.match: %v", err)
-		return 0
+		L.RaiseError("re.%s: %v", name, err)
+		return nil
 	}
-	L.Push(lua.LBool(re.MatchString(s)))
-	return 1
+	return re
 }
 
-func luaREFind(L *lua.LState) int {
-	pattern := L.CheckString(1)
-	s := L.CheckString(2)
-	cache := getRECache(L)
-	re, err := cache.Get(pattern)
-	if err != nil {
-		L.RaiseError("re.find: %v", err)
-		return 0
-	}
-	res := re.FindString(s)
-	if res == "" && !re.MatchString(s) {
-		L.Push(lua.LNil)
-	} else {
-		L.Push(lua.LString(res))
-	}
-	return 1
-}
-
-func luaREFindAll(L *lua.LState) int {
-	pattern := L.CheckString(1)
-	s := L.CheckString(2)
-	cache := getRECache(L)
-	re, err := cache.Get(pattern)
-	if err != nil {
-		L.RaiseError("re.find_all: %v", err)
-		return 0
-	}
-	matches := re.FindAllString(s, -1)
+// pushStringTable pushes values as an array-table.
+func pushStringTable(L *lua.LState, values []string) int {
 	tbl := L.NewTable()
-	for _, m := range matches {
-		tbl.Append(lua.LString(m))
+	for _, v := range values {
+		tbl.Append(lua.LString(v))
 	}
 	L.Push(tbl)
 	return 1
 }
 
+func luaREMatch(L *lua.LState) int {
+	re := compiled(L, "match")
+	L.Push(lua.LBool(re.MatchString(L.CheckString(2))))
+	return 1
+}
+
+func luaREFind(L *lua.LState) int {
+	re := compiled(L, "find")
+	s := L.CheckString(2)
+	// By index, not FindString: an empty match is still a match, and "" alone
+	// cannot say whether the pattern matched.
+	loc := re.FindStringIndex(s)
+	if loc == nil {
+		L.Push(lua.LNil)
+		return 1
+	}
+	L.Push(lua.LString(s[loc[0]:loc[1]]))
+	return 1
+}
+
+func luaREFindAll(L *lua.LState) int {
+	re := compiled(L, "find_all")
+	return pushStringTable(L, re.FindAllString(L.CheckString(2), -1))
+}
+
 func luaREReplace(L *lua.LState) int {
-	pattern := L.CheckString(1)
+	re := compiled(L, "replace")
 	s := L.CheckString(2)
 	repl := L.CheckString(3)
-	cache := getRECache(L)
-	re, err := cache.Get(pattern)
-	if err != nil {
-		L.RaiseError("re.replace: %v", err)
-		return 0
-	}
 	L.Push(lua.LString(re.ReplaceAllString(s, repl)))
 	return 1
 }
 
 func luaRESplit(L *lua.LState) int {
-	pattern := L.CheckString(1)
-	s := L.CheckString(2)
-	cache := getRECache(L)
-	re, err := cache.Get(pattern)
-	if err != nil {
-		L.RaiseError("re.split: %v", err)
-		return 0
-	}
-	parts := re.Split(s, -1)
-	tbl := L.NewTable()
-	for _, p := range parts {
-		tbl.Append(lua.LString(p))
-	}
-	L.Push(tbl)
-	return 1
+	re := compiled(L, "split")
+	return pushStringTable(L, re.Split(L.CheckString(2), -1))
 }
