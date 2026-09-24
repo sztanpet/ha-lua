@@ -126,11 +126,6 @@ func (c *Client) AddEventType(t string) {
 	}
 }
 
-// NextID returns the next outbound message ID.
-func (c *Client) NextID() int {
-	return c.nextID()
-}
-
 // SendRaw writes raw JSON bytes as a WebSocket text message. Returns an error
 // if no authenticated connection is active. coder/websocket serializes
 // concurrent writes.
@@ -361,7 +356,8 @@ func (c *Client) connect(ctx context.Context) error {
 	return c.readLoop(ctx, conn)
 }
 
-func (c *Client) nextID() int {
+// NextID returns the next outbound message ID.
+func (c *Client) NextID() int {
 	return int(c.msgID.Add(1))
 }
 
@@ -391,7 +387,7 @@ func (c *Client) auth(ctx context.Context, conn *websocket.Conn) error {
 }
 
 func (c *Client) getStates(ctx context.Context, conn *websocket.Conn) ([]StateData, error) {
-	id := c.nextID()
+	id := c.NextID()
 	if err := wsjson.Write(ctx, conn, commandMsg{ID: id, Type: "get_states"}); err != nil {
 		return nil, err
 	}
@@ -425,7 +421,7 @@ func (c *Client) getStates(ctx context.Context, conn *websocket.Conn) ([]StateDa
 
 func (c *Client) subscribe(ctx context.Context, conn *websocket.Conn, eventType string) error {
 	return wsjson.Write(ctx, conn, subscribeMsg{
-		ID:        c.nextID(),
+		ID:        c.NextID(),
 		Type:      "subscribe_events",
 		EventType: eventType,
 	})
@@ -492,7 +488,7 @@ func (c *Client) Stats() Stats {
 		Connected:  c.conn != nil,
 		Reconnects: c.reconnects,
 		LastError:  c.lastErr,
-		EventTypes: append([]string{}, c.eventTypes...),
+		EventTypes: slices.Clone(c.eventTypes),
 		Subscribed: make([]string, 0, len(c.subscribed)),
 	}
 	if st.Connected {

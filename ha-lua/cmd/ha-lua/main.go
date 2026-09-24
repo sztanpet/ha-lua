@@ -136,29 +136,12 @@ func main() {
 	}
 	purge.New(writeDB, cfg.StateHistory.RetentionDays, purgeInterval, keep...).Start(ctx)
 
-	// Drop the bundled reference examples beside the scripts dir, refreshed to
-	// this build on every boot. Read-only reference, never loaded or run; the
-	// user copies what they want into the scripts dir. Done before the HA
-	// connect so the reference appears regardless of connectivity. Best-effort:
-	// a failure must not stop the daemon, and an empty ExamplesDir (dev) skips it.
-	if cfg.ExamplesDir != "" {
-		if err := os.MkdirAll(cfg.ExamplesDir, 0o755); err != nil {
-			slog.Warn("examples dir create failed", "dir", cfg.ExamplesDir, "err", err)
-		} else if err := bundled.Materialize(cfg.ExamplesDir); err != nil {
-			slog.Warn("examples materialize failed", "dir", cfg.ExamplesDir, "err", err)
-		}
-	}
-
-	// Materialize the bundled Lovelace card assets into /config/www so HA serves
-	// them at /local/ha-lua/…; refreshed to this build every boot. Best-effort,
-	// and skipped (empty CardsDir) in dev.
-	if cfg.CardsDir != "" {
-		if err := os.MkdirAll(cfg.CardsDir, 0o755); err != nil {
-			slog.Warn("cards dir create failed", "dir", cfg.CardsDir, "err", err)
-		} else if err := cards.Materialize(cfg.CardsDir); err != nil {
-			slog.Warn("cards materialize failed", "dir", cfg.CardsDir, "err", err)
-		}
-	}
+	// Both sets are dropped before the HA connect, so they appear regardless of
+	// connectivity. The examples are a read-only reference the user copies into
+	// the scripts dir; the cards land under /config/www, where HA serves them at
+	// /local/ha-lua/….
+	materialize("examples", cfg.ExamplesDir, bundled.Materialize)
+	materialize("cards", cfg.CardsDir, cards.Materialize)
 
 	client := ha.New(cfg.HomeAssistant.URL, cfg.HomeAssistant.Token)
 	client.Start(ctx)
@@ -234,17 +217,9 @@ func main() {
 			return store.New(writeDB, readDB, scriptID)
 		},
 		CallService: func(ctx context.Context, domain, service string, data jsontext.Value) error {
-			// Wait for HA's result so a rejected call (e.g. a setpoint above
-			// the device's max_temp) surfaces as an error to the script rather
-			// than vanishing — fire-and-forget hid those failures entirely.
-			id := client.NextID()
-			raw, err := json.Marshal(serviceCallMsg{
-				ID:      id,
-				Type:    "call_service",
-				Domain:  domain,
-				Service: service,
-				Data:    data,
-			})
+			// Waiting for HA's result is what makes a rejected call (a setpoint
+			// above the device's max_temp, say) an error the script can see.
+			id, raw, err := serviceCall(client, domain, service, data)
 			if err != nil {
 				return err
 			}
@@ -254,14 +229,7 @@ func main() {
 		// verdict arrives on the channel — the script's event loop is not
 		// parked for the device round trip.
 		CallServiceAsync: func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error) {
-			id := client.NextID()
-			raw, err := json.Marshal(serviceCallMsg{
-				ID:      id,
-				Type:    "call_service",
-				Domain:  domain,
-				Service: service,
-				Data:    data,
-			})
+			id, raw, err := serviceCall(client, domain, service, data)
 			if err != nil {
 				return nil, err
 			}
@@ -284,10 +252,8 @@ func main() {
 		// during a transient outage.
 		SetState:      client.SetState,
 		RemoveState:   client.RemoveState,
-		MQTTSubscribe: func(filter string) error { return mqttClient.Subscribe(filter) },
-		MQTTPublish: func(topic string, payload []byte, qos byte, retain bool) error {
-			return mqttClient.Publish(topic, payload, qos, retain)
-		},
+		MQTTSubscribe: mqttClient.Subscribe,
+		MQTTPublish:   mqttClient.Publish,
 		// AddEventType dedups and subscribes on the live connection, so
 		// scripts loaded or reloaded at any time get their events.
 		OnLoaded: func(r *luapkg.Runner) {
@@ -375,6 +341,36 @@ func openLogFile(dir string) (io.WriteCloser, error) {
 		return nil, err
 	}
 	return logwriter.New(filepath.Join(dir, "ha-lua.log"), maxLogBytes)
+}
+
+// materialize writes a bundled asset set into dir, creating it first. Empty dir
+// (dev) skips it, and a failure is only logged: nothing the daemon does depends
+// on these files existing.
+func materialize(what, dir string, write func(string) error) {
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		slog.Warn(what+" dir create failed", "dir", dir, "err", err)
+		return
+	}
+	if err := write(dir); err != nil {
+		slog.Warn(what+" materialize failed", "dir", dir, "err", err)
+	}
+}
+
+// serviceCall builds a call_service frame and returns the message id it carries,
+// which the caller needs to correlate HA's result frame.
+func serviceCall(client *ha.Client, domain, service string, data jsontext.Value) (int, []byte, error) {
+	id := client.NextID()
+	raw, err := json.Marshal(serviceCallMsg{
+		ID:      id,
+		Type:    "call_service",
+		Domain:  domain,
+		Service: service,
+		Data:    data,
+	})
+	return id, raw, err
 }
 
 type serviceCallMsg struct {
