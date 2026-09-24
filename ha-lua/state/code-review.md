@@ -226,3 +226,107 @@ again next round, it separated the real from the theoretical fast.
   arrival position, so it can reorder against a custom event that arrived
   later. Documented behavior ("other events are kept in order"),
   `ha.immediate_events()` is the escape hatch. Left.
+
+---
+
+# Round 3 — whole-codebase review (2026-09-24)
+
+Third full read of all non-test Go (~8.2k lines), prompted by "review the go
+code for bugs, architectural and code maintenance issues, and simplifications".
+Two real defects, one latent trap, five simplifications, one comment pass.
+Fourteen commits, `bd3c185`..`4de4492`, each green on `make check`.
+
+## Fixed — defects
+
+1. **[DONE bd3c185] A script's load-time shape was readable mid-load.**
+   `Runner.Stats/UITitle/Routes/MQTTFilters` read `cachedUITitle`,
+   `cachedRoutes`, `cachedStateHandlers`, `cachedMQTTHandlers` — fields the
+   script goroutine assigns at the end of `Start`, just before
+   `close(LoadedCh)`. Every caller reaches them through the Registry, which
+   lists a runner from `StartScript` onward, so the debug page's 2s poll and
+   `DispatchMQTT`'s filter walk could both read a field while it was being
+   written. Round 2 cleared a *different* pair (append-at-len vs a reader's
+   older slice header); this is the field assignment itself.
+   `wantsHAEvent` already had the guard inline — it became `loaded()` and the
+   rest of the accessors use it, reporting nothing until the load finishes.
+   Deterministic test: a hand-built Runner with an open LoadedCh.
+
+2. **[DONE 5b441d5] http.get/post read an unbounded body.**
+   `fs.read` has capped at 8 MiB since the fs module landed; the HTTP module
+   read whatever a remote sent into one Lua string. Now `io.LimitReader` to
+   `maxResponseBytes+1` and an error past the cap — one byte over, so an
+   oversized body is an error rather than a truncated document the script would
+   parse as the answer.
+
+3. **[DONE 58a63a5] Latent: `historyPoints` parked a per-row error in its named
+   return.** `p.at, err = time.Parse(...)` then `continue`; correct today only
+   because the final return names `rows.Err()`. Now a local.
+
+## Simplifications
+
+- **[DONE 92a334d]** `logwriter.Rotating.openErr` had three writers and no
+  reader. Removing it also removed the second (O_TRUNC) open path and its
+  fallback dance: rotate closes + renames and leaves `file` nil, the next Write
+  reopens and reports the error. A failed rename truncates instead, which is
+  what keeps the byte budget honest.
+- **[DONE 2e78b57]** `store.Store`/`GlobalStore`: one embedded `table` holding
+  the four statements and the bind prefix. See the reversal note below.
+- **[DONE f829133]** `re.*`: five copies of read-pattern/take-cache/compile/
+  raise became one `compiled()` helper; `re.find` matched the subject twice to
+  tell an empty match from no match, now `FindStringIndex`.
+- **[DONE 2332dcf]** store.state's cache wrapped in a struct with an unread
+  field; a hand-rolled `trimSpace`; an explicit `RawSetString("event", LNil)`;
+  `min`/`max`/`new` shadowed as locals.
+- **[DONE b62dfaf]** `registerHaAPI` split by area. See the reversal note.
+- **[DONE 1f2ec53]** `main.go`: `serviceCall()` for the frame both CallService
+  and CallServiceAsync marshalled, `materialize()` for the examples/cards
+  mkdir-then-write, MQTT closures replaced by method values; `ha.Client` had
+  `NextID` calling `nextID`.
+- **[DONE 114cabe]** mqtt's retry and shutdown goroutines now run under
+  `pprof.Do` like every other goroutine in the daemon.
+- **[DONE 707490b]** `ha.readLoop`'s event send had both a `ctx.Done` arm and a
+  `default`, so the former only ever won a coin toss; cancellation is observed
+  by the next `conn.Read`.
+- **[DONE 4de4492]** `haAPI.loaded` → `pruned`: it only ever meant "PruneScript
+  has consumed keepIDs", and `Runner.loaded()` now answers something else.
+- **[DONE be1c9b0]** Comment pass: removed the copies of the line below them
+  ("Persist timer functions", "Deliver initial states", "Object", RegisterStdlib's
+  numbered steps) and the bug stories (StopScript's race, the require sandbox,
+  the states table, the timezone assignment, a load error's log-only past). One
+  comment still promised sandboxing "in milestone 10".
+
+## Two round-1 rejections reversed (deliberately, don't flip back)
+
+Round 1 rejected both after analysis. What changed:
+
+- **store Store/GlobalStore.** The objection was that a generic would trade
+  clear SQL for indirection. The shared `table` keeps every statement written
+  out verbatim at its constructor and shares only the execution, so the SQL is
+  as readable as before and the marshal/ErrNoRows/scan logic exists once.
+- **registerHaAPI.** The objection was that it is a flat linear registration
+  table. It was 330 lines then and 460 now, with the wait=false path nested
+  four deep inside it; at that size "flat" stops being a virtue. Grouped by
+  area (logging, state reads, history reads, commands, timers, handlers,
+  serve), which also gives the async service call a name of its own.
+
+## Checked and NOT changed (don't re-derive)
+
+- `msgID` is `atomic.Int32` on purpose: `int` is 32-bit on the armv7 HA boxes,
+  so widening it would truncate at the `int()` conversion. Commands (not
+  events) consume ids, so the wrap is years away.
+- `scheduler.fireDue` holds the heap lock across its DB writes and `onFire`:
+  onFire is a non-blocking channel send and the write handle serialises anyway.
+- Lock order stays `Supervisor.mu → {Registry.mu, Scheduler.mu}` and
+  `Scheduler.mu → Registry.mu`; Registry.mu leads nowhere, so there is no cycle.
+- `purge.exec` returning `(0, nil)` on a RowsAffected failure: the DELETE
+  succeeded, the count only feeds a log line (now commented, `4f82bb1`).
+- `web.Start` vs `debug.Start` duplication, `cards`/`examples` Materialize
+  duplication: rejected in round 1, still the right call.
+- `err != http.ErrServerClosed`: ListenAndServe returns that exact value,
+  unwrapped; `errors.Is` would be churn.
+- `logbuf` re-parsing each record's level string per snapshot: 500 records on a
+  human-driven poll.
+- `stdlib_fs.go`'s per-function `root == nil` check: stubbing the module out at
+  registration would have to keep `fs.exists` returning false, not `(nil, err)`.
+
+STATUS: round 3 COMPLETE. All items fixed, nothing pending. Not yet released.

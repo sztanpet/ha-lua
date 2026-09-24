@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-23
+Last updated: 2026-09-24
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,20 +10,20 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Examples tree review, released as v4.9.0** (`901fa5c`..`61d9c4f`, detail:
-`state/bundled-examples.md`). A requested sweep of `examples/` for bugs,
-architecture, simplification and comment discipline. Four real bugs, each now
-pinned by a test that fails against the old script: reminders re-fired forever
-when an action raised (the store was written after the action, not before), the
-window script restored a zone's setpoint while a second window was still open,
-the door ladder was restarted by attribute-only updates and cancelled by
-"unavailable", and two scripts indexed `new_state` unguarded. New
-`lib/climate.lua` holds the entity reads both heating controllers had copies of.
-Comments across the tree are cut to what the code cannot say — no narration, no
-history, no anecdotes. Before this, the group_switches work
-(`state/bundled-examples.md`) ended at one group of switches and lamps always
-sharing one state. Still open: **heating overshoot correction**
-(`state/overshoot.md`) runs observe-only per zone and needs field data, not code.
+**Go review round 3** (`bd3c185`..`4de4492`, detail: `state/code-review.md`).
+A requested sweep of all non-test Go for bugs, architecture, simplification and
+comment discipline. Two defects: a script's cached load-time shape (UI title,
+routes, handler counts, MQTT filters) was readable by the debug page and the
+MQTT fan-out while the script goroutine was still writing it — the `loaded()`
+guard now covers every accessor, not just `wantsHAEvent`; and `http.get/post`
+read an unbounded response body into a Lua string, now capped like `fs.read`.
+Plus one latent named-return trap in `historyPoints`, and simplifications:
+`store`/`global` share one implementation, `registerHaAPI` is grouped by area
+instead of one 460-line function, the `re` bindings lose five copies of their
+preamble, `logwriter` loses an error nobody read, `main.go` marshals a service
+call in one place. Two round-1 rejections were deliberately reversed (the store
+duplication and the registerHaAPI split) — the reasons are in the track file, do
+not flip them back. NOT yet released: `config.yaml` still says 4.9.0.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
