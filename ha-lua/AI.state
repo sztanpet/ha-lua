@@ -23,7 +23,7 @@ instead of one 460-line function, the `re` bindings lose five copies of their
 preamble, `logwriter` loses an error nobody read, `main.go` marshals a service
 call in one place. Two round-1 rejections were deliberately reversed (the store
 duplication and the registerHaAPI split) — the reasons are in the track file, do
-not flip them back. NOT yet released: `config.yaml` still says 4.9.0.
+not flip them back. Released as v4.9.1.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

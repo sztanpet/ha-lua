@@ -329,4 +329,6 @@ Round 1 rejected both after analysis. What changed:
 - `stdlib_fs.go`'s per-function `root == nil` check: stubbing the module out at
   registration would have to keep `fs.exists` returning false, not `(nil, err)`.
 
-STATUS: round 3 COMPLETE. All items fixed, nothing pending. Not yet released.
+STATUS: round 3 COMPLETE. All items fixed, nothing pending. Released as v4.9.1
+on 2026-09-24 (tag on release commit `0bae40c`). Patch, not minor: two fixes and
+a pile of internal refactoring, no new Lua API and no new feature.
