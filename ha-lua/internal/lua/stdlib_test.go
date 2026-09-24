@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -336,6 +337,27 @@ func TestHTTPModule(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestHTTPRejectsAnOversizedBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(w, io.LimitReader(zeroReader{}, maxResponseBytes+1))
+	}))
+	defer ts.Close()
+
+	L, _ := newStdlibState(t)
+	L.SetGlobal("server_url", lua.LString(ts.URL))
+	if err := L.DoString(`
+		local res, err = http.get(server_url)
+		assert(res == nil, "oversized body was accepted")
+		assert(err:find("larger than"), "unexpected error: " .. tostring(err))
+	`); err != nil {
+		t.Error(err)
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) { return len(p), nil }
 
 // TestHTTPClientHasTimeout is a canary against regressing to a bare
 // &http.Client{}: the only other bound on a request is the script's lifetime

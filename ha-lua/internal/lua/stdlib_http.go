@@ -1,9 +1,10 @@
 package lua
 
 import (
-	"bytes"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -14,6 +15,11 @@ import (
 // this cap a wedged remote pins the script goroutine until the script is
 // stopped, stalling every event behind it.
 const httpTimeout = 30 * time.Second
+
+// maxResponseBytes caps a response body, like fs.read caps a file: the body
+// becomes one Lua string in a VM shared with every other handler in the script,
+// and a remote we do not control decides its size.
+const maxResponseBytes = 8 << 20 // 8 MiB
 
 // httpClient is shared by all scripts: it only carries the timeout and the
 // default transport's connection pool, both of which are goroutine-safe.
@@ -28,23 +34,22 @@ var httpFuncs = map[string]lua.LGFunction{
 	"post": luaHTTPPost,
 }
 
+// httpErr pushes the (nil, message) failure pair the module answers with.
+func httpErr(L *lua.LState, err error) int {
+	L.Push(lua.LNil)
+	L.Push(lua.LString(err.Error()))
+	return 2
+}
+
 func luaHTTPGet(L *lua.LState) int {
 	url := L.CheckString(1)
 	headers := L.OptTable(2, nil)
 
-	req, err := http.NewRequestWithContext(L.Context(), "GET", url, nil)
+	req, err := http.NewRequestWithContext(L.Context(), http.MethodGet, url, nil)
 	if err != nil {
-		L.Push(lua.LNil)
-		L.Push(lua.LString(err.Error()))
-		return 2
+		return httpErr(L, err)
 	}
-
-	if headers != nil {
-		headers.ForEach(func(k, v lua.LValue) {
-			req.Header.Set(k.String(), v.String())
-		})
-	}
-
+	setHeaders(req, headers)
 	return doRequest(L, req)
 }
 
@@ -54,37 +59,39 @@ func luaHTTPPost(L *lua.LState) int {
 	contentType := L.CheckString(3)
 	headers := L.OptTable(4, nil)
 
-	req, err := http.NewRequestWithContext(L.Context(), "POST", url, bytes.NewReader([]byte(body)))
+	req, err := http.NewRequestWithContext(L.Context(), http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
-		L.Push(lua.LNil)
-		L.Push(lua.LString(err.Error()))
-		return 2
+		return httpErr(L, err)
 	}
-
 	req.Header.Set("Content-Type", contentType)
-	if headers != nil {
-		headers.ForEach(func(k, v lua.LValue) {
-			req.Header.Set(k.String(), v.String())
-		})
-	}
-
+	setHeaders(req, headers)
 	return doRequest(L, req)
+}
+
+func setHeaders(req *http.Request, headers *lua.LTable) {
+	if headers == nil {
+		return
+	}
+	headers.ForEach(func(k, v lua.LValue) {
+		req.Header.Set(k.String(), v.String())
+	})
 }
 
 func doRequest(L *lua.LState, req *http.Request) int {
 	res, err := httpClient.Do(req)
 	if err != nil {
-		L.Push(lua.LNil)
-		L.Push(lua.LString(err.Error()))
-		return 2
+		return httpErr(L, err)
 	}
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	// One byte past the cap, so an oversized body is an error rather than a
+	// silent truncation the script would parse as the real answer.
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
 	if err != nil {
-		L.Push(lua.LNil)
-		L.Push(lua.LString(err.Error()))
-		return 2
+		return httpErr(L, err)
+	}
+	if len(body) > maxResponseBytes {
+		return httpErr(L, fmt.Errorf("response body larger than %d bytes", maxResponseBytes))
 	}
 
 	tbl := L.NewTable()
