@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/pprof"
 	"sort"
 	"strings"
 	"sync"
@@ -164,7 +165,9 @@ func (c *Client) Start(ctx context.Context) error {
 	if err := connect(cli, c.cfg.Broker); err != nil {
 		// Not fatal to the daemon: every other subsystem works without MQTT,
 		// and a broker that is down at boot usually comes back.
-		go c.retryConnect(ctx, cli)
+		go pprof.Do(ctx, pprof.Labels("goroutine", "mqtt-retry"), func(ctx context.Context) {
+			c.retryConnect(ctx, cli)
+		})
 		return err
 	}
 
@@ -176,10 +179,10 @@ func (c *Client) Start(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	go func() {
+	go pprof.Do(ctx, pprof.Labels("goroutine", "mqtt-shutdown"), func(ctx context.Context) {
 		<-ctx.Done()
 		cli.Disconnect(250)
-	}()
+	})
 	return nil
 }
 
