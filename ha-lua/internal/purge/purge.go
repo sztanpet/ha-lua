@@ -120,6 +120,7 @@ func (p *Purger) exec(ctx context.Context, query string, args ...any) (int64, er
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
+		// The count only feeds a log line; the DELETE itself succeeded.
 		return 0, nil
 	}
 	return n, nil
