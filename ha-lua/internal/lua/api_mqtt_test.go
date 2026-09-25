@@ -3,6 +3,7 @@ package lua
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -137,11 +138,22 @@ mqtt.publish("zigbee2mqtt/light1/set/state", "ON")
 
 // TestMQTTWithoutBrokerRaises: no broker configured must fail the script
 // loudly. Silently doing nothing is the failure mode this subsystem exists to
-// end.
+// end. An unwired runner takes the same path as a real client with no broker —
+// both answer mqtt.ErrDisabled — so there is one verdict, not two.
 func TestMQTTWithoutBrokerRaises(t *testing.T) {
-	r, _, _ := newMQTTRunner(t, `mqtt.subscribe("a/#", function() end)`, false)
-	if !scriptRaised(r) {
-		t.Error("mqtt.subscribe with no broker did not raise")
+	for _, call := range []string{
+		`mqtt.subscribe("a/#", function() end)`,
+		`mqtt.publish("a/b", "x")`,
+	} {
+		r, _, _ := newMQTTRunner(t, call, false)
+		err := r.Stats().LastError
+		if err == nil {
+			t.Errorf("%s with no broker did not raise", call)
+			continue
+		}
+		if !strings.Contains(err.Error, mqtt.ErrDisabled.Error()) {
+			t.Errorf("%s: want %v, got %q", call, mqtt.ErrDisabled, err.Error)
+		}
 	}
 }
 

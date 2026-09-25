@@ -31,10 +31,6 @@ func (r *Runner) registerMQTTAPI(L *lua.LState, api *haAPI) {
 			L.RaiseError("mqtt.subscribe: %v", err)
 			return 0
 		}
-		if r.mqttSubscribe == nil {
-			L.RaiseError("mqtt.subscribe(%q): no broker configured", filter)
-			return 0
-		}
 		if err := r.mqttSubscribe(filter); err != nil {
 			L.RaiseError("mqtt.subscribe(%q): %v", filter, err)
 			return 0
@@ -60,10 +56,6 @@ func (r *Runner) registerMQTTAPI(L *lua.LState, api *haAPI) {
 				qos = byte(v)
 			}
 			retain = lua.LVAsBool(opts.RawGetString("retain"))
-		}
-		if r.mqttPublish == nil {
-			L.RaiseError("mqtt.publish(%q): no broker configured", topic)
-			return 0
 		}
 		if err := r.mqttPublish(topic, payload, qos, retain); err != nil {
 			L.RaiseError("mqtt.publish(%q): %v", topic, err)

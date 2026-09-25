@@ -117,8 +117,10 @@ type Runner struct {
 	// yields HA's verdict on the returned channel; backs { wait = false }.
 	callServiceAsync func(ctx context.Context, domain, service string, data jsontext.Value) (<-chan error, error)
 	fireEvent        func(ctx context.Context, eventType string, data jsontext.Value) error
-	// mqttSubscribe and mqttPublish back the Lua mqtt module; nil when no
-	// broker is configured, which makes every mqtt.* call raise.
+	// mqttSubscribe and mqttPublish back the Lua mqtt module. They default to
+	// stubs that report mqtt.ErrDisabled, which is also what a real client with
+	// no broker returns — so "no broker" is one answer on one path, whether the
+	// daemon found a broker or the runner was never wired at all.
 	mqttSubscribe func(filter string) error
 	mqttPublish   func(topic string, payload []byte, qos byte, retain bool) error
 	setState      func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
@@ -128,19 +130,23 @@ type Runner struct {
 // NewRunner creates a Runner. Call Start to load and run the script.
 func NewRunner(scriptID, scriptDir string, root, logsRoot *os.Root, tracker *state.Tracker, scheduler *scheduler.Scheduler, kv *store.Store, global *store.GlobalStore) *Runner {
 	return &Runner{
-		scriptID:   scriptID,
-		scriptDir:  scriptDir,
-		root:       root,
-		logsRoot:   logsRoot,
-		ch:         make(chan Event, 256),
-		reqCh:      make(chan *request),
-		asyncErrCh: make(chan asyncScriptError, 16),
-		LoadedCh:   make(chan struct{}),
-		timerFns:   make(map[string]*lua.LFunction),
-		tracker:    tracker,
-		scheduler:  scheduler,
-		kv:         kv,
-		global:     global,
+		scriptID:      scriptID,
+		scriptDir:     scriptDir,
+		root:          root,
+		logsRoot:      logsRoot,
+		ch:            make(chan Event, 256),
+		reqCh:         make(chan *request),
+		asyncErrCh:    make(chan asyncScriptError, 16),
+		LoadedCh:      make(chan struct{}),
+		timerFns:      make(map[string]*lua.LFunction),
+		mqttSubscribe: func(string) error { return mqtt.ErrDisabled },
+		mqttPublish: func(string, []byte, byte, bool) error {
+			return mqtt.ErrDisabled
+		},
+		tracker:   tracker,
+		scheduler: scheduler,
+		kv:        kv,
+		global:    global,
 	}
 }
 
@@ -158,9 +164,9 @@ func (r *Runner) SetCallServiceAsync(fn func(ctx context.Context, domain, servic
 	r.callServiceAsync = fn
 }
 
-// SetMQTT wires the broker functions behind the Lua mqtt module. Must be
-// called before Start; leaving it unset makes mqtt.* raise, which is what a
-// script written for a broker that is not configured deserves.
+// SetMQTT wires the broker functions behind the Lua mqtt module. Must be called
+// before Start; leaving it unset keeps the disabled stubs, so mqtt.* raises,
+// which is what a script written for a broker that is not configured deserves.
 func (r *Runner) SetMQTT(subscribe func(filter string) error,
 	publish func(topic string, payload []byte, qos byte, retain bool) error) {
 	r.mqttSubscribe, r.mqttPublish = subscribe, publish
