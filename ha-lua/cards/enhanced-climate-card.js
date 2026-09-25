@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.32";
+const VERSION = "0.3.33";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -204,7 +204,7 @@ const DAY_GROUPS = [
 // Fallback override durations (minutes) shown when the card config sets no
 // presets, so the buttons are always there to tap. The daemon accepts any
 // 1..1440, so these are just suggestions.
-const DEFAULT_PRESETS = [10, 30, 60];
+const DEFAULT_PRESETS = [15, 30, 60];
 
 // How long to keep the "applying…" spinner up if no companion push confirms a
 // command. The daemon republishes the companion as soon as it handles a command,
@@ -1157,7 +1157,7 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
     const presetsInput = h("input", {
       type: "text", inputmode: "numeric",
       value: (this._config.presets || []).join(", "),
-      placeholder: "10, 30, 60",
+      placeholder: "15, 30, 60",
       onchange: (ev) => {
         const presets = ev.target.value.split(",")
           .map((part) => Number(part.trim()))

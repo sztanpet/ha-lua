@@ -419,7 +419,7 @@ climate_entity: climate.living_room           # required — the only must-have
 window_sensors: [binary_sensor.living_window] # optional, one or more
 radiator_entity: sensor.living_radiator_temp  # optional; display-only, shows
                                               # "rad. X°" on the status line
-presets: [10, 30, 60]                         # optional override minutes
+presets: [15, 30, 60]                         # optional override minutes
 name: Living room                             # optional; else friendly_name
 ```
 
