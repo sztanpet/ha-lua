@@ -879,3 +879,52 @@ ha.serve("GET", "/", function(req) return 200, "x" end)
 		t.Errorf("print line is not tagged with the script id:\n%s", out)
 	}
 }
+
+// ha.every/ha.at IDs carry a registration-order sequence, so a call from a
+// callback allocates a new one every time — a heap timer, a timers row and a
+// timerFns entry per call, swept only by the NEXT reload's PruneScript. Both
+// must refuse once the load has finished; ha.after is the callback-safe one.
+func TestRecurringTimersAreLoadTimeOnly(t *testing.T) {
+	writeDB, _ := testutil.NewTestDB(t, nil)
+	if err := state.Migrate(writeDB); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	L := lua.NewState()
+	defer L.Close()
+	L.SetContext(ctx)
+
+	sched := scheduler.New(writeDB, time.UTC, func(string, string) {})
+	runner := &Runner{scriptID: "test", timerFns: make(map[string]*lua.LFunction), scheduler: sched}
+	api := &haAPI{scriptID: "test", scheduler: sched, timerFns: runner.timerFns}
+	runner.registerHaAPI(L, api)
+
+	if err := L.DoString(`ha.every("1h", function() end)`); err != nil {
+		t.Fatalf("load-time ha.every: %v", err)
+	}
+	// What the runner does once PruneScript has consumed keepIDs.
+	api.pruned = true
+
+	for _, call := range []string{
+		`ha.every("1h", function() end)`,
+		`ha.at("07:00", function() end)`,
+	} {
+		err := L.DoString(call)
+		if err == nil {
+			t.Errorf("%s from a callback was accepted; want an error", call)
+			continue
+		}
+		if !strings.Contains(err.Error(), "load-time only") {
+			t.Errorf("%s: unhelpful error %v", call, err)
+		}
+	}
+
+	// ha.after stays callable: it is the documented one-shot for callbacks.
+	if err := L.DoString(`ha.after("1h", function() end)`); err != nil {
+		t.Errorf("ha.after from a callback: %v", err)
+	}
+
+	if got := api.timerSeq; got != 1 {
+		t.Errorf("rejected registrations consumed a sequence number: timerSeq = %d, want 1", got)
+	}
+}

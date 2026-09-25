@@ -369,12 +369,13 @@ interval) and rebuilds its schedule.
 
 Runs `fn` repeatedly every `spec`, where `spec` is a Go duration string
 (`"30s"`, `"5m"`, `"1h30m"`). Must be positive. Raises on a bad spec.
+**Load-time only** — see the note below.
 
 #### `ha.at(time, fn)`
 
 Runs `fn` daily at `time`, a 24-hour `"HH:MM"` string (e.g. `"07:00"`). The
 wall-clock is resolved with the `timezone` option (→ `$TZ` → UTC). Raises on a
-bad time.
+bad time. **Load-time only** — see the note below.
 
 #### `ha.after(delay, fn)`
 
@@ -386,6 +387,14 @@ process restarts before it fires.
 > Timer ids for `every`/`at` are stable across reloads (`script|type|spec|N`),
 > so editing a script does not reset their schedule. `after` timers get a fresh
 > id per call and their row is deleted once they fire.
+
+> **`every` and `at` are load-time only** and raise if called from inside a
+> callback. The `N` in their id is a registration-order counter, so each call
+> would allocate a new timer rather than re-arm the existing one — a handler
+> calling `ha.every` would accumulate one timer, one database row and one
+> retained callback per call for the lifetime of the script. `ha.after` is the
+> one that may be called from a callback; for deferred work that must also
+> survive a restart, use `examples/lib/reminders.lua`.
 
 ### HTTP serving — `ha.serve`
 

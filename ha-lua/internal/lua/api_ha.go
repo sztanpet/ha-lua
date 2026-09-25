@@ -451,10 +451,27 @@ func (api *haAPI) callServiceNoWait(L *lua.LState, domain, service string, data 
 	return 0
 }
 
+// loadTimeOnly rejects a recurring registration made from a callback. every/at
+// IDs carry a registration-order sequence, so a call from a callback allocates
+// a fresh one every time: a heap timer, a timers row and a timerFns entry per
+// call, retained for the life of the script and only swept by the NEXT reload's
+// PruneScript. A debounce re-arming itself with ha.every would grow all three
+// without bound. ha.after is the one that may be called from a callback.
+func loadTimeOnly(L *lua.LState, api *haAPI, name string) bool {
+	if !api.pruned {
+		return false
+	}
+	L.RaiseError("%s: load-time only, it cannot be called from a callback — use ha.after for a one-shot timer", name)
+	return true
+}
+
 func registerTimers(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "every", L.NewFunction(func(L *lua.LState) int {
 		if api.scheduler == nil {
 			L.RaiseError("scheduler not available")
+			return 0
+		}
+		if loadTimeOnly(L, api, "every") {
 			return 0
 		}
 		spec := L.CheckString(1)
@@ -473,6 +490,9 @@ func registerTimers(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 	L.SetField(haTable, "at", L.NewFunction(func(L *lua.LState) int {
 		if api.scheduler == nil {
 			L.RaiseError("scheduler not available")
+			return 0
+		}
+		if loadTimeOnly(L, api, "at") {
 			return 0
 		}
 		spec := L.CheckString(1)
