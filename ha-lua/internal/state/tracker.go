@@ -178,12 +178,20 @@ func (t *Tracker) enqueue(ctx context.Context, req writeReq) {
 	}
 }
 
-// Seed replaces the memory mirror with the batch and appends a history row
-// for every entity whose state or attributes differ from the last known
-// value. The comparison baseline is the memory mirror when populated (a
-// reconnect re-seed — it reflects every event applied so far), or, on a cold
-// start, the newest history row per entity. Unconditional appends would fill
-// the history with phantom state changes on every reconnect.
+// Seed installs the batch as the memory mirror and appends a history row for
+// every entity whose state or attributes differ from the last known value. The
+// comparison baseline is the live mirror entry when there is one (a reconnect
+// re-seed — it reflects every event applied so far), or, on a cold start, the
+// newest history row per entity. Unconditional appends would fill the history
+// with phantom state changes on every reconnect.
+//
+// A batch is a snapshot of the moment HA rendered it, so an entity that changed
+// after that is NEWER than what the batch carries — and on a busy install the
+// snapshot is megabytes that take a while to arrive. Such an entity keeps its
+// mirror entry: installing the batch value would roll ha.get_state back to a
+// state the daemon has already seen superseded, and it would stay rolled back
+// until the entity next changed. The whole merge runs under one write lock, so
+// an event applied mid-Seed cannot be lost in the swap either.
 //
 // Cold-start corollary: an entity whose entire history has been purged (it
 // last changed before the retention window) gets one fresh baseline row per
@@ -202,55 +210,102 @@ func (t *Tracker) Seed(ctx context.Context, states []ha.StateData) error {
 		return nil
 	}
 
-	type mirror struct{ state, attrs string }
-	current := make(map[string]mirror)
+	// The mirror is its own baseline whenever it holds anything, and it is read
+	// live under the merge lock below. Only a cold start needs SQLite.
 	t.mu.RLock()
-	for id, s := range t.mem {
-		current[id] = mirror{state: s.State, attrs: string(s.Attributes)}
-	}
+	cold := len(t.mem) == 0
 	t.mu.RUnlock()
-
-	if len(current) == 0 {
-		// Cold start: the newest history row per entity is the last state
-		// this daemon ever recorded (id is the autoincrement insert order).
-		rows, err := t.readDB.QueryContext(ctx, `
-			SELECT entity_id, state, attributes FROM state_history
-			WHERE id IN (SELECT MAX(id) FROM state_history GROUP BY entity_id)`)
-		if err != nil {
-			return fmt.Errorf("read history baseline: %w", err)
-		}
-		for rows.Next() {
-			var id string
-			var m mirror
-			if err := rows.Scan(&id, &m.state, &m.attrs); err != nil {
-				rows.Close()
-				return err
-			}
-			current[id] = m
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+	var baseline map[string]mirror
+	if cold {
+		var err error
+		if baseline, err = t.historyBaseline(ctx); err != nil {
 			return err
 		}
 	}
 
-	// Appends ride the write-behind queue like every other history row:
-	// writeBatch is then the only place SQL is written, and the queue's FIFO
-	// keeps insert order (and so the MAX(id) baseline above) total.
-	mem := make(map[string]ha.StateData, len(states))
-	for _, s := range states {
-		s.Attributes = jsontext.Value(attrStr(s.Attributes))
-		mem[s.EntityID] = s
-		if m, ok := current[s.EntityID]; ok && m.state == s.State && m.attrs == string(s.Attributes) {
+	// Normalising outside the lock keeps the critical section to the merge.
+	batch := make([]ha.StateData, len(states))
+	copy(batch, states)
+	for i := range batch {
+		batch[i].Attributes = jsontext.Value(attrStr(batch[i].Attributes))
+	}
+
+	mem := make(map[string]ha.StateData, len(batch))
+	var appends []*ha.StateData
+	t.mu.Lock()
+	for i := range batch {
+		s := batch[i]
+		live, isLive := t.mem[s.EntityID]
+		if isLive && newerThan(live.LastUpdated, s.LastUpdated) {
+			mem[s.EntityID] = live
 			continue
 		}
-		row := s
-		t.enqueue(ctx, writeReq{upsert: &row})
+		mem[s.EntityID] = s
+		switch {
+		case isLive:
+			if live.State == s.State && string(live.Attributes) == string(s.Attributes) {
+				continue
+			}
+		default:
+			if m, ok := baseline[s.EntityID]; ok && m.state == s.State && m.attrs == string(s.Attributes) {
+				continue
+			}
+		}
+		appends = append(appends, &batch[i])
 	}
-	t.mu.Lock()
 	t.mem = mem
 	t.mu.Unlock()
+
+	// Appends ride the write-behind queue like every other history row:
+	// writeBatch is then the only place SQL is written, and the queue's FIFO
+	// keeps insert order (and so the MAX(id) baseline below) total. Enqueuing
+	// outside the lock is what lets a full queue block without holding up
+	// ha.get_state.
+	for _, row := range appends {
+		t.enqueue(ctx, writeReq{upsert: row})
+	}
 	return nil
+}
+
+// mirror is the state+attributes pair the seed compares against.
+type mirror struct{ state, attrs string }
+
+// historyBaseline is the cold-start comparison baseline: the newest history row
+// per entity, which is the last state this daemon ever recorded (id is the
+// autoincrement insert order).
+func (t *Tracker) historyBaseline(ctx context.Context) (map[string]mirror, error) {
+	rows, err := t.readDB.QueryContext(ctx, `
+		SELECT entity_id, state, attributes FROM state_history
+		WHERE id IN (SELECT MAX(id) FROM state_history GROUP BY entity_id)`)
+	if err != nil {
+		return nil, fmt.Errorf("read history baseline: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]mirror)
+	for rows.Next() {
+		var id string
+		var m mirror
+		if err := rows.Scan(&id, &m.state, &m.attrs); err != nil {
+			return nil, err
+		}
+		out[id] = m
+	}
+	return out, rows.Err()
+}
+
+// newerThan compares two HA last_updated stamps. Unparseable or absent on
+// either side means "cannot tell", and the batch then wins — the same answer
+// the mirror gave before there was anything to compare.
+func newerThan(a, b string) bool {
+	at, err := time.Parse(time.RFC3339, a)
+	if err != nil {
+		return false
+	}
+	bt, err := time.Parse(time.RFC3339, b)
+	if err != nil {
+		return false
+	}
+	return at.After(bt)
 }
 
 // StateChangedData is the data portion of a state_changed event.

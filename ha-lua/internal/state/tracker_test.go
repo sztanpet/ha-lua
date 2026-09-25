@@ -675,3 +675,101 @@ func TestTrackerStats(t *testing.T) {
 		t.Fatalf("entities = %d, want 2", st.Entities)
 	}
 }
+
+// A reconnect batch is a snapshot of the moment HA rendered it. An event that
+// landed after that is newer, and the seed must not roll the mirror back to
+// what the snapshot carried — ha.get_state would report the superseded state
+// until the entity next changed.
+func TestSeedKeepsNewerMirrorEntry(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	stale := []ha.StateData{
+		{EntityID: "binary_sensor.door", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	}
+	if err := tr.Seed(ctx, stale); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+
+	// The door closes while the reconnect's get_states response is in flight.
+	if err := tr.HandleStateChanged(ctx, jsontext.Value(`{
+		"entity_id":"binary_sensor.door",
+		"new_state":{"entity_id":"binary_sensor.door","state":"off","attributes":{},
+			"last_changed":"2026-01-01T00:05:00Z","last_updated":"2026-01-01T00:05:00Z"}}`)); err != nil {
+		t.Fatalf("state_changed: %v", err)
+	}
+
+	// The re-seed still carries the pre-close snapshot.
+	if err := tr.Seed(ctx, stale); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+
+	s, err := tr.GetState(ctx, "binary_sensor.door")
+	if err != nil {
+		t.Fatalf("get_state: %v", err)
+	}
+	if s == nil {
+		t.Fatal("entity dropped from the mirror")
+	}
+	if s.State != "off" {
+		t.Errorf("mirror regressed to the seed snapshot: want off, got %q", s.State)
+	}
+}
+
+// The other direction: a batch newer than the mirror is what a re-seed is for.
+func TestSeedAppliesNewerBatchEntry(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "binary_sensor.door", State: "on", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	}); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+
+	// A change missed while the socket was down: only the seed can observe it.
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "binary_sensor.door", State: "off", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:05:00Z", LastUpdated: "2026-01-01T00:05:00Z"},
+	}); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+
+	s, _ := tr.GetState(ctx, "binary_sensor.door")
+	if s == nil || s.State != "off" {
+		t.Fatalf("missed change not applied: %+v", s)
+	}
+	tr.Flush()
+	history, err := tr.GetHistory(ctx, "binary_sensor.door", time.Time{}, 10)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(history) != 2 {
+		t.Errorf("want a history row per distinct state, got %d", len(history))
+	}
+}
+
+// An unparseable or absent last_updated cannot order the two, so the batch
+// wins — the answer the mirror gave before there was anything to compare.
+func TestSeedAppliesBatchWhenTimestampsAreUnusable(t *testing.T) {
+	tr := newTracker(t)
+	ctx := context.Background()
+
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "sensor.temp", State: "21", Attributes: jsontext.Value(`{}`)},
+	}); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	if err := tr.Seed(ctx, []ha.StateData{
+		{EntityID: "sensor.temp", State: "22", Attributes: jsontext.Value(`{}`)},
+	}); err != nil {
+		t.Fatalf("re-seed: %v", err)
+	}
+
+	s, _ := tr.GetState(ctx, "sensor.temp")
+	if s == nil || s.State != "22" {
+		t.Fatalf("want the batch value, got %+v", s)
+	}
+}
