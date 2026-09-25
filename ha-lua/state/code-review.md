@@ -418,4 +418,8 @@ defect, two latent traps, one documentation gap. Three commits, `0a46fa4`..
   was invisible), every other package sits between 70% and 92%.
 
 STATUS: round 4 COMPLETE. Three items fixed; the lib watcher and the LAN debug
-surface were raised and deliberately left.
+surface were raised and deliberately left. Released as v4.10.0 on 2026-09-25
+(tag on release commit `a17b0e9`). MINOR, not patch: `ha.every`/`ha.at` now
+raise from a callback, which is a visible Lua API behaviour change — a script
+that did it kept working before, badly. Not major: the only scripts affected
+were leaking a timer per call.

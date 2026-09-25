@@ -22,6 +22,8 @@ of re-arming (now load-time only), and the mqtt bindings' nil branches were
 unreachable in production (now one path via `mqtt.ErrDisabled`). Two findings
 were raised and deliberately left — `scripts/lib/` is still not watched, and
 `/debug/` is still on the unauthenticated LAN port; both are in the track file.
+Released as v4.10.0 (minor: the `ha.every`/`ha.at` restriction is visible to
+scripts).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
