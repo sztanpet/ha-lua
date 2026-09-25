@@ -122,9 +122,11 @@ In production the binary reads **`/data/options.json`** (written by Supervisor).
 ## Releases
 
 Versions are SemVer; `ha-lua/config.yaml`'s `version:` is the single source of
-truth for the version number. **Never push automatically** — pushes to `origin`
-and `github` happen only when explicitly asked. Full checklist: the `release`
-skill (`.claude/skills/release/SKILL.md`).
+truth for the version number. **Cutting a release includes pushing** `main` and
+the tag to both `origin` and `github` — that is what makes it a release, so it
+happens as part of the release, not on a separate request. Outside a release,
+never push unasked. Full checklist: the `release` skill
+(`.claude/skills/release/SKILL.md`).
 
 ---
 

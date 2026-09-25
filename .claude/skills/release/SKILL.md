@@ -24,10 +24,12 @@ Steps for releasing `vX.Y.Z` (do not skip the per-step commits):
    `git tag -a vX.Y.Z <release-commit> -m "vX.Y.Z"` (message is just the tag).
    Later docs commits may sit on top of the tagged commit; that's fine.
 4. **Update the working state** to record the release: refresh the `## Latest` pointer in `ha-lua/AI.state` and note the release detail in the track's `ha-lua/state/<track>.md`. The changelog already carries what shipped — do not repeat it in `AI.state`.
-5. **Push.** There is **no auto-push** — push explicitly. Two remotes:
-   `origin` (private mirror) and `github` (github.com). Push `main` and the tag
-   to **both**: `git push origin main && git push github main`, then
-   `git push origin vX.Y.Z && git push github vX.Y.Z`.
+5. **Push.** A release is not a release until it is pushed — "cut a release"
+   includes this step, so do it without asking. Two remotes: `origin` (private
+   mirror) and `github` (github.com). Push `main` and the tag to **both**:
+   `git push origin main && git push github main`, then
+   `git push origin vX.Y.Z && git push github vX.Y.Z`. (Ordinary non-release
+   work is still never pushed unasked.)
 
 Pushing the `v*` tag to **`github`** triggers `.github/workflows/release.yml`
 (at the git root, not in `ha-lua/`), which builds the multi-arch images and
