@@ -314,7 +314,7 @@ correctly (script copied into /config/ha-lua/scripts/, admin user, set_state ok)
   countdown is a text-only setInterval (no re-render).
 - MESSAGES has en+hu; hu status.on is the English word "on" per the Ingress-UI
   decision. MODE_ICONS maps hvac mode -> mdi icon (via <ha-icon>); DEFAULT_PRESETS
-  = [10,30,60].
+  = [15,30,60].
 - Config editor (`...-card-editor`) uses HA's undocumented ha-entity-picker /
   ha-entities-picker — works only inside a live HA frontend, NOT in the harness.
 - Harness test internal/lua/enhanced_climate_card_test.go: serves the card from
@@ -507,3 +507,12 @@ z-index/clipping/positioning concerns inside ha-card, and the note can't go
 stale because it only renders while the badge condition itself is true. No
 new translation keys. No auto-hide timer — tap toggles it off, and state is
 just a bool on the element, so re-renders keep it.
+
+## Card 0.3.33 (v4.10.1) — fallback presets 15/30/60
+
+DEFAULT_PRESETS (and the editor's placeholder) went 10/30/60 -> 15/30/60
+(dcc8131): ten minutes is too short to move a room on a water-based radiator
+system, so the shortest button was never the right press. Fallback only — a
+card whose YAML sets `presets:` explicitly is untouched, so existing
+dashboards keep 10 until edited. The card harness pins presets explicitly in
+its fixture, so nothing there asserts the default values (only the count).
