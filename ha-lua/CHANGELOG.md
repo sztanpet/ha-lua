@@ -4,6 +4,32 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.10.0 - 2026-09-25
+
+### Fixed
+- **A reconnect could roll `ha.get_state` back to a state Home Assistant had
+  already moved on from.** The state snapshot the daemon fetches on every
+  connect describes the instant HA rendered it, and on a large install that
+  snapshot is megabytes — entities change while it is still arriving. The
+  daemon installed it wholesale, so any entity that changed in that window
+  reverted in the daemon's memory, and stayed reverted until it next changed. A
+  door that closed during a reconnect read as open until somebody opened it
+  again. An entity whose known state is newer than the snapshot now keeps it.
+
+### Changed
+- **`ha.every` and `ha.at` now raise if called from inside a callback.** They
+  were always meant to be registered once, at load: their timer ids carry a
+  registration-order number, which is what keeps a schedule stable across a
+  reload, so a call from a callback created a *new* timer every time instead of
+  re-arming the existing one — accumulating one timer, one database row and one
+  retained callback per call for as long as the script ran. **If a handler in
+  your script calls `ha.every` or `ha.at`, it will now report an error.** Use
+  `ha.after` for a one-shot from a callback, or `examples/lib/reminders.lua` for
+  deferred work that must also survive a restart.
+- Internal only, no behaviour change for scripts: the `mqtt` bindings answer
+  "no broker configured" on one path instead of two, and `go fix` has been
+  applied across the tree.
+
 ## 4.9.1 - 2026-09-24
 
 ### Fixed
