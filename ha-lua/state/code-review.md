@@ -332,3 +332,90 @@ Round 1 rejected both after analysis. What changed:
 STATUS: round 3 COMPLETE. All items fixed, nothing pending. Released as v4.9.1
 on 2026-09-24 (tag on release commit `0bae40c`). Patch, not minor: two fixes and
 a pile of internal refactoring, no new Lua API and no new feature.
+
+---
+
+# Round 4 — whole-codebase review (2026-09-25)
+
+Prompted by "review all code to see if it's fit for purpose" — so wider than
+rounds 1–3: all non-test Go, the Lua examples and `lib/`, the Lovelace card, the
+web assets, and the config/embed plumbing. Verdict: fit for purpose. One real
+defect, two latent traps, one documentation gap. Three commits, `0a46fa4`..
+`f99c705`, each green on `make check`.
+
+## Fixed
+
+1. **[DONE 0a46fa4] `Seed` rolled the memory mirror backwards.**
+   A `get_states` batch is a snapshot of the instant HA rendered it, and on a
+   busy install it is megabytes. `Seed` built a new map from the batch and
+   swapped it in unconditionally, so any entity that changed after the snapshot
+   was rendered — or whose `state_changed` landed between the old read-then-swap
+   gap — reverted. The mirror is authoritative for `ha.get_state` and
+   `ha.get_entities`, so a script read the superseded state until the entity
+   next changed: a door that closed during a reconnect stayed "open" until
+   somebody opened it again. `client.go` pushes `States` *before* it subscribes
+   and the seed goroutine is separate from the event router, so the two really
+   do run concurrently.
+   Fix: an entity whose mirror entry carries a later `LastUpdated` than the
+   batch keeps it, and the diff/merge/swap all run under one write lock.
+   Unparseable or absent stamps cannot order the two, so the batch wins there
+   (what the mirror did before). The cold-start baseline query moved into
+   `historyBaseline` and now runs only when the mirror is actually empty; a warm
+   re-seed compares against the live entry it already looked up. History appends
+   moved after the swap so a full write queue cannot block `ha.get_state`.
+   Confirmed with a probe before the fix, and the regression test was verified
+   to fail on the old code.
+
+2. **[DONE 55743c2] `ha.every`/`ha.at` from a callback leaked.**
+   Their ids carry a registration-order sequence, which is what keeps
+   `last_run`/`next_run` stable across a reload — so a call from a callback
+   allocated a *fresh* id every time instead of re-arming: a heap entry, a
+   `timers` row and a `timerFns` entry per call, retained for the life of the
+   script and swept only by the NEXT reload's `PruneScript`. Both now raise once
+   `api.pruned` is set, pointing at `ha.after`. Same class as round 2's keepIDs
+   leak, and the same flag already marked the boundary. Documented in
+   `lua_api.md`.
+
+3. **[DONE f99c705] Unreachable mqtt nil branches.** `main.go` wires
+   `MQTTSubscribe`/`MQTTPublish` from method values on a never-nil client, so
+   the bindings' `== nil` "no broker configured" arms could not run: the real
+   condition arrives as `mqtt.ErrDisabled` from the client. Two paths, two
+   strings, one condition. `NewRunner` now installs stubs returning
+   `ErrDisabled`, so an unwired runner and a real client with no broker answer
+   identically.
+
+## Raised and deliberately NOT changed (user's call)
+
+- **`scripts/lib/*.lua` is not watched.** `NewScriptWatcher` does a
+  non-recursive `w.Add(dir)`, so editing a shared module reloads nothing,
+  silently — while `DOCS.md` tells users to put helpers in `scripts/lib/` and
+  says saved changes reload automatically. Still true; restart to pick up a lib
+  edit.
+- **`/debug/` is mounted on the unauthenticated LAN port** as well as ingress,
+  so `api/logs` (and `api/goroutines`) are reachable by anyone on the network.
+  `config.yaml`'s `ports_description` warns the port is unauthenticated.
+  Note that `service_api.lua` deliberately logs its token at first load.
+- `RouteSpec` marshals as `Method`/`Prefix` while the rest of the JSON is
+  snake_case; `config.go` is the one `encoding/json` v1 holdout. Cosmetic.
+
+## Checked and NOT changed (don't re-derive)
+
+- **`stdlib.go`'s os-restriction loop mutates the table it is iterating.**
+  Safe: `LTable.ForEach` ranges a Go map, and only the key already produced is
+  deleted. Not a hole in the sandbox.
+- The `require` sandbox, `purge`'s first-match-wins rule chaining, MQTT filter
+  matching and `$SYS` exclusion, the scheduler's DST handling and its
+  fire-once catch-up.
+- The Lovelace card (0.3.32): the module-level `sentConfigures` keyed by
+  (entity, hash), the `_relevantChanged` reference-compare render gate, and the
+  `entriesFromSchedule`/`scheduleFromEntries` round trip all hold up.
+- Every `innerHTML` site in the example pages and the web assets is static
+  markup; data goes through `.value`/`textContent`, and `thermostat.html`'s
+  `html:` attribute carries only constant SVG.
+- `examples/lib/*`: clean. `reminders.tick` deleting from `pending` during
+  `pairs` is explicitly allowed in Lua.
+- `cmd/ha-lua` at 0% coverage: accepted (it is why round 2's `time.Local` race
+  was invisible), every other package sits between 70% and 92%.
+
+STATUS: round 4 COMPLETE. Three items fixed; the lib watcher and the LAN debug
+surface were raised and deliberately left.

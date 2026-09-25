@@ -10,20 +10,18 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Go review round 3** (`bd3c185`..`4de4492`, detail: `state/code-review.md`).
-A requested sweep of all non-test Go for bugs, architecture, simplification and
-comment discipline. Two defects: a script's cached load-time shape (UI title,
-routes, handler counts, MQTT filters) was readable by the debug page and the
-MQTT fan-out while the script goroutine was still writing it — the `loaded()`
-guard now covers every accessor, not just `wantsHAEvent`; and `http.get/post`
-read an unbounded response body into a Lua string, now capped like `fs.read`.
-Plus one latent named-return trap in `historyPoints`, and simplifications:
-`store`/`global` share one implementation, `registerHaAPI` is grouped by area
-instead of one 460-line function, the `re` bindings lose five copies of their
-preamble, `logwriter` loses an error nobody read, `main.go` marshals a service
-call in one place. Two round-1 rejections were deliberately reversed (the store
-duplication and the registerHaAPI split) — the reasons are in the track file, do
-not flip them back. Released as v4.9.1.
+**Go/Lua review round 4** (`0a46fa4`..`f99c705`, detail: `state/code-review.md`).
+A "is it fit for purpose" sweep, wider than rounds 1-3: all non-test Go plus the
+Lua examples, `lib/`, the card and the web assets. Verdict: fit for purpose. One
+real defect — `Tracker.Seed` installed the `get_states` batch unconditionally,
+so an entity that changed after HA rendered that snapshot (or during the old
+read-then-swap gap) reverted in the memory mirror and `ha.get_state` reported
+the superseded state until the entity next changed. Plus two latent traps:
+`ha.every`/`ha.at` called from a callback allocated a new timer per call instead
+of re-arming (now load-time only), and the mqtt bindings' nil branches were
+unreachable in production (now one path via `mqtt.ErrDisabled`). Two findings
+were raised and deliberately left — `scripts/lib/` is still not watched, and
+`/debug/` is still on the unauthenticated LAN port; both are in the track file.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -83,6 +81,16 @@ here.
   a 1024-cap queue into single transactions; a full queue blocks with a warn, a
   failed batch is retried once then dropped loudly. Corollary accepted: an entity
   whose history aged out entirely gets one baseline row per restart.
+- **A seed never overwrites a newer mirror entry.** A `get_states` batch is a
+  snapshot of the instant HA rendered it, and the client pushes it BEFORE it
+  subscribes, so events for it are already in flight. Installing the batch
+  wholesale rolled `ha.get_state` back to a superseded state until the entity
+  next changed. `LastUpdated` decides; unorderable stamps let the batch win.
+  Do NOT "simplify" Seed back to building a map and swapping it in.
+- **`ha.every`/`ha.at` are load-time only and raise from a callback.** The `N`
+  in their id is a registration counter, so a call from a callback allocates a
+  new timer instead of re-arming: one heap entry, one row and one retained
+  callback per call. `ha.after` is the callback-safe one.
 - **`call_service` stays synchronous by default.** `wait = false` sends in order
   and routes the rejection to `on_exception` off-loop; do not flip the default.
 - **`ha.after` persistence is best-effort** — it survives a restart only if
