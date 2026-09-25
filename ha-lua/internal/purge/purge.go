@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/pprof"
+	"strings"
 	"time"
 )
 
@@ -82,26 +83,28 @@ func (p *Purger) RunOnce(ctx context.Context) error {
 	// window is longer — overlapping globs must not have the most aggressive
 	// rule quietly delete what an earlier one promised to keep.
 	for i, rule := range p.rules {
-		query := `DELETE FROM state_history WHERE entity_id GLOB ? AND changed_at < ?`
+		var query strings.Builder
+		query.WriteString(`DELETE FROM state_history WHERE entity_id GLOB ? AND changed_at < ?`)
 		args := []any{rule.Pattern, now.AddDate(0, 0, -rule.Days).Format(time.RFC3339)}
 		for _, earlier := range p.rules[:i] {
-			query += ` AND entity_id NOT GLOB ?`
+			query.WriteString(` AND entity_id NOT GLOB ?`)
 			args = append(args, earlier.Pattern)
 		}
-		n, err := p.exec(ctx, query, args...)
+		n, err := p.exec(ctx, query.String(), args...)
 		if err != nil {
 			return err
 		}
 		total += n
 	}
 
-	query := `DELETE FROM state_history WHERE changed_at < ?`
+	var query strings.Builder
+	query.WriteString(`DELETE FROM state_history WHERE changed_at < ?`)
 	args := []any{now.AddDate(0, 0, -p.retentionDays).Format(time.RFC3339)}
 	for _, rule := range p.rules {
-		query += ` AND entity_id NOT GLOB ?`
+		query.WriteString(` AND entity_id NOT GLOB ?`)
 		args = append(args, rule.Pattern)
 	}
-	n, err := p.exec(ctx, query, args...)
+	n, err := p.exec(ctx, query.String(), args...)
 	if err != nil {
 		return err
 	}

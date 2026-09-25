@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,12 +157,7 @@ func setFollowOutsideLampChange(t *testing.T, path string, follow bool) {
 }
 
 func isGroupLamp(entityID string) bool {
-	for _, lamp := range groupLamps {
-		if lamp == entityID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(groupLamps, entityID)
 }
 
 // report feeds one state_changed carrying both states, the way Home Assistant
