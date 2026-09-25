@@ -384,17 +384,20 @@ defect, two latent traps, one documentation gap. Three commits, `0a46fa4`..
    `ErrDisabled`, so an unwired runner and a real client with no broker answer
    identically.
 
-## Raised and deliberately NOT changed (user's call)
+## Raised and REJECTED by the user (2026-09-25 — do not re-raise)
 
 - **`scripts/lib/*.lua` is not watched.** `NewScriptWatcher` does a
   non-recursive `w.Add(dir)`, so editing a shared module reloads nothing,
   silently — while `DOCS.md` tells users to put helpers in `scripts/lib/` and
-  says saved changes reload automatically. Still true; restart to pick up a lib
-  edit.
+  says saved changes reload automatically. Restart to pick up a lib edit.
+  WON'T FIX — asked and declined. Do not add a recursive watch, and do not
+  "fix" the DOCS wording into a caveat either; it was read and left as is.
 - **`/debug/` is mounted on the unauthenticated LAN port** as well as ingress,
   so `api/logs` (and `api/goroutines`) are reachable by anyone on the network.
-  `config.yaml`'s `ports_description` warns the port is unauthenticated.
-  Note that `service_api.lua` deliberately logs its token at first load.
+  `config.yaml`'s `ports_description` warns the port is unauthenticated, and
+  `service_api.lua` deliberately logs its token at first load. WON'T FIX —
+  asked and declined ("debug is fine"). The LAN port is LAN-trust by design;
+  do not move `/debug/` behind ingress or gate it.
 - `RouteSpec` marshals as `Method`/`Prefix` while the rest of the JSON is
   snake_case; `config.go` is the one `encoding/json` v1 holdout. Cosmetic.
 

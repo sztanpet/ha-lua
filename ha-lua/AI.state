@@ -157,6 +157,11 @@ here.
   go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when golangci-lint
   catches up; do not "fix" them forward.
 
+- **`scripts/lib/` is deliberately NOT watched, and `/debug/` deliberately IS
+  on the unauthenticated LAN port.** Both were raised in review round 4 and
+  declined on 2026-09-25. A lib edit needs a restart; the LAN port is
+  LAN-trust, debug page included. Do not re-raise either.
+
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables, `ha.get_stats`, the `is_numeric`
   column, and the 4-step transactional purge
