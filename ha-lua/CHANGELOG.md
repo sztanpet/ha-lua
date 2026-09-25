@@ -4,6 +4,14 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.10.1 - 2026-09-25
+
+### Changed
+- The enhanced-climate card's fallback override durations are now
+  **15 / 30 / 60** minutes instead of 10 / 30 / 60. Ten minutes is too short to
+  move a room noticeably on a water-based system. This is only the fallback: a
+  card whose YAML sets `presets:` explicitly keeps its own values.
+
 ## 4.10.0 - 2026-09-25
 
 ### Fixed
