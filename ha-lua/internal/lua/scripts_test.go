@@ -241,6 +241,34 @@ func TestOvershootPureLib(t *testing.T) {
 		local k_cold = o.close(cold, 0.4)
 		assert(math.abs(k_cold - 0.2) < 1e-9, "worst case halves k, got "..tostring(k_cold))
 
+		-- The optional env snapshot: recorded, never read by the math. It exists
+		-- so the journal can be tested later for the correlations one scalar
+		-- deliberately does not model.
+		local env = o.open(21, 18, 0.4, false, 1000, { outdoor = 4.5, radiator = 28 })
+		assert(env.outdoor_at_open == 4.5, "outdoor recorded at open")
+		assert(env.radiator_at_open == 28, "radiator recorded at open")
+		o.step(env, 19, 1060, { outdoor = 4.5, radiator = 52 })
+		assert(env.radiator_at_cutoff == nil, "not cut off yet")
+		assert(env.radiator_at_peak == 52, "a new peak records the radiator with it")
+		o.step(env, 19.9, 1120, { outdoor = 4.5, radiator = 61 })
+		assert(env.radiator_at_cutoff == 61, "radiator captured at the cutoff")
+		-- A sample that is not a new peak must not overwrite the peak's radiator.
+		o.step(env, 19.5, 1180, { outdoor = 4.5, radiator = 55 })
+		assert(env.radiator_at_peak == 61, "non-peak sample left the peak alone")
+		o.step(env, 20.4, 1240, { outdoor = 4.5, radiator = 49 })
+		assert(env.radiator_at_peak == 49, "a higher peak moves it")
+		local env_row = o.record(env, "z", 0.4, 0.4, "learned", nil, 2000)
+		assert(env_row.outdoor_at_open == 4.5, "journal carries the outdoor temp")
+		assert(env_row.radiator_at_cutoff == 61, "journal carries the cutoff radiator temp")
+		assert(env_row.radiator_at_peak == 49, "journal carries the peak radiator temp")
+
+		-- No env is the old behaviour exactly: thermostat.lua passes none and
+		-- must keep working unchanged.
+		local bare = o.open(21, 18, 0.4, false, 0)
+		assert(bare.outdoor_at_open == nil and bare.radiator_at_open == nil, "no env -> no fields")
+		o.step(bare, 19.8, 60)
+		assert(bare.cutoff_at == 60 and bare.radiator_at_cutoff == nil, "cutoff without env")
+
 		-- valid returns the reason, not a bare boolean (spec §9.2), and the
 		-- FIRST reason wins so the thing that actually broke the episode is what
 		-- a reader sees.

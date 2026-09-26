@@ -58,11 +58,17 @@ end
 -- `commanded` is what the correction wants written; `applied` is what the caller
 -- will write, which in observe-only mode is the uncorrected request, so the
 -- episode measures the uncorrected run that k needs to converge on.
-function M.open(requested, current, k, observe_only, at)
+--
+-- `env` is an optional {outdoor =, radiator =} snapshot recorded alongside the
+-- episode. Nothing here reads it — it exists so the journal can later be tested
+-- for the correlations this single scalar deliberately does NOT model (a mild
+-- day against a cold one, a hot radiator against a lukewarm one). Recording it
+-- is free; not recording it makes the question permanently unanswerable.
+function M.open(requested, current, k, observe_only, at, env)
   local rise = requested - current
   if rise <= 0 then return nil end
   local offset = M.offset(k, rise)
-  return {
+  local episode = {
     opened_at = at,
     requested = requested,
     current_at_open = current,
@@ -75,6 +81,11 @@ function M.open(requested, current, k, observe_only, at)
     peak = current,
     peak_at = at,
   }
+  if env ~= nil then
+    episode.outdoor_at_open = env.outdoor
+    episode.radiator_at_open = env.radiator
+  end
+  return episode
 end
 
 -- Marks an episode unusable for learning, with one of "window_open",
@@ -90,13 +101,21 @@ end
 
 -- Advances an episode by one observation and reports its phase: "heating" (still
 -- climbing to the cutoff), "coasting" (cut off, watching the peak) or "done".
-function M.step(episode, current, at)
+--
+-- `env` is the optional snapshot of M.open. The radiator temperature AT THE
+-- CUTOFF is the interesting one: it is the stored energy about to be dumped into
+-- the room, which is the thing that actually causes the overshoot. The one at
+-- the peak says how much of it was still left when the room stopped rising.
+function M.step(episode, current, at, env)
+  local radiator = env and env.radiator or nil
   if current > episode.peak then
     episode.peak, episode.peak_at = current, at
+    episode.radiator_at_peak = radiator
   end
   if episode.cutoff_at == nil then
     if current >= episode.applied then
       episode.cutoff_at = at
+      episode.radiator_at_cutoff = radiator
       return "coasting"
     end
     if at - episode.opened_at >= M.MAX_EPISODE_SECONDS then
@@ -156,6 +175,10 @@ function M.record(episode, zone, k_before, k_after, outcome, reason, closed_at)
     cutoff_at = episode.cutoff_at,
     peak = episode.peak,
     peak_at = episode.peak_at,
+    outdoor_at_open = episode.outdoor_at_open,
+    radiator_at_open = episode.radiator_at_open,
+    radiator_at_cutoff = episode.radiator_at_cutoff,
+    radiator_at_peak = episode.radiator_at_peak,
     error = episode.peak - episode.requested,
     k_before = k_before,
     k_after = k_after,
