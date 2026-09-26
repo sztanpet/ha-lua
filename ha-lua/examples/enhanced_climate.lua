@@ -179,9 +179,15 @@ local function set_temp(climate, temp)
   ha.call_service("climate", "set_temperature", { entity_id = climate, temperature = temp })
 end
 
--- Writes the companion entity (§6) the card reads: state is the desired setpoint
--- when controlled, else "off", with the schedule, override, manual, window and
--- preset detail in its attributes. desired_temp arrives already clamped.
+-- Writes the companion entity (§6) the card reads: state is the REQUESTED
+-- setpoint when controlled, else "off", with the schedule, override, manual,
+-- window and preset detail in its attributes. desired_temp arrives already
+-- clamped.
+--
+-- `state` and the `commanded` attribute are deliberately separate: the request
+-- is what the user asked for and the primary number everywhere, while
+-- `commanded` is what the device was actually told, which sits below the
+-- request while the overshoot correction cuts a warmup short.
 local function publish_companion(climate, now, desired_temp)
   local cfg = load_registry()[climate]
   if cfg == nil then return end
@@ -210,6 +216,10 @@ local function publish_companion(climate, now, desired_temp)
     override = override_tbl,
     override_temp = override_temp(climate), -- always surfaced so the card can edit it
     manual = manual_tbl,
+    -- What is actually on the device, read back rather than taken from
+    -- `written`: it then also shows the frost setpoint while a window is open,
+    -- and exposes a write that never landed (overshoot-spec.md §8).
+    commanded = current_target(climate),
     window = { sensors = window_sensors_of(climate), open = window_open(climate) },
     presets = cfg.presets,
     min_temp = lo,

@@ -576,6 +576,27 @@ func TestEnhancedClimateCompanion(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateCompanionSplitsRequestedAndCommanded pins the companion's
+// two setpoints apart (overshoot-spec.md §8): `state` is what the user asked
+// for, the `commanded` attribute is what the device actually carries. They must
+// not collapse into one number, or a corrected warmup would report the reduced
+// setpoint under a name that says "requested".
+//
+// They are forced apart the only way that needs no correction: the fixture's
+// call_service is a capture, so the schedule requests 21 while the entity's own
+// temperature attribute stays at the seeded 18.
+func TestEnhancedClimateCompanionSplitsRequestedAndCommanded(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "schedule requests 21")
+
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(state string, attrs map[string]any) bool {
+		return state == "21" && attrs["commanded"] == 18.0
+	}, "state 21 (requested) with commanded 18 (what the device carries)")
+}
+
 // TestEnhancedClimateRemovalPage drives the Ingress removal page: /api/list
 // reports the registry, GET / serves the HTML, and POST /api/remove
 // deprovisions a climate (removing its companion) while a bad body is rejected.
