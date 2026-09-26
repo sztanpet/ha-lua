@@ -194,14 +194,18 @@ local function observe_key(climate) return "overshoot_observe:" .. climate end
 
 local JOURNAL_MAX = 50
 
+-- The learned {base, slope}; anything else stored under the key (including the
+-- single number the first version kept) reads as nothing learned.
 local function learned_k(climate)
   local value = store.get(k_key(climate))
-  if type(value) == "number" then return value end
-  return overshoot.K_INIT
+  if type(value) == "table" and type(value.base) == "number" and type(value.slope) == "number" then
+    return { base = value.base, slope = value.slope }
+  end
+  return overshoot.k_init()
 end
 
--- How many episodes k was learned from: "1.2° low" alone says nothing about
--- whether to trust it.
+-- How many episodes the coefficients were learned from: "1.2° low" alone says
+-- nothing about whether to trust it.
 local function learned_samples(climate)
   local value = store.get(samples_key(climate))
   if type(value) == "number" then return value end
@@ -247,10 +251,12 @@ end
 
 -- The conditions an episode ran under, sampled fresh each tick because the
 -- radiator temperature is the whole point: it swings 30° across one warmup.
+-- `heating` is the relay, which is what says a run actually happened.
 local function env_snapshot(climate)
   return {
     outdoor = sensor_number(outdoor_of(climate)),
     radiator = sensor_number(radiator_of(climate)),
+    heating = climate_lib.heating(climate),
   }
 end
 
@@ -273,10 +279,10 @@ local function open_episode(climate, requested, current, at, env)
   episode.applied = control.clamp_bounds(episode.applied, lo, hi)
   store.set(episode_key(climate), episode)
   ha.log("info", string.format(
-    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f k=%.3f offset=%.2f commanded=%.1f outdoor=%s radiator=%s%s",
-    climate, requested, current, episode.rise, episode.k_used, episode.offset,
-    episode.commanded, tostring(episode.outdoor_at_open), tostring(episode.radiator_at_open),
-    watching and " (observe-only)" or ""))
+    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f base=%.2f slope=%.2f offset=%.2f commanded=%.1f outdoor=%s radiator=%s%s",
+    climate, requested, current, episode.rise, episode.k_used.base, episode.k_used.slope,
+    episode.offset, episode.commanded, tostring(episode.outdoor_at_open),
+    tostring(episode.radiator_at_open), watching and " (observe-only)" or ""))
   return episode
 end
 
@@ -294,10 +300,11 @@ local function close_episode(climate, episode, at)
     store.set(samples_key(climate), learned_samples(climate) + 1)
     local half = overshoot.half_life(episode)
     ha.log("info", string.format(
-      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f radiator_at_cutoff=%s cool_half_life=%s k %.3f -> %.3f",
+      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f radiator_at_cutoff=%s cool_half_life=%s base %.2f -> %.2f slope %.2f -> %.2f",
       climate, outcome, episode.peak, episode.requested,
       episode.peak - episode.requested, tostring(episode.radiator_at_cutoff),
-      half and string.format("%.0fs", half) or "n/a", k_before, k_after))
+      half and string.format("%.0fs", half) or "n/a",
+      k_before.base, k_after.base, k_before.slope, k_after.slope))
   end
   journal(climate, overshoot.record(episode, climate, k_before, k_after, outcome, reason, at))
   store.delete(episode_key(climate))
@@ -317,8 +324,9 @@ end
 -- is the live episode's latched offset, not a recomputed one — a correction is
 -- only ever as big as what it decided when the episode opened.
 --
--- k without the sample count is not reportable: "1.2° low" says nothing about
--- whether to trust it, "1.2° low, learned over 6 nights" does.
+-- The coefficients without the sample count are not reportable: "1.2° low"
+-- says nothing about whether to trust it, "1.2° low, learned over 6 nights"
+-- does.
 local function overshoot_status(climate)
   local episode = live_episode(climate)
   return {

@@ -695,7 +695,7 @@ func TestEnhancedClimateOvershootObserveOnlyWrites(t *testing.T) {
 	f := newEnhancedFixture(t)
 	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStoreNumber("overshoot_k:climate.lr", 0.4) // would cut 1.2° off a 3° rise
+	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4}) // would cut 1.2° off a 3° rise
 
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
 	f.waitSetTemp(21, "observe-only writes the request, not the corrected value")
@@ -728,7 +728,7 @@ func TestEnhancedClimateOvershootCorrects(t *testing.T) {
 	f := newEnhancedFixture(t)
 	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStoreNumber("overshoot_k:climate.lr", 0.4)
+	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4})
 	f.setStore("overshoot_observe:climate.lr", false)
 
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
@@ -751,7 +751,7 @@ func TestEnhancedClimateOvershootOffsetIsLatched(t *testing.T) {
 	f := newEnhancedFixture(t)
 	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStoreNumber("overshoot_k:climate.lr", 0.4)
+	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4})
 	f.setStore("overshoot_observe:climate.lr", false)
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
 	f.waitSetTemp(19.8, "episode opens and latches a 1.2° offset")
@@ -831,9 +831,9 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 			Name          string   `json:"name"`
 			WindowSensors []string `json:"window_sensors"`
 			Overshoot     *struct {
-				K           float64 `json:"k"`
-				Samples     int     `json:"samples"`
-				ObserveOnly bool    `json:"observe_only"`
+				K           struct{ Base, Slope float64 } `json:"k"`
+				Samples     int                           `json:"samples"`
+				ObserveOnly bool                          `json:"observe_only"`
 			} `json:"overshoot"`
 		} `json:"climates"`
 	}
@@ -934,16 +934,16 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 	f.seedClimate("climate.lr", `{"friendly_name":"Living Room","current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
 	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
-	f.setStoreNumber("overshoot_k:climate.lr", 0.4)
+	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4})
 	f.setStoreNumber("overshoot_samples:climate.lr", 6)
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
 	f.waitSetTemp(21, "observe-only warmup opens an episode")
 
 	type report struct {
-		ClimateEntity string  `json:"climate_entity"`
-		K             float64 `json:"k"`
-		Samples       int     `json:"samples"`
-		ObserveOnly   bool    `json:"observe_only"`
+		ClimateEntity string                        `json:"climate_entity"`
+		K             struct{ Base, Slope float64 } `json:"k"`
+		Samples       int                           `json:"samples"`
+		ObserveOnly   bool                          `json:"observe_only"`
 		Episode       *struct {
 			Requested float64 `json:"requested"`
 			Commanded float64 `json:"commanded"`
@@ -966,8 +966,8 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 	// The live episode is reachable while it is still running, which is the only
 	// way to answer "why is it commanding that" before the journal exists.
 	got := get()
-	if got.K != 0.4 || got.Samples != 6 || !got.ObserveOnly {
-		t.Fatalf("report = %+v, want k 0.4 over 6 samples, observing", got)
+	if got.K.Slope != 0.4 || got.K.Base != 0 || got.Samples != 6 || !got.ObserveOnly {
+		t.Fatalf("report = %+v, want slope 0.4 over 6 samples, observing", got)
 	}
 	if got.Episode == nil || got.Episode.Commanded != 19.8 {
 		t.Fatalf("live episode = %+v, want commanded 19.8", got.Episode)
@@ -994,7 +994,7 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("POST reset status %d body %q", rec.Code, rec.Body.String())
 	}
-	if got := get(); got.K != 0 || got.Samples != 0 {
+	if got := get(); got.K.Base != 0 || got.K.Slope != 0 || got.Samples != 0 {
 		t.Fatalf("after reset %+v, want k 0 over 0 samples", got)
 	}
 	if rows := f.overshootJournal("climate.lr"); len(rows) != 0 {

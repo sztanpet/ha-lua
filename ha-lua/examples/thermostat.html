@@ -181,8 +181,8 @@ const MESSAGES = {
     "commanded_cut": "{temp}° — cutting {offset}° early",
     "commanded_same": "{temp}° — no correction",
     "learning": "Learning",
-    "learning_from": "k {k}, from {n} episodes",
-    "learning_none": "k {k}, nothing learned yet",
+    "learning_from": "cuts {k}, from {n} episodes",
+    "learning_none": "{k}, nothing learned yet",
     "mode_label": "Mode",
     "mode_watching": "watching only — the correction is not applied",
     "mode_correcting": "correcting",
@@ -238,8 +238,8 @@ const MESSAGES = {
     "commanded_cut": "{temp}° — {offset}°-kal korábban áll le",
     "commanded_same": "{temp}° — nincs korrekció",
     "learning": "Tanulás",
-    "learning_from": "k {k}, {n} ciklusból",
-    "learning_none": "k {k}, még nem tanult semmit",
+    "learning_from": "{k}-kal korábban, {n} ciklusból",
+    "learning_none": "{k}, még nem tanult semmit",
     "mode_label": "Mód",
     "mode_watching": "csak figyel — a korrekció nincs alkalmazva",
     "mode_correcting": "korrigál",
@@ -570,7 +570,9 @@ function disclosure(zone, status) {
   const commanded = (status.commanded != null) ? status.commanded.toFixed(1) : "—";
   const rows = journals.get(zone) || [];
   const samples = Number(status.samples) || 0;
-  const k = (Number(status.k) || 0).toFixed(2);
+  // {base, slope}: the floor every run gets, plus the part per degree of rise.
+  const coeff = status.k && typeof status.k === "object" ? status.k : { base: 0, slope: 0 };
+  const k = (Number(coeff.base) || 0).toFixed(2) + "° + " + (Number(coeff.slope) || 0).toFixed(2) + "°/°";
 
   // Both actions change the journal — switching the mode ends the running
   // episode, and a reset wipes the lot — so refetch before re-rendering rather

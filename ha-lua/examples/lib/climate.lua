@@ -44,6 +44,14 @@ function M.current_temp(entity)
   return attribute(entity, "current_temperature")
 end
 
+-- Whether the relay is closed right now: true/false from the device's
+-- hvac_action ("heating"/"idle"/...), nil for a device that does not report one.
+function M.heating(entity)
+  local action = attribute(entity, "hvac_action")
+  if type(action) ~= "string" then return nil end
+  return action == "heating"
+end
+
 -- The device's accepted setpoint range. HA silently drops a set_temperature
 -- outside min_temp/max_temp, so honouring the device's own limits is what keeps
 -- a schedule or override from becoming a no-op nobody can see. The 5..35

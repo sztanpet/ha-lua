@@ -262,7 +262,7 @@
       const summary = document.createElement("summary");
       summary.textContent = "Overshoot correction — " +
         (observing ? "observing only" : "active") +
-        (samples > 0 ? ", k " + round(overshoot.k, 3) + " over " + samples + " episode(s)"
+        (samples > 0 ? ", cuts " + coeff(overshoot.k) + " over " + samples + " episode(s)"
           : ", nothing learned yet");
       details.appendChild(summary);
 
@@ -333,7 +333,7 @@
       // will eventually say whether one k per climate is enough, or whether the
       // coefficient has to vary with the weather and the radiator.
       for (const label of ["Opened", "Request", "Rise", "Commanded", "Peak", "Error",
-        "Outside", "Rad. cut", "Cool t½", "k", "Outcome"]) {
+        "Outside", "Rad. cut", "Cool t½", "Learned", "Outcome"]) {
         const cell = document.createElement("th");
         cell.textContent = label;
         head.appendChild(cell);
@@ -361,7 +361,9 @@
           // A value that suddenly shortens means the plant changed — air in the
           // radiator, a valve that stopped closing — which no peak shows.
           minutes(row.decay_half_life),
-          round(row.k_before, 3) + " → " + round(row.k_after, 3),
+          // What the episode concluded: the floor every run gets, plus the part
+          // per degree of rise a long warmup adds.
+          coeff(row.k_after),
           discarded ? "discarded: " + (row.reason || "?") : row.outcome,
         ];
         cells.forEach((text, index) => {
@@ -383,6 +385,9 @@
       return String(Math.round(number * factor) / factor);
     };
     const temp = (value) => (Number.isFinite(Number(value)) ? round(value, 2) + "°" : "—");
+    // {base, slope} as "0.8° + 0.15°/°": the floor, then the per-degree-of-rise part.
+    const coeff = (k) => (k && typeof k === "object"
+      ? round(k.base, 2) + "° + " + round(k.slope, 2) + "°/°" : "—");
     const minutes = (seconds) => (Number.isFinite(Number(seconds))
       ? round(Number(seconds) / 60, 1) + "m" : "—");
     const signed = (value) => (Number.isFinite(value)

@@ -9,26 +9,24 @@
 -- minutes to close and the radiator body keeps heating for another quarter of an
 -- hour. A small room has no mass to absorb that, so it sails past.
 --
--- The fix is to stop earlier: command `requested - k * rise` for the whole
--- warmup and let the stored energy land the room on target. `k` is learned from
--- each episode's measured peak, so it tracks seasonal drift on its own. Scaling
--- by the rise is what lets one scalar serve both a 3° warmup from setback and a
--- 0.2° top-up, which then gets essentially no correction.
+-- The fix is to stop earlier: command `requested - offset` for the whole run
+-- and let the stored energy land the room on target, with
+-- `offset = base + slope * rise`. Both coefficients are learned from each
+-- episode's measured peak, so they track seasonal drift on their own. `base` is
+-- the overshoot a run produces regardless of how far the room had to climb — a
+-- relay on for ten minutes brings the radiator to full temperature whether the
+-- room needed 0.3° or 3° — and it is what a hold's own heating cycles need.
+-- `slope` is the part a long warmup from setback adds on top.
 
 local M = {}
 
--- Zero: having learned nothing, the correction must behave exactly as the
--- uncorrected controller did.
-M.K_INIT = 0
--- Fraction of each episode's error folded into k: converges in about four
--- episodes, damped enough not to ring.
+-- Fraction of each episode's error folded into the coefficients: converges in
+-- about four episodes, damped enough not to ring.
 M.GAIN = 0.5
-M.K_MAX = 0.8
--- Absolute ceiling on one cutoff, whatever k * rise says.
+M.SLOPE_MAX = 0.8
+-- Absolute ceiling on one cutoff, whatever the coefficients say; bounds `base`
+-- too, a floor beyond the cap being meaningless.
 M.MAX_OFFSET = 2.5
--- Below this a rise teaches nothing, the overshoot being sensor noise. The
--- correction still applies; only the learning is skipped.
-M.MIN_RISE = 0.3
 -- How long past the cutoff the peak is watched for; the coast is a broad hump.
 M.COAST_SECONDS = 30 * 60
 -- An episode that has not reached its setpoint in this long is abandoned, so a
@@ -45,10 +43,17 @@ local function clamp(value, lo, hi)
   return value
 end
 
--- offset returns how far below the request to stop, for a coefficient and the
--- rise being attempted. Clamped to [0, MAX_OFFSET].
+-- Zero: having learned nothing, the correction must behave exactly as the
+-- uncorrected controller did. A fresh table each time, since callers keep it.
+function M.k_init()
+  return { base = 0, slope = 0 }
+end
+
+-- offset returns how far below the request to stop, for the coefficients and
+-- the rise being attempted. Clamped to [0, MAX_OFFSET]: a negative rise is
+-- nothing to climb, not a reason to command above the request.
 function M.offset(k, rise)
-  return clamp(k * rise, 0, M.MAX_OFFSET)
+  return clamp(k.base + k.slope * rise, 0, M.MAX_OFFSET)
 end
 
 -- Starts an episode, or nil when the request is not above the room (nothing to
@@ -77,7 +82,7 @@ function M.open(requested, current, k, observe_only, at, env)
     requested = requested,
     current_at_open = current,
     rise = rise,
-    k_used = k,
+    k_used = { base = k.base, slope = k.slope },
     offset = offset,
     commanded = requested - offset,
     applied = observe_only and requested or requested - offset,
@@ -94,7 +99,7 @@ end
 
 -- Marks an episode unusable for learning, with one of "window_open",
 -- "mode_left_heat", "setpoint_changed", "restart", "never_reached" or
--- "observe_changed" ("rise_too_small" is derived by valid() instead).
+-- "observe_changed" ("never_heated" is derived by valid() instead).
 --
 -- The FIRST reason wins: the one a reader wants is what broke the episode, not
 -- what happened to it afterwards.
@@ -110,8 +115,17 @@ end
 -- CUTOFF is the interesting one: it is the stored energy about to be dumped into
 -- the room, which is the thing that actually causes the overshoot. The one at
 -- the peak says how much of it was still left when the room stopped rising.
+--
+-- `env.heating` (true/false, or nil for a device that does not report it) is
+-- remembered as `heated` once seen true: an episode during which the relay
+-- never closed has no stored energy to teach from.
 function M.step(episode, current, at, env)
   local radiator = env and env.radiator or nil
+  if env and env.heating == true then
+    episode.heated = true
+  elseif env and env.heating == false and episode.heated == nil then
+    episode.heated = false
+  end
   if current > episode.peak then
     episode.peak, episode.peak_at = current, at
     episode.radiator_at_peak = radiator
@@ -195,25 +209,36 @@ end
 function M.valid(episode)
   if episode.invalid ~= nil then return false, episode.invalid end
   if episode.cutoff_at == nil then return false, "never_reached" end
-  if episode.rise < M.MIN_RISE then return false, "rise_too_small" end
+  -- Only an explicit false: a device with no hvac_action leaves it nil, and
+  -- unknown is not "off".
+  if episode.heated == false then return false, "never_heated" end
   return true, nil
 end
 
--- Folds a finished episode into the coefficient. Returns the new k, the outcome
--- ("learned"/"observed"/"discarded") and a discard reason.
+-- Folds a finished episode into the coefficients. Returns the new k, the
+-- outcome ("learned"/"observed"/"discarded") and a discard reason.
 --
--- The update is a discrete integral controller closed across days: the error is
--- how far the peak landed above the request, normalised by the rise so a small
--- top-up cannot swing k as hard as a full warmup. "observed" is a real learned
--- update from an uncorrected run, named apart so a reader can tell which regime
--- a sample came from.
+-- One normalised gradient step on the regressor [1, rise]: the error is split
+-- between base and slope in proportion to how much each contributed to the
+-- offset that produced it, so a cycle (rise ~0.3) teaches base almost entirely
+-- and a long warmup teaches both. The offset AT THE OBSERVED RISE moves by
+-- exactly GAIN * err per episode — a discrete integral controller closed across
+-- days, at the same rate the single-coefficient version had. "observed" is a
+-- real learned update from an uncorrected run, named apart so a reader can tell
+-- which regime a sample came from.
 function M.close(episode, k)
   local ok, reason = M.valid(episode)
   if not ok then return k, "discarded", reason end
   local err = episode.peak - episode.requested
-  -- The lower clamp is defensive: a run cuts off at requested - k*rise, so the
-  -- update is bounded below by -GAIN*k and k halves toward zero without crossing.
-  local next_k = clamp(k + M.GAIN * err / math.max(episode.rise, M.MIN_RISE), 0, M.K_MAX)
+  local rise = episode.rise
+  local norm = 1 + rise * rise
+  -- The lower clamps are defensive: a run cuts off at requested - offset, so
+  -- the peak cannot land more than the offset low and the update is bounded
+  -- below by -GAIN * offset. The coefficients halve toward zero, never cross.
+  local next_k = {
+    base = clamp(k.base + M.GAIN * err / norm, 0, M.MAX_OFFSET),
+    slope = clamp(k.slope + M.GAIN * err * rise / norm, 0, M.SLOPE_MAX),
+  }
   return next_k, episode.observe_only and "observed" or "learned", nil
 end
 

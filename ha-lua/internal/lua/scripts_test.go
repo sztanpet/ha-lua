@@ -180,27 +180,36 @@ func TestOvershootPureLib(t *testing.T) {
 	err := L.DoString(`
 		local o = require "overshoot"
 
-		-- offset: proportional to the rise, clamped into [0, MAX_OFFSET].
-		assert(o.offset(0, 3) == 0, "k=0 -> no correction")
-		assert(math.abs(o.offset(0.4, 3) - 1.2) < 1e-9, "0.4 * 3 = 1.2")
-		assert(o.offset(0.8, 10) == o.MAX_OFFSET, "clamped to MAX_OFFSET")
-		assert(o.offset(0.4, -2) == 0, "negative rise -> no correction")
-		-- A top-up gets essentially nothing, which is what keeps the correction
-		-- out of the steady-state hold band.
-		assert(o.offset(0.4, 0.3) < 0.13, "top-up correction is negligible")
+		local K = function(base, slope) return { base = base, slope = slope } end
+		local near = function(a, b) return math.abs(a - b) < 1e-9 end
+
+		-- offset: base + slope * rise, clamped into [0, MAX_OFFSET].
+		local fresh = o.k_init()
+		assert(fresh.base == 0 and fresh.slope == 0, "k_init is zero")
+		assert(o.k_init() ~= fresh, "k_init hands out a fresh table")
+		assert(o.offset(fresh, 3) == 0, "nothing learned -> no correction")
+		assert(near(o.offset(K(0, 0.4), 3), 1.2), "0.4 * 3 = 1.2")
+		assert(near(o.offset(K(0.8, 0.4), 3), 2.0), "base adds to the slope term")
+		assert(o.offset(K(0, 0.8), 10) == o.MAX_OFFSET, "clamped to MAX_OFFSET")
+		assert(o.offset(K(0, 0.4), -2) == 0, "negative rise -> no correction")
+		-- With no floor a top-up gets essentially nothing; with one it gets the
+		-- floor, which is what a hold's own heating cycle needs.
+		assert(o.offset(K(0, 0.4), 0.3) < 0.13, "slope alone is negligible on a top-up")
+		assert(near(o.offset(K(0.8, 0.4), 0.3), 0.92), "the floor is what a cycle gets")
 
 		-- open: only when the request is above the room.
-		assert(o.open(21, 21, 0.4, false, 0) == nil, "no rise -> no episode")
-		assert(o.open(21, 22, 0.4, false, 0) == nil, "falling request -> no episode")
-		local ep = o.open(21, 18, 0.4, false, 1000)
+		assert(o.open(21, 21, K(0, 0.4), false, 0) == nil, "no rise -> no episode")
+		assert(o.open(21, 22, K(0, 0.4), false, 0) == nil, "falling request -> no episode")
+		local ep = o.open(21, 18, K(0, 0.4), false, 1000)
 		assert(ep.rise == 3, "rise")
-		assert(math.abs(ep.offset - 1.2) < 1e-9, "offset latched")
-		assert(math.abs(ep.commanded - 19.8) < 1e-9, "commanded")
+		assert(near(ep.offset, 1.2), "offset latched")
+		assert(near(ep.commanded, 19.8), "commanded")
 		assert(ep.applied == ep.commanded, "correcting -> applied is commanded")
 		assert(ep.peak == 18 and ep.peak_at == 1000, "peak seeded at the room temp")
+		assert(ep.k_used.base == 0 and ep.k_used.slope == 0.4, "coefficients recorded with the episode")
 
 		-- Observe-only writes the request but records what it would have done.
-		local obs = o.open(21, 18, 0.4, true, 1000)
+		local obs = o.open(21, 18, K(0, 0.4), true, 1000)
 		assert(obs.applied == 21, "observe-only applies the request")
 		assert(math.abs(obs.commanded - 19.8) < 1e-9, "observe-only still records the command")
 
@@ -217,34 +226,53 @@ func TestOvershootPureLib(t *testing.T) {
 		phase = o.step(ep, 20.1, 1120 + o.COAST_SECONDS)
 		assert(phase == "done", "coast window closes the episode")
 
-		-- close: the peak landed 0.4 below the request, so k comes down.
-		local k_after, outcome, reason = o.close(ep, 0.4)
+		-- close: the peak landed 0.4 below the request, so both come down — one
+		-- normalised gradient step on [1, rise].
+		local k_after, outcome, reason = o.close(ep, K(0.5, 0.4))
 		assert(outcome == "learned" and reason == nil, "learned")
-		-- error = 20.6 - 21 = -0.4, rise 3 -> k + 0.5 * (-0.4/3)
-		assert(math.abs(k_after - (0.4 + 0.5 * (-0.4 / 3))) < 1e-9, "k update "..tostring(k_after))
-		assert(o.close(o.open(21, 18, 0.4, true, 0), 0.4) ~= nil, "observe-only still learns")
+		-- error = -0.4, rise 3, norm 10: base += 0.5 * -0.4 / 10, slope += 0.5 * -0.4 * 3 / 10
+		assert(near(k_after.base, 0.5 - 0.02), "base update "..tostring(k_after.base))
+		assert(near(k_after.slope, 0.4 - 0.06), "slope update "..tostring(k_after.slope))
+		-- The offset AT THE OBSERVED RISE moved by exactly GAIN * error, which is
+		-- what keeps the convergence rate of the single-coefficient version.
+		assert(near(o.offset(k_after, 3) - o.offset(K(0.5, 0.4), 3), o.GAIN * -0.4),
+			"offset at the rise moves by GAIN * error")
+		assert(o.close(o.open(21, 18, K(0, 0.4), true, 0), K(0, 0.4)) ~= nil, "observe-only still learns")
 
-		-- k stays inside its bounds however extreme the error.
-		local hot = o.open(21, 18, 0.4, false, 0)
+		-- A cycle — the deadband as its rise — teaches base almost entirely: the
+		-- same 1° error moves slope by rise/(1+rise²) of what it moves base.
+		local cycle = o.open(21, 20.6, K(0, 0), false, 0)
+		o.step(cycle, 21, 60)
+		o.step(cycle, 22, 60 + o.COAST_SECONDS)
+		local k_cycle = o.close(cycle, K(0, 0))
+		assert(near(k_cycle.base, 0.5 * 1 / 1.16), "cycle teaches base, got "..tostring(k_cycle.base))
+		assert(near(k_cycle.slope, 0.5 * 0.4 / 1.16), "cycle barely moves slope, got "..tostring(k_cycle.slope))
+
+		-- Both stay inside their bounds however extreme the error.
+		local hot = o.open(21, 18, K(0, 0.4), false, 0)
 		o.step(hot, 19.8, 60)
 		o.step(hot, 40, 120)
 		o.step(hot, 40, 60 + o.COAST_SECONDS + 120)
-		local k_hot = o.close(hot, 0.4)
-		assert(k_hot == o.K_MAX, "k clamped to K_MAX, got "..tostring(k_hot))
-		-- Downward, k can only ever halve toward zero and never cross it: an
-		-- episode cuts off at requested - k*rise, so the peak cannot land more
-		-- than the offset low and the update is bounded below by -GAIN*k. The
-		-- zero clamp is defensive, not reachable.
-		local cold = o.open(21, 18, 0.4, false, 0)
+		local k_hot = o.close(hot, K(2.4, 0.4))
+		assert(k_hot.slope == o.SLOPE_MAX, "slope clamped to SLOPE_MAX, got "..tostring(k_hot.slope))
+		assert(k_hot.base == o.MAX_OFFSET, "base clamped to MAX_OFFSET, got "..tostring(k_hot.base))
+		-- Downward they can only ever shrink toward zero and never cross it: an
+		-- episode cuts off at requested - offset, so the peak cannot land more
+		-- than the offset low and the step is bounded below by -GAIN*offset. At
+		-- worst the offset halves; here base was already zero and its share of
+		-- the step is clamped away, so it shrinks by less than that.
+		local cold = o.open(21, 18, K(0, 0.4), false, 0)
 		o.step(cold, 19.8, 60)
 		o.step(cold, 19.8, 60 + o.COAST_SECONDS)
-		local k_cold = o.close(cold, 0.4)
-		assert(math.abs(k_cold - 0.2) < 1e-9, "worst case halves k, got "..tostring(k_cold))
+		local k_cold = o.close(cold, K(0, 0.4))
+		local shrunk = o.offset(k_cold, 3)
+		assert(shrunk >= 0.6 and shrunk < 1.2, "worst case halves the offset at most, got "..tostring(shrunk))
+		assert(k_cold.base == 0 and k_cold.slope > 0, "never negative")
 
 		-- The optional env snapshot: recorded, never read by the math. It exists
 		-- so the journal can be tested later for the correlations one scalar
 		-- deliberately does not model.
-		local env = o.open(21, 18, 0.4, false, 1000, { outdoor = 4.5, radiator = 28 })
+		local env = o.open(21, 18, K(0, 0.4), false, 1000, { outdoor = 4.5, radiator = 28 })
 		assert(env.outdoor_at_open == 4.5, "outdoor recorded at open")
 		assert(env.radiator_at_open == 28, "radiator recorded at open")
 		o.step(env, 19, 1060, { outdoor = 4.5, radiator = 52 })
@@ -257,7 +285,7 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(env.radiator_at_peak == 61, "non-peak sample left the peak alone")
 		o.step(env, 20.4, 1240, { outdoor = 4.5, radiator = 49 })
 		assert(env.radiator_at_peak == 49, "a higher peak moves it")
-		local env_row = o.record(env, "z", 0.4, 0.4, "learned", nil, 2000)
+		local env_row = o.record(env, "z", K(0, 0.4), K(0, 0.4), "learned", nil, 2000)
 		assert(env_row.outdoor_at_open == 4.5, "journal carries the outdoor temp")
 		assert(env_row.radiator_at_cutoff == 61, "journal carries the cutoff radiator temp")
 		assert(env_row.radiator_at_peak == 49, "journal carries the peak radiator temp")
@@ -265,7 +293,7 @@ func TestOvershootPureLib(t *testing.T) {
 		-- The coast decay series: the cool-down is not a correlate of the
 		-- overshoot, it IS the overshoot, so the middle of the curve is kept and
 		-- not just its endpoints.
-		local decay = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		local decay = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
 		o.step(decay, 20, 60, { radiator = 55 })   -- still heating, nothing recorded
 		assert(decay.decay == nil, "no decay samples before the cutoff")
 		o.step(decay, 21, 120, { radiator = 60 })  -- cutoff: lead over the room is 39
@@ -278,25 +306,25 @@ func TestOvershootPureLib(t *testing.T) {
 		-- t=480 it is 32-21.5 = 10.5, so it crosses partway between.
 		local half = o.half_life(decay)
 		assert(half ~= nil and half > 180 and half < 480, "half-life interpolated, got "..tostring(half))
-		local row = o.record(decay, "z", 0, 0, "learned", nil, 900)
+		local row = o.record(decay, "z", K(0, 0), K(0, 0), "learned", nil, 900)
 		assert(#row.decay == 3 and row.decay_half_life == half, "journal carries the curve")
 
 		-- A lead that never halves inside the coast reports nil rather than a
 		-- made-up number: "did not halve in 30 minutes" is itself the finding.
-		local slow = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		local slow = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
 		o.step(slow, 21, 60, { radiator = 60 })
 		o.step(slow, 21, 120, { radiator = 59 })
 		assert(o.half_life(slow) == nil, "no halving -> nil")
 
 		-- A radiator already at room temperature has no lead to halve.
-		local cold_rad = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		local cold_rad = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
 		o.step(cold_rad, 21, 60, { radiator = 21 })
 		o.step(cold_rad, 21, 120, { radiator = 21 })
 		assert(o.half_life(cold_rad) == nil, "no lead -> nil")
 
 		-- The series is bounded, so a faster tick cannot grow the journal row
 		-- without limit.
-		local many = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		local many = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
 		o.step(many, 21, 1, { radiator = 60 })
 		for i = 2, o.DECAY_MAX_SAMPLES + 20 do
 			o.step(many, 21, i, { radiator = 60 - i * 0.1 })
@@ -304,14 +332,14 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(#many.decay == o.DECAY_MAX_SAMPLES, "decay series capped, got "..tostring(#many.decay))
 
 		-- A missing radiator reading is skipped, not recorded as zero.
-		local gap = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		local gap = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
 		o.step(gap, 21, 60, { radiator = 60 })
 		o.step(gap, 21, 120, {})
 		assert(#gap.decay == 1, "a nil radiator adds no sample")
 
 		-- No env is the old behaviour exactly: thermostat.lua passes none and
 		-- must keep working unchanged.
-		local bare = o.open(21, 18, 0.4, false, 0)
+		local bare = o.open(21, 18, K(0, 0.4), false, 0)
 		assert(bare.outdoor_at_open == nil and bare.radiator_at_open == nil, "no env -> no fields")
 		o.step(bare, 19.8, 60)
 		assert(bare.cutoff_at == 60 and bare.radiator_at_cutoff == nil, "cutoff without env")
@@ -319,34 +347,47 @@ func TestOvershootPureLib(t *testing.T) {
 		-- valid returns the reason, not a bare boolean (spec §9.2), and the
 		-- FIRST reason wins so the thing that actually broke the episode is what
 		-- a reader sees.
-		local windowed = o.open(21, 18, 0.4, false, 0)
+		local windowed = o.open(21, 18, K(0, 0.4), false, 0)
 		o.invalidate(windowed, "window_open")
 		o.invalidate(windowed, "mode_left_heat")
 		local ok, why = o.valid(windowed)
 		assert(ok == false and why == "window_open", "first reason wins, got "..tostring(why))
-		local k_same, outcome2, reason2 = o.close(windowed, 0.4)
-		assert(k_same == 0.4 and outcome2 == "discarded" and reason2 == "window_open", "discard leaves k alone")
+		local before = K(0, 0.4)
+		local k_same, outcome2, reason2 = o.close(windowed, before)
+		assert(k_same == before and outcome2 == "discarded" and reason2 == "window_open", "discard leaves k alone")
 
-		-- A rise too small to teach anything still gets its (tiny) correction.
-		local tiny = o.open(21, 20.9, 0.4, false, 0)
-		assert(tiny ~= nil and tiny.offset > 0, "tiny episode still corrects")
-		o.step(tiny, 21, 60)
-		o.step(tiny, 21.4, 60 + o.COAST_SECONDS)
-		ok, why = o.valid(tiny)
-		assert(ok == false and why == "rise_too_small", "tiny rise teaches nothing, got "..tostring(why))
+		-- The relay is what says a run happened. An episode that never saw
+		-- hvac_action = heating — a nudge inside the deadband, the room drifting
+		-- up on its own — has no stored energy to teach from.
+		local unfired = o.open(21, 20.8, K(0, 0.4), false, 0, { heating = false })
+		o.step(unfired, 21, 60, { heating = false })
+		o.step(unfired, 21.3, 60 + o.COAST_SECONDS, { heating = false })
+		ok, why = o.valid(unfired)
+		assert(ok == false and why == "never_heated", "relay never closed, got "..tostring(why))
+		-- Seen on once is enough, and it sticks through the idle coast.
+		local fired = o.open(21, 20.8, K(0, 0.4), false, 0, { heating = true })
+		o.step(fired, 20.9, 30, { heating = true })
+		o.step(fired, 21, 60, { heating = false })
+		o.step(fired, 21.3, 60 + o.COAST_SECONDS, { heating = false })
+		assert(o.valid(fired) == true, "a run that fired is learnable")
+		-- A device that reports no hvac_action is not gated: unknown is not off.
+		local mute = o.open(21, 20.8, K(0, 0.4), false, 0, {})
+		o.step(mute, 21, 60, {})
+		o.step(mute, 21.3, 60 + o.COAST_SECONDS, {})
+		assert(o.valid(mute) == true, "no hvac_action -> not gated")
 
 		-- An episode that never reaches its setpoint is abandoned rather than
 		-- left open forever learning nothing.
-		local stuck = o.open(21, 18, 0, false, 0)
+		local stuck = o.open(21, 18, K(0, 0), false, 0)
 		assert(o.step(stuck, 18.5, 3600) == "heating", "still trying")
 		assert(o.step(stuck, 18.6, o.MAX_EPISODE_SECONDS) == "done", "given up")
 		ok, why = o.valid(stuck)
 		assert(ok == false and why == "never_reached", "never_reached, got "..tostring(why))
 
 		-- record carries both the decision and the outcome.
-		local row = o.record(ep, "childrens", 0.4, k_after, "learned", nil, 9999)
+		local row = o.record(ep, "childrens", K(0.5, 0.4), k_after, "learned", nil, 9999)
 		assert(row.zone == "childrens" and row.closed_at == 9999, "record identity")
-		assert(row.k_before == 0.4 and row.k_after == k_after, "record k")
+		assert(row.k_before.base == 0.5 and row.k_before.slope == 0.4 and row.k_after == k_after, "record k")
 		assert(math.abs(row.error - (20.6 - 21)) < 1e-9, "record error")
 		assert(row.outcome == "learned" and row.reason == nil, "record outcome")
 	`)
@@ -752,8 +793,8 @@ func TestThermostatAPI(t *testing.T) {
 		t.Fatalf("GET /api/overshoot status %d body %q", rec.Code, rec.Body.String())
 	}
 	learner := decode(rec)
-	if learner["k"] != float64(0) {
-		t.Errorf("k = %v, want 0 (K_INIT)", learner["k"])
+	if k, _ := learner["k"].(map[string]any); k["base"] != float64(0) || k["slope"] != float64(0) {
+		t.Errorf("k = %v, want {base 0, slope 0} (nothing learned)", learner["k"])
 	}
 	if learner["observe_only"] != true {
 		t.Errorf("observe_only = %v, want true — it ships watching", learner["observe_only"])
@@ -776,7 +817,7 @@ func TestThermostatAPI(t *testing.T) {
 	}
 
 	// Reset restores the untrained state, flag included.
-	if err := kv.Set(context.Background(), "overshoot_k:bedroom", 0.5); err != nil {
+	if err := kv.Set(context.Background(), "overshoot_k:bedroom", map[string]any{"base": 0.5, "slope": 0.2}); err != nil {
 		t.Fatal(err)
 	}
 	rec = doReqID(router, "thermostat", "POST", "/api/overshoot/reset", `{"zone":"bedroom"}`)
@@ -785,8 +826,8 @@ func TestThermostatAPI(t *testing.T) {
 	}
 	zones, _ = decode(rec)["zones"].(map[string]any)
 	bedroom, _ = zones["bedroom"].(map[string]any)
-	if bedroom["k"] != float64(0) || bedroom["samples"] != float64(0) {
-		t.Errorf("after reset k/samples = %v/%v, want 0/0", bedroom["k"], bedroom["samples"])
+	if k, _ := bedroom["k"].(map[string]any); k["base"] != float64(0) || k["slope"] != float64(0) || bedroom["samples"] != float64(0) {
+		t.Errorf("after reset k/samples = %v/%v, want zero/0", bedroom["k"], bedroom["samples"])
 	}
 
 	// GET / serves the self-contained UI page.
@@ -1056,14 +1097,14 @@ func TestThermostatOpensOvershootEpisode(t *testing.T) {
 func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
 	stale := map[string]any{
 		"opened_at": 1000, "requested": 21.0, "current_at_open": 18.0,
-		"rise": 3.0, "k_used": 0.4, "offset": 1.2, "commanded": 19.8,
+		"rise": 3.0, "k_used": map[string]any{"base": 0.0, "slope": 0.4}, "offset": 1.2, "commanded": 19.8,
 		"applied": 19.8, "observe_only": false, "peak": 19.9, "peak_at": 1200,
 	}
 	_, kv, _, _ := startThermostat(t, func(ctx context.Context, kv *store.Store) {
 		if err := kv.Set(ctx, "overshoot_episode:bedroom", stale); err != nil {
 			t.Fatal(err)
 		}
-		if err := kv.Set(ctx, "overshoot_k:bedroom", 0.4); err != nil {
+		if err := kv.Set(ctx, "overshoot_k:bedroom", map[string]any{"base": 0.0, "slope": 0.4}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -1087,7 +1128,9 @@ func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
 	if row["outcome"] != "discarded" || row["reason"] != "restart" {
 		t.Errorf("outcome/reason = %v/%v, want discarded/restart", row["outcome"], row["reason"])
 	}
-	if row["k_before"] != float64(0.4) || row["k_after"] != float64(0.4) {
+	before, _ := row["k_before"].(map[string]any)
+	after, _ := row["k_after"].(map[string]any)
+	if before["slope"] != float64(0.4) || after["slope"] != float64(0.4) || after["base"] != float64(0) {
 		t.Errorf("k moved on a discarded episode: %v -> %v", row["k_before"], row["k_after"])
 	}
 

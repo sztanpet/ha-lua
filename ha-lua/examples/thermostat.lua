@@ -142,14 +142,18 @@ local function observe_key(zone) return "overshoot_observe:" .. zone end
 
 local JOURNAL_MAX = 50
 
+-- The learned {base, slope}; anything else stored under the key (including the
+-- single number the first version kept) reads as nothing learned.
 local function learned_k(zone)
   local value = store.get(k_key(zone))
-  if type(value) == "number" then return value end
-  return overshoot.K_INIT
+  if type(value) == "table" and type(value.base) == "number" and type(value.slope) == "number" then
+    return { base = value.base, slope = value.slope }
+  end
+  return overshoot.k_init()
 end
 
--- How many episodes k was learned from: "1.2° low" alone says nothing about
--- whether to trust it.
+-- How many episodes the coefficients were learned from: "1.2° low" alone says
+-- nothing about whether to trust it.
 local function learned_samples(zone)
   local value = store.get(samples_key(zone))
   if type(value) == "number" then return value end
@@ -176,9 +180,15 @@ local function journal(zone, record)
   store.set(journal_key(zone), rows)
 end
 
+-- What the episode ran under. Only the relay here: zones carry no radiator or
+-- outdoor sensor config, unlike the enhanced climates.
+local function env_snapshot(zone)
+  return { heating = climate.heating(entity_of(zone)) }
+end
+
 local function open_episode(zone, requested, current, at)
   local watching = observe_only(zone)
-  local episode = overshoot.open(requested, current, learned_k(zone), watching, at)
+  local episode = overshoot.open(requested, current, learned_k(zone), watching, at, env_snapshot(zone))
   if episode == nil then return nil end
   -- An unclamped command HA drops would leave the episode waiting for a cutoff
   -- that cannot arrive.
@@ -187,9 +197,9 @@ local function open_episode(zone, requested, current, at)
   episode.applied = control.clamp_bounds(episode.applied, lo, hi)
   store.set(episode_key(zone), episode)
   ha.log("info", string.format(
-    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f k=%.3f offset=%.2f commanded=%.1f%s",
-    zone, requested, current, episode.rise, episode.k_used, episode.offset,
-    episode.commanded, watching and " (observe-only)" or ""))
+    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f base=%.2f slope=%.2f offset=%.2f commanded=%.1f%s",
+    zone, requested, current, episode.rise, episode.k_used.base, episode.k_used.slope,
+    episode.offset, episode.commanded, watching and " (observe-only)" or ""))
   return episode
 end
 
@@ -206,9 +216,9 @@ local function close_episode(zone, episode, at)
     store.set(k_key(zone), k_after)
     store.set(samples_key(zone), learned_samples(zone) + 1)
     ha.log("info", string.format(
-      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f k %.3f -> %.3f",
-      zone, outcome, episode.peak, episode.requested,
-      episode.peak - episode.requested, k_before, k_after))
+      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f base %.2f -> %.2f slope %.2f -> %.2f",
+      zone, outcome, episode.peak, episode.requested, episode.peak - episode.requested,
+      k_before.base, k_after.base, k_before.slope, k_after.slope))
   end
   journal(zone, overshoot.record(episode, zone, k_before, k_after, outcome, reason, at))
   store.delete(episode_key(zone))
@@ -234,7 +244,7 @@ local function overshoot_step(zone, now, requested, previous)
     if not heating then overshoot.invalidate(episode, "mode_left_heat") end
     if window then overshoot.invalidate(episode, "window_open") end
     local phase = "heating"
-    if current ~= nil then phase = overshoot.step(episode, current, at) end
+    if current ~= nil then phase = overshoot.step(episode, current, at, env_snapshot(zone)) end
     if episode.invalid ~= nil or phase == "done" then
       close_episode(zone, episode, at)
       episode = nil
