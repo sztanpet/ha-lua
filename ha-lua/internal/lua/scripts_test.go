@@ -980,6 +980,17 @@ func climateChangeInRoom(entity string, oldT, newT, room float64) ha.Event {
 		entity, oldT, room, newT, room))}
 }
 
+// relayClosed is the device reporting its relay switching on inside a hold:
+// the setpoint and the room are unchanged, only hvac_action moves. Unlike the
+// dispatch-only helpers above it carries entity_id inside new_state, because
+// the tracker keys the mirror on that and this event is applied to it too.
+func relayClosed(entity string, target, room float64) ha.Event {
+	return ha.Event{Type: "state_changed", Data: jsontext.Value(fmt.Sprintf(
+		`{"entity_id":%[1]q,"old_state":{"entity_id":%[1]q,"state":"heat","attributes":{"temperature":%[2]v,"current_temperature":%[3]v,"hvac_action":"idle"}},`+
+			`"new_state":{"entity_id":%[1]q,"state":"heat","attributes":{"temperature":%[2]v,"current_temperature":%[3]v,"hvac_action":"heating"}}}`,
+		entity, target, room))}
+}
+
 func manualTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
 	t.Helper()
 	v, err := kv.Get(context.Background(), "manual:"+zone)
@@ -1087,6 +1098,62 @@ func TestThermostatOpensOvershootEpisode(t *testing.T) {
 		return
 	}
 	t.Fatal("no overshoot episode was opened")
+}
+
+// TestThermostatOpensEpisodeOnHeating: the second trigger of spec §5. A hold
+// whose request never moves still opens an episode when the relay closes —
+// the hold is seeded, desired and written agree with the dial so nothing reads
+// as manual, and the only thing that changes is hvac_action.
+func TestThermostatOpensEpisodeOnHeating(t *testing.T) {
+	reg, kv, global, tracker := startThermostat(t, func(ctx context.Context, kv *store.Store) {
+		if err := kv.Set(ctx, "manual:bedroom", map[string]any{
+			"temp": 21.0, "expires": time.Now().Add(6 * time.Hour).Format(time.RFC3339),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	ctx := context.Background()
+
+	if err := tracker.Seed(ctx, []ha.StateData{
+		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":21,"current_temperature":20.6,"hvac_action":"idle"}`)},
+		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = global.Set(ctx, "thermostat:desired:bedroom", 21.0)
+	_ = global.Set(ctx, "thermostat:written:bedroom", 21.0)
+
+	// Applied to the mirror BEFORE the dispatch, as main.go orders it: the
+	// trigger reads hvac_action off the mirror, not off the event.
+	ev := relayClosed("climate.bedroom", 21, 20.6)
+	if err := tracker.HandleStateChanged(ctx, ev.Data); err != nil {
+		t.Fatal(err)
+	}
+	reg.Dispatch(ev)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		v, err := kv.Get(ctx, "overshoot_episode:bedroom")
+		if err != nil {
+			t.Fatal(err)
+		}
+		episode, ok := v.(map[string]any)
+		if !ok {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		if episode["requested"] != float64(21) {
+			t.Errorf("requested = %v, want 21", episode["requested"])
+		}
+		if rise, _ := episode["rise"].(float64); rise < 0.39 || rise > 0.41 {
+			t.Errorf("rise = %v, want 0.4 (the deadband)", episode["rise"])
+		}
+		if episode["heated"] != true {
+			t.Errorf("heated = %v, want true from the open", episode["heated"])
+		}
+		return
+	}
+	t.Fatal("the relay closing opened no episode")
 }
 
 // TestThermostatAbandonsEpisodeOnRestart: an episode still in flight when the

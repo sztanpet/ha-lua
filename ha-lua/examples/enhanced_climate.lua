@@ -340,9 +340,11 @@ end
 -- Advances the climate's episode by one observation and returns the setpoint to
 -- command, which is the request whenever no episode is running.
 --
--- An episode opens when the REQUEST CHANGES to something above the room, not
--- merely whenever the room sits below the setpoint — which is true on every tick
--- of a normal hold and would open an episode a minute.
+-- An episode opens on either trigger of spec §5: the REQUEST CHANGES to
+-- something above the room (a warmup from setback), or the relay is on with no
+-- episode running (a hold's own heating cycle, whose request never moves). Not
+-- merely whenever the room sits below the setpoint, which is true on every tick
+-- of a hold and would open an episode a minute.
 local function overshoot_step(climate, now, requested, previous)
   local at = now:unix()
   local current = current_temp(climate)
@@ -350,6 +352,7 @@ local function overshoot_step(climate, now, requested, previous)
   local window = window_open(climate)
   local requested_changed = requested ~= previous
   local env = env_snapshot(climate)
+  local relay_on = env.heating == true
 
   local episode = live_episode(climate)
 
@@ -372,7 +375,7 @@ local function overshoot_step(climate, now, requested, previous)
     end
   end
 
-  if episode == nil and requested_changed and heating and not window and current ~= nil then
+  if episode == nil and (requested_changed or relay_on) and heating and not window and current ~= nil then
     episode = open_episode(climate, requested, current, at, env)
   end
 
@@ -544,23 +547,18 @@ ha.every("1m", tick)
 -- them.
 -- ---------------------------------------------------------------------------
 
-ha.on_state_change("climate.*", function(data)
-  local climate_entity = data.entity_id
-  if not is_registered(climate_entity) then return end
-  local new_state = data.new_state
-  if new_state == nil or new_state.attributes == nil then return end
-  if new_state.state ~= "heat" then return end
+-- Judges a climate state change as the user at the dial and records the hold.
+-- Returns whether it did.
+local function manual_change(climate_entity, new_state, now, dow, minute)
   local target = new_state.attributes.temperature
-  if type(target) ~= "number" then return end
-
-  local now, dow, minute = now_parts()
-  if active_override(climate_entity, now) then return end -- override wins; ignore nudges
+  if type(target) ~= "number" then return false end
+  if active_override(climate_entity, now) then return false end -- override wins; ignore nudges
   -- A window open (or not yet seeded) means we may have written the frost
   -- setpoint, which must not be mistaken for a user dial change.
-  if window_open(climate_entity) or window_unknown(climate_entity) then return end
+  if window_open(climate_entity) or window_unknown(climate_entity) then return false end
 
   local last_written = store.get(written_key(climate_entity))
-  if not control.is_manual(target, last_written) then return end
+  if not control.is_manual(target, last_written) then return false end
 
   local _, _, mins_to_next = schedule.resolve(load_schedule(climate_entity), dow, minute)
   local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
@@ -569,7 +567,30 @@ ha.on_state_change("climate.*", function(data)
     expires = now:add(hold):format(time.RFC3339),
   })
   ha.log("info", "manual change on " .. climate_entity .. " -> " .. tostring(target) .. "° (held to next transition)")
-  apply_climate(climate_entity, now, dow, minute) -- republish the new desired immediately
+  return true
+end
+
+ha.on_state_change("climate.*", function(data)
+  local climate_entity = data.entity_id
+  if not is_registered(climate_entity) then return end
+  local new_state = data.new_state
+  if new_state == nil or new_state.attributes == nil then return end
+  if new_state.state ~= "heat" then return end
+  local now, dow, minute = now_parts()
+
+  -- The dial is judged BEFORE anything writes: re-applying below can change the
+  -- setpoint, and that write would read as a dial change against the target
+  -- this very event carries.
+  local held = manual_change(climate_entity, new_state, now, dow, minute)
+  -- The relay closing opens a cycle's episode (overshoot-spec.md §5). The tick
+  -- would see it up to a minute later, but the offset is latched at the open
+  -- and the cut can only be as early as that.
+  local old_attrs = data.old_state and data.old_state.attributes or {}
+  local relay_closed = new_state.attributes.hvac_action == "heating"
+    and old_attrs.hvac_action ~= "heating"
+  if held or relay_closed then
+    apply_climate(climate_entity, now, dow, minute) -- republish at once
+  end
 end)
 
 -- A bound window opening or closing re-applies its climate within seconds rather

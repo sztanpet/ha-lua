@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -258,6 +259,20 @@ func (f *enhancedFixture) seedClimate(entity, attrs string) {
 	}
 }
 
+// pushClimate is seedClimate plus the dispatch: the mirror is applied first and
+// the script then sees the event, in production's order. old is the previous
+// attribute JSON, since a handler judging a transition needs both sides.
+func (f *enhancedFixture) pushClimate(entity, old, attrs string) {
+	f.t.Helper()
+	payload := jsontext.Value(`{"entity_id":"` + entity + `","old_state":{"entity_id":"` + entity +
+		`","state":"heat","attributes":` + old + `},"new_state":{"entity_id":"` + entity +
+		`","state":"heat","attributes":` + attrs + `}}`)
+	if err := f.tracker.HandleStateChanged(f.ctx, payload); err != nil {
+		f.t.Fatal(err)
+	}
+	f.reg.Dispatch(ha.Event{Type: "state_changed", Data: payload})
+}
+
 // setWindow upserts a binary sensor state into the mirror and dispatches its
 // state-change event, exactly as a real window opening/closing would arrive.
 func (f *enhancedFixture) setWindow(sensor, st string) {
@@ -393,6 +408,65 @@ func (f *enhancedFixture) waitJournal(climate string, n int, desc string) []map[
 	f.t.Fatalf("timeout waiting for %d journal row(s) for %s (%s); got %+v",
 		n, climate, desc, f.overshootJournal(climate))
 	return nil
+}
+
+// waitEpisode polls for a live overshoot episode on the climate.
+func (f *enhancedFixture) waitEpisode(climate, desc string) map[string]any {
+	f.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if ep := f.storeMap("overshoot_episode:" + climate); ep != nil {
+			return ep
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.t.Fatalf("timeout waiting for an episode on %s (%s)", climate, desc)
+	return nil
+}
+
+// TestEnhancedClimateOvershootOpensOnHeating pins the second trigger of spec
+// §5: a hold whose request never moves still opens an episode when the device
+// reports its relay closing. This is the case the children's room lives in —
+// no schedule, one temperature all day, overheating on every cycle — and the
+// one the first version could not see at all, because it only watched the
+// request.
+func TestEnhancedClimateOvershootOpensOnHeating(t *testing.T) {
+	f := newEnhancedFixture(t)
+	// The room sits ABOVE the request, so establishing the hold opens nothing:
+	// the request changed, but there is nothing to climb.
+	f.seedClimate("climate.lr", `{"current_temperature":21.4,"temperature":21,"min_temp":7,"max_temp":35,"hvac_action":"idle"}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.8, "slope": 0.0})
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		return attrs["controlled"] == true
+	}, "the hold is established")
+	time.Sleep(100 * time.Millisecond)
+	if ep := f.storeMap("overshoot_episode:climate.lr"); ep != nil {
+		t.Fatalf("an episode opened with the room above the request: %+v", ep)
+	}
+
+	// The room drifts under the deadband and the relay closes. The request is
+	// still 21 — nothing about it changed — and that alone must open the episode.
+	f.pushClimate("climate.lr",
+		`{"current_temperature":20.6,"temperature":21,"min_temp":7,"max_temp":35,"hvac_action":"idle"}`,
+		`{"current_temperature":20.6,"temperature":21,"min_temp":7,"max_temp":35,"hvac_action":"heating"}`)
+	ep := f.waitEpisode("climate.lr", "the relay closing opens a cycle's episode")
+	if rise, _ := ep["rise"].(float64); math.Abs(rise-0.4) > 1e-9 {
+		t.Errorf("rise = %v, want 0.4 (the deadband)", ep["rise"])
+	}
+	// The floor is what a cycle gets: base 0.8 on a 0.4 rise is a cut of 0.8.
+	if commanded, _ := ep["commanded"].(float64); math.Abs(commanded-20.2) > 1e-9 {
+		t.Errorf("commanded = %v, want 20.2 (request minus the floor)", ep["commanded"])
+	}
+	if ep["applied"] != 21.0 {
+		t.Errorf("applied = %v, want 21: observe-only still writes the request", ep["applied"])
+	}
+	// The relay that opened it is on record from the open, so a cycle that cuts
+	// off before the first tick cannot be discarded as never having heated.
+	if ep["heated"] != true {
+		t.Errorf("heated = %v at the open, want true", ep["heated"])
+	}
 }
 
 // TestEnhancedClimateConfigure drives the configure/remove command handlers:

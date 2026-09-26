@@ -43,6 +43,18 @@ local function clamp(value, lo, hi)
   return value
 end
 
+-- Remembers the relay as `heated` once seen on. Only an explicit false sets
+-- false, and only while nothing better is known: a device with no hvac_action
+-- leaves it nil, and unknown is not "off".
+local function note_heating(episode, env)
+  if env == nil then return end
+  if env.heating == true then
+    episode.heated = true
+  elseif env.heating == false and episode.heated == nil then
+    episode.heated = false
+  end
+end
+
 -- Zero: having learned nothing, the correction must behave exactly as the
 -- uncorrected controller did. A fresh table each time, since callers keep it.
 function M.k_init()
@@ -94,6 +106,9 @@ function M.open(requested, current, k, observe_only, at, env)
     episode.outdoor_at_open = env.outdoor
     episode.radiator_at_open = env.radiator
   end
+  -- Noted at the open too: an armed cycle can cut off before the first step, and
+  -- the relay that opened it must not be forgotten by then.
+  note_heating(episode, env)
   return episode
 end
 
@@ -121,11 +136,7 @@ end
 -- never closed has no stored energy to teach from.
 function M.step(episode, current, at, env)
   local radiator = env and env.radiator or nil
-  if env and env.heating == true then
-    episode.heated = true
-  elseif env and env.heating == false and episode.heated == nil then
-    episode.heated = false
-  end
+  note_heating(episode, env)
   if current > episode.peak then
     episode.peak, episode.peak_at = current, at
     episode.radiator_at_peak = radiator

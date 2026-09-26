@@ -227,15 +227,18 @@ end
 -- Advances the zone's episode by one observation and returns the setpoint to
 -- command, which is the request whenever no episode is running.
 --
--- An episode opens when the REQUEST CHANGES to something above the room, not
--- merely whenever the room sits below the setpoint — which is true on every tick
--- of a normal hold and would open an episode a minute.
+-- An episode opens on either trigger of spec §5: the REQUEST CHANGES to
+-- something above the room (a warmup from setback), or the relay is on with no
+-- episode running (a hold's own heating cycle, whose request never moves). Not
+-- merely whenever the room sits below the setpoint, which is true on every tick
+-- of a hold and would open an episode a minute.
 local function overshoot_step(zone, now, requested, previous)
   local at = now:unix()
   local current = current_temp(zone)
   local heating = mode(zone) == "heat"
   local window = any_window_open(zone)
   local requested_changed = requested ~= previous
+  local relay_on = env_snapshot(zone).heating == true
 
   local episode = live_episode(zone)
 
@@ -253,7 +256,7 @@ local function overshoot_step(zone, now, requested, previous)
     end
   end
 
-  if episode == nil and requested_changed and heating and not window and current ~= nil then
+  if episode == nil and (requested_changed or relay_on) and heating and not window and current ~= nil then
     episode = open_episode(zone, requested, current, at)
   end
 
@@ -297,29 +300,47 @@ ha.every("1m", tick)
 -- writes the setpoint, and always writes what it published as `written`, so a
 -- target differing from that is the user at the dial. It becomes an ad-hoc
 -- manual hold lasting until the next schedule transition.
+-- Judges a climate state change as the user at the dial and records the hold.
+-- Returns whether it did.
+local function manual_change(zone, new_state, now, dow, minute)
+  local target = new_state.attributes.temperature
+  if type(target) ~= "number" then return false end
+  if active_override(zone, now) then return false end -- an override outranks the dial
+  -- Window open or unseeded: the window script's frost territory.
+  if any_window_open(zone) or any_window_unknown(zone) then return false end
+
+  local published = global.get(zones.written_key(zone))
+  if not control.is_manual(target, published) then return false end
+
+  local _, _, mins_to_next = schedule.resolve(load_schedule(zone), dow, minute)
+  local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
+  store.set(manual_key(zone), {
+    temp = target,
+    expires = now:add(hold):format(time.RFC3339),
+  })
+  return true
+end
+
 for zone, conf in pairs(zone_defs) do
   ha.on_state_change(conf.climate, function(data)
     local new_state = data.new_state
     if new_state == nil or new_state.attributes == nil then return end
     if new_state.state ~= "heat" then return end
-    local target = new_state.attributes.temperature
-    if type(target) ~= "number" then return end
-
     local now, dow, minute = now_parts()
-    if active_override(zone, now) then return end -- an override outranks the dial
-    -- Window open or unseeded: the window script's frost territory.
-    if any_window_open(zone) or any_window_unknown(zone) then return end
 
-    local published = global.get(zones.written_key(zone))
-    if not control.is_manual(target, published) then return end
-
-    local _, _, mins_to_next = schedule.resolve(load_schedule(zone), dow, minute)
-    local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
-    store.set(manual_key(zone), {
-      temp = target,
-      expires = now:add(hold):format(time.RFC3339),
-    })
-    apply_zone(zone, now, dow, minute) -- republish the new desired immediately
+    -- The dial is judged BEFORE anything writes: re-applying below can change
+    -- the setpoint, and that write would read as a dial change against the
+    -- target this very event carries.
+    local held = manual_change(zone, new_state, now, dow, minute)
+    -- The relay closing opens a cycle's episode (overshoot-spec.md §5). The
+    -- tick would see it up to a minute later, but the offset is latched at the
+    -- open and the cut can only be as early as that.
+    local old_attrs = data.old_state and data.old_state.attributes or {}
+    local relay_closed = new_state.attributes.hvac_action == "heating"
+      and old_attrs.hvac_action ~= "heating"
+    if held or relay_closed then
+      apply_zone(zone, now, dow, minute) -- republish at once
+    end
   end)
 end
 
