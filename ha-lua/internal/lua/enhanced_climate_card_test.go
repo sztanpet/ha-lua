@@ -144,8 +144,11 @@ func TestEnhancedClimateCard(t *testing.T) {
 	if !strings.Contains(clock12, "AM") {
 		t.Errorf("formatClock 12h = %q, want an AM time", clock12)
 	}
-	if target != "20" {
-		t.Errorf("target value = %q, want 20", target)
+	// The stepper shows the REQUEST (the companion's state, 21), not the setpoint
+	// on the device (20). The two differ while the overshoot correction cuts a
+	// warmup short, and the request is what the user asked for.
+	if target != "21" {
+		t.Errorf("target value = %q, want 21 (the request, not the device setpoint)", target)
 	}
 	if firstPreset != "10m" {
 		t.Errorf("first preset = %q, want 10m (no + sign)", firstPreset)
@@ -255,19 +258,23 @@ func TestEnhancedClimateCard(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"domain":"climate"`, `"service":"set_temperature"`, `"temperature":20.5`} {
+	// Stepping up from the request (21), not from the device setpoint: nudging
+	// from a corrected 20.5 would land inside the manual-detection tolerance and
+	// the tap would appear to do nothing.
+	for _, want := range []string{`"domain":"climate"`, `"service":"set_temperature"`, `"temperature":21.5`} {
 		if !strings.Contains(serviceCalls, want) {
 			t.Errorf("target + did not call %s; service calls = %s", want, serviceCalls)
 		}
 	}
 	// Optimism-free: the spy did not update hass, so the field still shows the
-	// server value (20), not an optimistic 20.5.
-	if target != "20" {
-		t.Errorf("target value after click = %q, want 20 (optimism-free)", target)
+	// server value (21), not an optimistic 21.5.
+	if target != "21" {
+		t.Errorf("target value after click = %q, want 21 (optimism-free)", target)
 	}
 
-	// Reconcile from a fresh hass: the target follows the new server value.
-	reconciled := strings.Replace(cardStates, `"temperature": 20`, `"temperature": 22`, 1)
+	// Reconcile from a fresh hass: the target follows the new REQUEST, which is
+	// the companion's state.
+	reconciled := strings.Replace(cardStates, `"state": "21"`, `"state": "22"`, 1)
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__apply("en", `+reconciled+`)`, &ok),
 		chromedp.Poll(`window.__val(".stepper .value") === "22"`, &ok),

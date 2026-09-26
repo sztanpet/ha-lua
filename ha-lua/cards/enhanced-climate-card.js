@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.33";
+const VERSION = "0.3.34";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -786,9 +786,20 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // Every temperature input steps by the device's target_temp_step, falling
     // back to 0.1 when the device advertises none.
     const tempStep = Number(attrs.target_temp_step) || 0.1;
+    // The stepper edits the REQUEST, not the setpoint on the device. While the
+    // overshoot correction cuts a warmup short the device carries
+    // `requested - offset`, so showing attrs.temperature here would display 19.8
+    // where the user set 21 — and a nudge from 19.8 lands inside the
+    // manual-detection tolerance, so the tap would appear to do nothing at all
+    // and the next tick would put 19.8 back. The companion's state is the
+    // request; it is only absent while nothing controls this climate, and then
+    // the device setpoint IS the request.
+    const requested = companionAttrs && companionAttrs.controlled
+      ? Number(companion.state)
+      : Number(attrs.temperature);
     const target = this._stepperControl(translate, {
       label: translate("target"),
-      value: attrs.temperature,
+      value: Number.isFinite(requested) ? requested : attrs.temperature,
       lo: Number(attrs.min_temp),
       hi: Number(attrs.max_temp),
       step: tempStep,
