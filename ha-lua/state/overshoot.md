@@ -276,8 +276,17 @@ governs the leak rate during the coast) is second-order — unless the boiler ru
 weather compensation, which would correlate them. The journal will show it.
 
 ## Released
-v4.11.0 (`c0d46a8`, tagged, 2026-09-26) carries the whole port. What shipped is
-in `CHANGELOG.md`; not repeated here.
+v4.11.0 (`c0d46a8`) carries the whole port; v4.12.0 (`655335a`) adds the coast
+decay curve. What shipped is in `CHANGELOG.md`; not repeated here.
+
+The decay work answers the user's 2026-09-26 question about measuring heat-up
+and cool-down. Cool-down got the work because it IS the overshoot mechanism —
+the heat landing in the room after the cutoff is the integral of that curve.
+Heat-up needed no new storage: `opened_at`, `cutoff_at` and the two radiator
+readings already bracket it. A HALF-LIFE, not a fitted time constant: no
+regression, survives a missing sample, and does not pretend a slow valve decays
+cleanly. nil when the lead never halved in the coast, because that is the
+finding rather than something to paper over.
 
 ## Pending
 - **Deploy.** The scripts on the box are hand-copied into
