@@ -52,7 +52,7 @@ const cardStates = `{
     "attributes": { "controlled": true, "override": { "active": false }, "override_temp": 23,
       "manual": { "active": false }, "window": { "sensors": ["binary_sensor.w1"], "open": false },
       "presets": [10, 30, 60], "min_temp": 7, "max_temp": 30, "schedule": {},
-      "commanded": 20, "overshoot": { "k": 0.4, "samples": 6, "offset": 1.2, "observe_only": true } } }
+      "commanded": 20, "overshoot": { "k": { "base": 0.8, "slope": 0.15 }, "samples": 6, "offset": 1.2, "observe_only": true } } }
 }`
 
 func serveEnhancedCard(t *testing.T) *httptest.Server {
@@ -495,7 +495,7 @@ func TestEnhancedClimateCardOvershootDisclosure(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Commanded 20° for a request of 21°", "coefficient 0.4, learned over 6 episode(s)", "Observing only"} {
+	for _, want := range []string{"Commanded 20° for a request of 21°", "cuts 0.8° plus 0.15° per degree of rise, learned over 6 episode(s)", "Observing only"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("panel missing %q; panel = %q", want, note)
 		}

@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.38";
+const VERSION = "0.3.39";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -93,7 +93,7 @@ const MESSAGES = {
     "overshoot.idle": "overshoot idle",
     "overshoot.title": "Overshoot correction",
     "overshoot.commanded": "Commanded {temp}° for a request of {requested}°",
-    "overshoot.learned": "coefficient {k}, learned over {samples} episode(s)",
+    "overshoot.learned": "cuts {base}° plus {slope}° per degree of rise, learned over {samples} episode(s)",
     "overshoot.unlearned": "nothing learned yet, so no correction is applied",
     "overshoot.observing": "Observing only — the heating is not being changed.",
     "overshoot.acting": "Active — warmups are being cut short.",
@@ -160,7 +160,7 @@ const MESSAGES = {
     "overshoot.idle": "túlfutás-korrekció tétlen",
     "overshoot.title": "Túlfutás-korrekció",
     "overshoot.commanded": "{requested}° kérésre {temp}°-ot vezérel",
-    "overshoot.learned": "együttható {k}, {samples} fűtésből tanulva",
+    "overshoot.learned": "{base}°-kal plusz felfűtési fokonként {slope}°-kal korábban áll le, {samples} fűtésből tanulva",
     "overshoot.unlearned": "még nincs mit tanulni, ezért nincs korrekció",
     "overshoot.observing": "Csak megfigyel — a fűtést nem változtatja.",
     "overshoot.acting": "Aktív — a felfűtéseket korábban állítja le.",
@@ -1097,9 +1097,13 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       note.append(h("div", { class: "row" },
         translate("overshoot.commanded", { temp: commanded, requested: requested })));
     }
+    // {base, slope}: the floor every run gets, plus the part per degree of rise
+    // that a long warmup adds.
+    const coeff = overshoot.k && typeof overshoot.k === "object" ? overshoot.k : {};
     note.append(h("div", { class: "row" }, samples > 0
       ? translate("overshoot.learned", {
-        k: Math.round((Number(overshoot.k) || 0) * 1000) / 1000,
+        base: Math.round((Number(coeff.base) || 0) * 100) / 100,
+        slope: Math.round((Number(coeff.slope) || 0) * 100) / 100,
         samples: samples,
       })
       : translate("overshoot.unlearned")));
