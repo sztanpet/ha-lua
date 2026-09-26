@@ -10,10 +10,18 @@ the code and this document disagreed, the document was corrected: the notes
 saying so are kept deliberately, since each marks something that was got wrong
 on paper first.
 
+**Revised 2026-09-26** after the first evening of real data: the children's
+room has no schedule. It is held at one temperature all day and overheats on
+its own heating *cycles*, which the original trigger (§5, "the request rises
+above the room") could not see at all — the request never moves during a hold.
+An episode now also opens when the relay closes, and the offset gained a floor
+term for exactly those cycles. §2, §4.2, §5 and §6 carry the change.
+
 ## 1. Goal
 
-Stop small rooms from sailing past their setpoint on a scheduled warmup,
-**without slowing the warmup down**.
+Stop small rooms from sailing past their setpoint on a warmup — a scheduled one
+from setback, or a hold's own heating cycle — **without slowing the warmup
+down**.
 
 The motivating case is the children's room: an ESPHome node with a separate
 room sensor, `climate: platform: thermostat` (bang-bang), driving a relay into
@@ -25,9 +33,11 @@ climbing 1–2 °C.
 - **Not a replacement for the ESP's controller.** The node keeps
   `platform: thermostat` and keeps regulating against its own room sensor. All
   ha-lua does is choose the number it regulates *to*.
-- **Not a swing/amplitude fix.** This targets the peak on a warmup from
-  setback, not the size of the steady-state cycle. Cycle amplitude is set by
-  `heat_deadband` on the node and is a separate, cheaper lever.
+- **Not a swing/amplitude fix.** How far the room is allowed to fall *below*
+  the setpoint before the relay closes is `heat_deadband` on the node, and a
+  separate, cheaper lever. How far it sails *above* the setpoint once the relay
+  opens again is this feature's whole subject, on a cycle as much as on a
+  warmup from setback (revised: the first draft excluded cycles, see §4.2).
 - **No new hardware, no new HA integration.** The interface stays
   `climate.set_temperature` on a climate entity.
 - **No outdoor-temperature model, no weather compensation.** The learner
@@ -78,16 +88,24 @@ close to identical every night — same room, same radiator, same schedule. PID
 discards that repeatability and re-derives the answer every cycle. Exploiting
 it instead is both simpler and faster.
 
-### 4.2 A flat learned offset (command `requested − offset`)
+### 4.2 A flat learned offset, applied permanently
 
-Fails in steady state. The offset lowers the commanded setpoint *permanently*,
-so once the room is warm it holds around `requested − offset` rather than
+Fails in steady state. A *permanent* offset lowers the commanded setpoint for
+good, so once the room is warm it holds around `requested − offset` rather than
 `requested` — the room ends up simply too cold, all day, by exactly the amount
-we cut. The big overshoot only ever happens on the **first long run from
-setback**; short top-ups barely warm the radiator and barely overshoot. A
-correction that does not distinguish the two regimes is wrong for one of them.
-§5 makes the offset proportional to the rise being attempted, which collapses
-to ~zero for a top-up.
+we cut. That objection stands, and it is why the offset is only ever applied
+for the duration of an episode (§5): the command returns to `requested` when
+the coast ends.
+
+The first draft went further and claimed the big overshoot only happens on the
+**first long run from setback**, short top-ups barely warming the radiator, so
+a purely rise-proportional offset would do. **That premise was wrong.** The
+children's room has no schedule; every run it makes is a "top-up" from the
+deadband, and it overheats on every one of them. A relay that is on for ten
+minutes brings the radiator to full temperature whether the room needed 0.3 °
+or 3 °, and the stored energy it then dumps is much the same. The overshoot has
+a floor that does not scale with the rise — so the offset has one too (§5),
+learned per episode like the slope.
 
 ### 4.3 A standalone script that never touches the controller
 
@@ -112,18 +130,41 @@ the controller instead, which is a small contained change.
 relay is hard on for the entire approach — warmup speed is unchanged from
 today. Only the number it stops at moves.
 
-An **episode** opens when the requested setpoint rises above the room
-temperature (a schedule transition, an override, a manual hold). At that
-moment, and only then, the controller latches:
+An **episode** opens on either of two triggers, checked on the controller's
+1-minute tick with no episode already running:
+
+1. the requested setpoint rises above the room temperature (a schedule
+   transition, an override, a manual hold) — the warmup from setback; or
+2. the device reports `hvac_action = heating` — the relay has closed for a run
+   inside a flat hold. The request has not moved, so trigger 1 cannot see
+   this, and it is the case the children's room actually lives in.
+
+Either way, at that moment and only then, the controller latches:
 
 ```
-rise   = requested − current                    -- how far it has to climb
-offset = clamp(k * rise, 0, MAX_OFFSET)         -- k is the learned scalar
+rise    = requested − current                              -- how far it has to climb
+offset  = clamp(k.base + k.slope * rise, 0, MAX_OFFSET)    -- both learned (§6)
 command = requested − offset
 ```
 
-`command` is held for the whole episode. The episode closes when the room first
-reaches `requested`, or when the requested setpoint changes again.
+`command` is held for the whole episode. The episode closes when the coast
+window after the cutoff runs out, or when the requested setpoint changes again;
+then the command returns to `requested`, so the offset never becomes the
+permanent lowering §4.2 rejects.
+
+`base` is the floor: the overshoot a run produces regardless of how far the
+room had to climb, because the radiator reaches full temperature either way.
+`slope` is the part that grows with a long warmup. On a cycle the rise is the
+deadband — 0.2–0.5 ° — and the correction is essentially `base`; on an 18→21
+warmup `slope` adds to it. A single rise-proportional `k` cannot serve both:
+capped at `K_MAX * deadband` it could never cut more than ~0.4 ° off a cycle
+that overshoots by 1.5.
+
+On a cycle the correction can command a setpoint at or below the room, which
+switches the relay straight back off. That is the intended limit case: the
+learner then measures an undershoot, `base` comes down, and it settles where a
+short run's stored heat lands the room exactly on the request. The room cycles
+in its deadband instead of above it.
 
 **The offset must be latched at episode start, not recomputed per tick.** If it
 were recomputed, `command` would climb as the room warmed (`rise` shrinking
@@ -131,10 +172,10 @@ toward zero) and converge on `requested` without ever cutting early — the
 correction would silently do nothing. This is the single easiest thing to get
 wrong here.
 
-Proportional-to-rise is what makes one scalar cover both regimes: an 18→21
-warmup with `k = 0.4` cuts at 19.8, while a 20.7→21 top-up cuts at 20.88 —
-inside the deadband, i.e. no correction at all. The steady-state hold band is
-left where the user asked for it (§4.2).
+With `base = 0` this collapses to the first draft's model exactly: an 18→21
+warmup with `slope = 0.4` cuts at 19.8, a 20.7→21 top-up at 20.88. Both start
+at zero (`K_INIT`), so a plant that has taught nothing is driven exactly as it
+was before the feature existed.
 
 This is **not** a proportional band. A P controller throttles output power as
 it approaches; this holds full power and moves the stopping point. Fast *and*
@@ -144,28 +185,46 @@ early.
 
 | Name | Default | Meaning |
 |------|---------|---------|
-| `K_INIT` | `0` | Starting coefficient. Zero means the first episode behaves exactly as today — never worse than the status quo while it has learned nothing. |
+| `K_INIT` | `{base 0, slope 0}` | Starting coefficients. Zero means the first episode behaves exactly as today — never worse than the status quo while it has learned nothing. |
 | `GAIN` | `0.5` | Fraction of the measured error folded in per episode. Converges in ~4–5 episodes, damped enough not to ring. |
-| `K_MAX` | `0.8` | Hard bound on `k`. Sanity only; a plant needing more than this is broken elsewhere. |
-| `MAX_OFFSET` | `2.5 °C` | Absolute cap on a single cutoff, whatever `k * rise` says. |
-| `MIN_RISE` | `0.3 °C` | Episodes smaller than this teach nothing (the overshoot is noise) — the correction still applies, but no learning happens. |
+| `SLOPE_MAX` | `0.8` | Hard bound on `slope`. Sanity only; a plant needing more than this is broken elsewhere. `base` is bounded by `MAX_OFFSET`. |
+| `MAX_OFFSET` | `2.5 °C` | Absolute cap on a single cutoff, whatever the coefficients say. |
 | `COAST_WINDOW` | `30 min` | How long after cutoff the peak is watched for. |
 
 ## 6. The learner
 
-One scalar per zone, `k`, in the script's KV store. After each episode:
+Two numbers per zone, `k = {base, slope}`, in the script's KV store. After
+each episode:
 
 ```
-peak  = max room temperature observed within COAST_WINDOW of the cutoff
-error = peak − requested                        -- >0 too hot, <0 undershot
-k     = clamp(k + GAIN * error / max(rise, MIN_RISE), 0, K_MAX)
+peak    = max room temperature observed within COAST_WINDOW of the cutoff
+error   = peak − requested                      -- >0 too hot, <0 undershot
+norm    = 1 + rise²
+base    = clamp(base  + GAIN * error        / norm, 0, MAX_OFFSET)
+slope   = clamp(slope + GAIN * error * rise / norm, 0, SLOPE_MAX)
 ```
 
-A discrete integral controller closed across days. Because it corrects on
-**measured outcome**, it tracks seasonal drift on its own: when a milder month
-raises the plant gain and overshoot creeps back, the next few episodes push `k`
-up without anyone retuning anything. That is the direct answer to §4.1's
-brittleness.
+This is one normalised gradient step (NLMS) on the regressor `[1, rise]`: the
+error is split between the two coefficients in proportion to how much each
+contributed to the offset that produced it. A cycle (`rise ≈ 0.3`) teaches
+`base` almost entirely; a long warmup teaches both. The offset *at the
+observed rise* moves by exactly `GAIN * error` per episode, which is the same
+convergence rate the single-coefficient draft had — so nothing about "four or
+five episodes" changes. No matrix, no memory of past regressors.
+
+A discrete integral controller closed across days, either way. Because it
+corrects on **measured outcome**, it tracks seasonal drift on its own: when a
+milder month raises the plant gain and overshoot creeps back, the next few
+episodes push the coefficients up without anyone retuning anything. That is
+the direct answer to §4.1's brittleness.
+
+The first draft also refused to learn from any rise under `MIN_RISE = 0.3 °`,
+because dividing the error by a tiny rise blew the update up. The normalised
+step has no such division, and cycles ARE small rises, so that gate is gone.
+What replaces it is physical: an episode teaches nothing unless the relay was
+actually seen on during it (`never_heated` below). A 0.2 ° nudge inside the
+deadband never fires the heating, and whatever the room does afterwards is
+weather, not the plant.
 
 **The peak is sampled from live state on the existing 1-minute tick, not from
 `ha.get_history`.** The coast peak is a broad 20-minute hump, so 1 Hz/min
@@ -180,7 +239,9 @@ rows and filtering in Lua, and would need a retention override to survive the
   `heating_windows.lua`'s territory and the thermal picture is meaningless
 - the hvac mode left `heat`
 - the requested setpoint changed before the room reached it
-- `rise < MIN_RISE`
+- the device never reported `hvac_action = heating` during the episode — the
+  relay never closed, so there was no stored energy to measure. A device that
+  reports no `hvac_action` at all is not gated (unknown is not "off")
 - the room never reached the commanded setpoint within `MAX_EPISODE` (4 h) —
   the plant could not keep up, and nothing about overshoot can be read off it
 - observe-only was switched for the zone mid-episode — the episode latched its
@@ -298,7 +359,7 @@ peak, peak_at, error               -- what actually happened
 k_before, k_after                  -- what it concluded
 outcome  "learned" | "discarded" | "observed"
 reason   nil | "window_open" | "mode_left_heat" | "setpoint_changed"
-              | "rise_too_small" | "restart" | "never_reached"
+              | "never_heated" | "restart" | "never_reached"
               | "observe_changed"
 ```
 
@@ -324,8 +385,8 @@ existing debug page's log viewer (`internal/web/debug.go`) with no daemon change
 
 | point | level | carries |
 |-------|-------|---------|
-| episode open | `info` | zone, requested, current, rise, k, offset, commanded |
-| episode close | `info` | peak, error, k before → after |
+| episode open | `info` | zone, requested, current, rise, base and slope, offset, commanded |
+| episode close | `info` | peak, error, base and slope before → after |
 | **discard** | **`warn`** | the reason from §9.2 |
 
 Discards are `warn`, deliberately, and not `debug`. A persistent discard is
@@ -437,12 +498,15 @@ is the smaller bisectable unit and it keeps the wiring commit readable.
   holds for `thermostat.html` only. And a live episode has to be abandoned when
   a climate stops being controlled entirely, which is a real case here (a boost
   expiring with no schedule under it) and not one in the zone model.
-- **Varying `k` with conditions** (outdoor temperature, radiator temperature).
-  One scalar per zone assumes the plant gain is roughly constant across
-  episodes; proportional-to-rise handles the size of an episode, but not a mild
+- **Varying the coefficients with conditions** (outdoor temperature, radiator
+  temperature). `{base, slope}` assumes the plant gain is roughly constant
+  across episodes; the slope handles the size of an episode, but not a mild
   day versus a cold one, nor a radiator that was already hot when the run
   started. Gate unchanged: do this only if the measured error stays visibly
-  correlated with those columns after `k` converges.
+  correlated with those columns after the coefficients converge. Note that §6
+  is already a two-term NLMS on `[1, rise]`; a third regressor is one more
+  line there, which is precisely why the fit below is the right shape and a
+  lookup table is not.
 
   **The evidence is now being collected.** Every episode records
   `outdoor_at_open`, `radiator_at_open`, `radiator_at_cutoff` and
