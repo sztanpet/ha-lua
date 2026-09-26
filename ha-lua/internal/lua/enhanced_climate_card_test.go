@@ -51,7 +51,8 @@ const cardStates = `{
   "sensor.ha_lua_enhanced_climate_lr": { "entity_id": "sensor.ha_lua_enhanced_climate_lr", "state": "21",
     "attributes": { "controlled": true, "override": { "active": false }, "override_temp": 23,
       "manual": { "active": false }, "window": { "sensors": ["binary_sensor.w1"], "open": false },
-      "presets": [10, 30, 60], "min_temp": 7, "max_temp": 30, "schedule": {} } }
+      "presets": [10, 30, 60], "min_temp": 7, "max_temp": 30, "schedule": {},
+      "commanded": 20, "overshoot": { "k": 0.4, "samples": 6, "offset": 1.2, "observe_only": true } } }
 }`
 
 func serveEnhancedCard(t *testing.T) *httptest.Server {
@@ -446,6 +447,84 @@ func TestEnhancedClimateCard(t *testing.T) {
 // we simulate that with 50 hass updates and assert configure is sent exactly once
 // per distinct config (tracked module-side so it survives element recreation),
 // regardless of whether the companion's state matches.
+// TestEnhancedClimateCardOvershootDisclosure pins overshoot-spec.md §8: the
+// request is the only setpoint on the default view, and the commanded value,
+// the coefficient, the sample count and the two controls are reachable only
+// through a deliberate TAP.
+//
+// A tap, not a title= tooltip: this card is read on phones and wall tablets
+// under Ingress, where hover does not exist, so a hover-only disclosure would
+// be missing exactly on the device somebody is holding while wondering what
+// the thermostat is doing.
+func TestEnhancedClimateCardOvershootDisclosure(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	var ok bool
+	var segment, noteBefore string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".subtitle .overshoot")`, &ok),
+		chromedp.Evaluate(`window.__text(".subtitle .overshoot")`, &segment),
+		chromedp.Evaluate(`window.__shadow(".overshoot-note") ? "present" : "absent"`, &noteBefore),
+	); err != nil {
+		t.Fatal(err)
+	}
+	// Observing, so the segment says what it WOULD do rather than claiming it did.
+	if segment != "would cut 1.2°" {
+		t.Errorf("segment = %q, want %q", segment, "would cut 1.2°")
+	}
+	if noteBefore != "absent" {
+		t.Error("the overshoot panel is visible without a tap; it must be a disclosure")
+	}
+
+	// Tap the segment: the panel appears, carrying the commanded value against
+	// the request and the sample count that says whether to trust it.
+	var note string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(window.__shadow(".subtitle .overshoot").click(), true)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".overshoot-note")`, &ok),
+		chromedp.Evaluate(`window.__text(".overshoot-note")`, &note),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Commanded 20° for a request of 21°", "coefficient 0.4, learned over 6 episode(s)", "Observing only"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("panel missing %q; panel = %q", want, note)
+		}
+	}
+
+	// Arming it fires the daemon command that takes this climate out of
+	// observe-only — the deliberate act of trusting the correction.
+	var wsCalls string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__clickAll(".overshoot-note .btn", 0)`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls)`, &wsCalls),
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"action":"overshoot"`, `"observe_only":false`} {
+		if !strings.Contains(wsCalls, want) {
+			t.Errorf("arm did not send %s; calls = %s", want, wsCalls)
+		}
+	}
+
+	// Tapping the segment again closes it: the request is back to being the only
+	// setpoint on screen.
+	var noteAfter string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(window.__shadow(".subtitle .overshoot").click(), true)`, &ok),
+		chromedp.Poll(`!window.__shadow(".overshoot-note")`, &ok),
+		chromedp.Evaluate(`window.__shadow(".overshoot-note") ? "present" : "absent"`, &noteAfter),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if noteAfter != "absent" {
+		t.Error("a second tap did not close the panel")
+	}
+}
+
 func TestEnhancedClimateCardConfigureNoStorm(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveEnhancedCard(t)

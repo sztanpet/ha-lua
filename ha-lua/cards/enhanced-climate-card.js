@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.34";
+const VERSION = "0.3.35";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -88,6 +88,18 @@ const MESSAGES = {
     "window.open": "window open",
     "window.closed": "window closed",
     "radiator": "rad. {temp}°",
+    "overshoot.cutting": "cutting {offset}°",
+    "overshoot.would_cut": "would cut {offset}°",
+    "overshoot.idle": "overshoot idle",
+    "overshoot.title": "Overshoot correction",
+    "overshoot.commanded": "Commanded {temp}° for a request of {requested}°",
+    "overshoot.learned": "coefficient {k}, learned over {samples} episode(s)",
+    "overshoot.unlearned": "nothing learned yet, so no correction is applied",
+    "overshoot.observing": "Observing only — the heating is not being changed.",
+    "overshoot.acting": "Active — warmups are being cut short.",
+    "overshoot.arm": "Apply the correction",
+    "overshoot.disarm": "Observe only",
+    "overshoot.reset": "Reset learning",
     "schedule": "Schedule",
     "edit_schedule": "Edit",
     "no_schedule": "no schedule set",
@@ -142,6 +154,18 @@ const MESSAGES = {
     "window.open": "ablak nyitva",
     "window.closed": "ablak zárva",
     "radiator": "rad. {temp}°",
+    "overshoot.cutting": "{offset}°-kal korábban áll le",
+    "overshoot.would_cut": "{offset}°-kal korábban állna le",
+    "overshoot.idle": "túlfutás-korrekció tétlen",
+    "overshoot.title": "Túlfutás-korrekció",
+    "overshoot.commanded": "{requested}° kérésre {temp}°-ot vezérel",
+    "overshoot.learned": "együttható {k}, {samples} fűtésből tanulva",
+    "overshoot.unlearned": "még nincs mit tanulni, ezért nincs korrekció",
+    "overshoot.observing": "Csak megfigyel — a fűtést nem változtatja.",
+    "overshoot.acting": "Aktív — a felfűtéseket korábban állítja le.",
+    "overshoot.arm": "Korrekció bekapcsolása",
+    "overshoot.disarm": "Csak megfigyelés",
+    "overshoot.reset": "Tanulás törlése",
     "schedule": "Ütemezés",
     "edit_schedule": "Szerkesztés",
     "no_schedule": "nincs beállított ütemezés",
@@ -389,6 +413,19 @@ const STYLES = `
   .held-note { font-size: .78rem; line-height: 1.35; color: var(--secondary-text-color);
     margin-top: 2px; padding: 6px 10px; border-radius: 8px;
     background: color-mix(in oklch, var(--warning-color, #ffa600) 10%, transparent); }
+  /* A dotted underline marks the disclosure without advertising it. It is a
+     real tap target, not a title= tooltip: under Ingress this card is read on
+     phones and wall tablets, where hover does not exist and the explanation
+     would be missing exactly where it is wanted. */
+  .subtitle .overshoot { text-decoration: underline dotted; text-underline-offset: 3px;
+    cursor: pointer; background: none; border: none; padding: 0; font: inherit;
+    color: inherit; }
+  .overshoot-note { font-size: .78rem; line-height: 1.4; color: var(--secondary-text-color);
+    margin-top: 4px; padding: 8px 10px; border-radius: 8px;
+    background: color-mix(in oklch, var(--primary-color) 8%, transparent);
+    display: flex; flex-direction: column; gap: 6px; }
+  .overshoot-note .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .overshoot-note .mode { color: var(--primary-text-color); }
   .content { display: flex; flex-direction: column; gap: 12px; }
   .stepper { display: flex; align-items: center; }
   .stepper .value { width: 60px; height: 44px; box-sizing: border-box; text-align: center;
@@ -773,9 +810,42 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       subtitle.append(h("span", { class: "window " + (windowInfo.open ? "open" : "closed") },
         translate(windowInfo.open ? "window.open" : "window.closed")));
     }
+    // The REQUEST, as against the setpoint on the device. While the overshoot
+    // correction cuts a warmup short the device carries `requested - offset`, so
+    // attrs.temperature is not what the user asked for: it is what we commanded.
+    // The companion's state is the request, and it is only absent while nothing
+    // controls this climate — when the device setpoint IS the request.
+    const requested = companionAttrs && companionAttrs.controlled
+      ? Number(companion.state)
+      : Number(attrs.temperature);
+
+    // The overshoot correction: a glanceable segment saying what it is doing,
+    // with everything else — the commanded value, the coefficient, the sample
+    // count and the two controls — one deliberate tap deeper. The request stays
+    // the primary number; showing 19.8 where somebody set 21 reads as a bug.
+    const overshoot = companionAttrs && companionAttrs.overshoot;
+    if (overshoot) {
+      const offset = Number(overshoot.offset);
+      const cutting = Number.isFinite(offset) && offset > 0;
+      let label = translate("overshoot.idle");
+      if (cutting) {
+        const shown = Math.round(offset * 100) / 100;
+        label = translate(overshoot.observe_only ? "overshoot.would_cut" : "overshoot.cutting",
+          { offset: shown });
+      }
+      subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
+      subtitle.append(h("button", {
+        class: "overshoot", type: "button",
+        "aria-expanded": this._overshootOpen ? "true" : "false",
+        onclick: () => { this._overshootOpen = !this._overshootOpen; this._renderNow(); },
+      }, label));
+    }
     heading.append(subtitle);
     if (heldShown && this._heldNoteOpen) {
       heading.append(h("div", { class: "held-note" }, translate("held_until.tooltip")));
+    }
+    if (overshoot && this._overshootOpen) {
+      heading.append(this._renderOvershoot(translate, overshoot, companionAttrs, attrs, requested));
     }
     root.append(h("div", { class: "header" }, heading));
 
@@ -786,17 +856,6 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // Every temperature input steps by the device's target_temp_step, falling
     // back to 0.1 when the device advertises none.
     const tempStep = Number(attrs.target_temp_step) || 0.1;
-    // The stepper edits the REQUEST, not the setpoint on the device. While the
-    // overshoot correction cuts a warmup short the device carries
-    // `requested - offset`, so showing attrs.temperature here would display 19.8
-    // where the user set 21 — and a nudge from 19.8 lands inside the
-    // manual-detection tolerance, so the tap would appear to do nothing at all
-    // and the next tick would put 19.8 back. The companion's state is the
-    // request; it is only absent while nothing controls this climate, and then
-    // the device setpoint IS the request.
-    const requested = companionAttrs && companionAttrs.controlled
-      ? Number(companion.state)
-      : Number(attrs.temperature);
     const target = this._stepperControl(translate, {
       label: translate("target"),
       value: Number.isFinite(requested) ? requested : attrs.temperature,
@@ -897,6 +956,50 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       }, icon ? h("ha-icon", { icon }) : label); // fall back to the text when no icon
     });
     return h("div", { class: "modes" }, ...buttons);
+  }
+
+  // _renderOvershoot is the panel behind the subtitle's tap: what the correction
+  // decided, what it learned it from, and the two writes that recover from a bad
+  // coefficient (§9.4, §9.5) without a restart or sqlite3.
+  //
+  // The offset is never shown alone. "1.2° low" says nothing about whether to
+  // trust it; "1.2° low, learned over 6 episodes" says everything.
+  _renderOvershoot(translate, overshoot, companionAttrs, attrs, requested) {
+    const pending = !!this._pending;
+    const observing = overshoot.observe_only !== false;
+    const samples = Number(overshoot.samples) || 0;
+    const note = h("div", { class: "overshoot-note" });
+
+    note.append(h("div", { class: "row mode" }, h("strong", null, translate("overshoot.title"))));
+    note.append(h("div", { class: "row mode" },
+      translate(observing ? "overshoot.observing" : "overshoot.acting")));
+
+    // Commanded is read off the device, so it also exposes a write that never
+    // landed — the two diverging is the symptom.
+    const commanded = Number(companionAttrs.commanded ?? attrs.temperature);
+    if (Number.isFinite(commanded) && Number.isFinite(requested)) {
+      note.append(h("div", { class: "row" },
+        translate("overshoot.commanded", { temp: commanded, requested: requested })));
+    }
+    note.append(h("div", { class: "row" }, samples > 0
+      ? translate("overshoot.learned", {
+        k: Math.round((Number(overshoot.k) || 0) * 1000) / 1000,
+        samples: samples,
+      })
+      : translate("overshoot.unlearned")));
+
+    note.append(h("div", { class: "row" },
+      h("button", {
+        class: "btn", type: "button", disabled: pending,
+        onclick: () => this._command("overshoot", { observe_only: !observing }),
+      }, translate(observing ? "overshoot.arm" : "overshoot.disarm")),
+      h("button", {
+        class: "btn", type: "button", disabled: pending,
+        onclick: () => this._command("overshoot", { reset: true }),
+      }, translate("overshoot.reset")),
+      pending && h("span", { class: "spinner", role: "progressbar",
+        "aria-label": translate("applying") })));
+    return note;
   }
 
   // _renderEnhanced builds the daemon-driven controls from the companion as
