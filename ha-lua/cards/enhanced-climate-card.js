@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.35";
+const VERSION = "0.3.36";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -268,11 +268,17 @@ function clampNumber(value, lo, hi) {
   return value;
 }
 
+// radiator_entity used to be excluded here, on the grounds that a display-only
+// card option must not re-send configure. It is no longer display-only: the
+// overshoot learner records the radiator temperature with every episode, which
+// means the daemon has to be told which sensor it is, which means a change to it
+// is a real config change.
 function configHash(config) {
   return JSON.stringify({
     climate_entity: config.climate_entity || "",
     window_sensors: config.window_sensors || [],
     presets: config.presets || [],
+    radiator_entity: config.radiator_entity || "",
   });
 }
 
@@ -637,6 +643,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     this.fireCommand("configure", {
       window_sensors: this._config.window_sensors || [],
       presets: this._config.presets || [],
+      radiator_entity: this._config.radiator_entity || "",
     });
   }
 
@@ -785,8 +792,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     subtitle.append(h("span", { class: "status" }, statusLabel(translate, mode, hvacAction)));
     // The radiator temp sits right after the claimed status because it is the
     // ground truth for it: "heating" with a cold radiator exposes a stuck valve
-    // or a boiler that isn't firing. Display-only card config — the daemon
-    // never sees radiator_entity; the card reads the sensor straight from hass.
+    // or a boiler that isn't firing. The card reads the sensor straight from
+    // hass for this; the daemon is told the id separately, because the overshoot
+    // learner records the radiator temperature with every episode.
     const radiatorEntity = this._config.radiator_entity;
     const radiator = radiatorEntity ? hass.states[radiatorEntity] : null;
     const radiatorTemp = radiator ? Number(radiator.state) : NaN;

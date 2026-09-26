@@ -551,11 +551,17 @@ end)
 -- ---------------------------------------------------------------------------
 
 -- Defaults the optional lists, so later code never type-checks them.
+--
+-- `radiator_entity` is the sensor strapped to this zone's radiator. The card has
+-- rendered it for a while; the daemon needs it too, because the radiator
+-- temperature at the cutoff is what the overshoot journal records as the stored
+-- energy about to land in the room. Empty string means none.
 local function normalize(data)
   return {
     climate_entity = data.climate_entity,
     window_sensors = type(data.window_sensors) == "table" and data.window_sensors or {},
     presets = type(data.presets) == "table" and data.presets or {},
+    radiator_entity = type(data.radiator_entity) == "string" and data.radiator_entity or "",
   }
 end
 
@@ -575,6 +581,7 @@ local function config_equal(x, y)
   return x.climate_entity == y.climate_entity
       and list_equal(x.window_sensors, y.window_sensors)
       and list_equal(x.presets, y.presets)
+      and (x.radiator_entity or "") == (y.radiator_entity or "")
 end
 
 -- Idempotent upsert, fired by the card on load and on any config change.
@@ -588,7 +595,8 @@ card.on("configure", function(data)
     reg[cfg.climate_entity] = cfg
     save_registry(reg)
     ha.log("info", "configure " .. cfg.climate_entity ..
-      " (windows: " .. #cfg.window_sensors .. ", presets: " .. #cfg.presets .. ")")
+      " (windows: " .. #cfg.window_sensors .. ", presets: " .. #cfg.presets ..
+      ", radiator: " .. (cfg.radiator_entity ~= "" and cfg.radiator_entity or "none") .. ")")
   end
   -- Republish even when the config was unchanged: the card sends configure
   -- precisely when it does NOT see a matching companion, so clearing the dedup
@@ -733,6 +741,7 @@ local function list_climates()
       name = friendly_name(climate),
       window_sensors = cfg.window_sensors or {},
       presets = cfg.presets or {},
+      radiator_entity = cfg.radiator_entity or "",
       overshoot = overshoot_status(climate),
     }
   end

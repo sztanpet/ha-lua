@@ -625,6 +625,36 @@ func TestEnhancedClimateCompanion(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateConfigureStoresRadiator pins that radiator_entity reaches
+// the daemon. It used to be display-only card config, deliberately kept out of
+// the card's configHash so a cosmetic change could not re-send configure. The
+// overshoot journal records the radiator temperature with every episode, so the
+// daemon now has to know which sensor it is — and a change to it is a real
+// config change, not a cosmetic one.
+func TestEnhancedClimateConfigureStoresRadiator(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.lr_rad"}`)
+	f.waitRegistry(func(m map[string]any) bool {
+		cfg, _ := m["climate.lr"].(map[string]any)
+		return cfg != nil && cfg["radiator_entity"] == "sensor.lr_rad"
+	}, "radiator_entity stored")
+
+	// Changing only the radiator is a real config change, so it must land.
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.other_rad"}`)
+	f.waitRegistry(func(m map[string]any) bool {
+		cfg, _ := m["climate.lr"].(map[string]any)
+		return cfg != nil && cfg["radiator_entity"] == "sensor.other_rad"
+	}, "a radiator-only change updates the registry")
+
+	// Omitting it is "no radiator", not a type error further down.
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.waitRegistry(func(m map[string]any) bool {
+		cfg, _ := m["climate.lr"].(map[string]any)
+		return cfg != nil && cfg["radiator_entity"] == ""
+	}, "an absent radiator_entity normalises to empty")
+}
+
 // TestEnhancedClimateCompanionSplitsRequestedAndCommanded pins the companion's
 // two setpoints apart (overshoot-spec.md §8): `state` is what the user asked
 // for, the `commanded` attribute is what the device actually carries. They must
