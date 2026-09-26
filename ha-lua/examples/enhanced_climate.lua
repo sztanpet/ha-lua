@@ -18,6 +18,7 @@
 local control = require "control"
 local schedule = require "schedule"
 local climate_lib = require "climate"
+local overshoot = require "overshoot"
 local card = require("card").new { kind = "enhanced_climate" }
 
 -- Seed value (°C) for an enhanced climate's override temperature — the setpoint
@@ -89,6 +90,7 @@ local function override_temp(climate)
 end
 
 local mode, current_target = climate_lib.mode, climate_lib.target
+local current_temp = climate_lib.current_temp
 local temp_bounds = climate_lib.bounds
 
 -- The entity's friendly_name, falling back to the id while it has none.
@@ -174,6 +176,164 @@ local function desired(climate, now, dow, minute)
   return control.desired(override, manual and manual.temp or nil, sched_temp)
 end
 
+-- ---------------------------------------------------------------------------
+-- Overshoot correction (overshoot-spec.md). lib/overshoot.lua holds the math;
+-- the state machine is here because the offset must be latched at the instant
+-- the episode is detected, and because store.* is per-script.
+--
+-- A learner that discards every episode looks exactly like one that has
+-- converged, which is why every episode is journaled with its reason and
+-- discards log at warn.
+-- ---------------------------------------------------------------------------
+
+local function k_key(climate) return "overshoot_k:" .. climate end
+local function samples_key(climate) return "overshoot_samples:" .. climate end
+local function episode_key(climate) return "overshoot_episode:" .. climate end
+local function journal_key(climate) return "overshoot_journal:" .. climate end
+local function observe_key(climate) return "overshoot_observe:" .. climate end
+
+local JOURNAL_MAX = 50
+
+local function learned_k(climate)
+  local value = store.get(k_key(climate))
+  if type(value) == "number" then return value end
+  return overshoot.K_INIT
+end
+
+-- How many episodes k was learned from: "1.2° low" alone says nothing about
+-- whether to trust it.
+local function learned_samples(climate)
+  local value = store.get(samples_key(climate))
+  if type(value) == "number" then return value end
+  return 0
+end
+
+local function live_episode(climate)
+  local episode = store.get(episode_key(climate))
+  if type(episode) ~= "table" then return nil end
+  return episode
+end
+
+-- Unset means observe-only is ON: the correction ships watching rather than
+-- acting, so it can be judged on a week of what it would have done (§9.4).
+local function observe_only(climate)
+  return store.get(observe_key(climate)) ~= false
+end
+
+local function journal(climate, record)
+  local rows = store.get(journal_key(climate))
+  if type(rows) ~= "table" then rows = {} end
+  rows[#rows + 1] = record
+  while #rows > JOURNAL_MAX do table.remove(rows, 1) end
+  store.set(journal_key(climate), rows)
+end
+
+local function open_episode(climate, requested, current, at)
+  local watching = observe_only(climate)
+  local episode = overshoot.open(requested, current, learned_k(climate), watching, at)
+  if episode == nil then return nil end
+  -- An unclamped command HA drops would leave the episode waiting for a cutoff
+  -- that cannot arrive.
+  local lo, hi = temp_bounds(climate)
+  episode.commanded = control.clamp_bounds(episode.commanded, lo, hi)
+  episode.applied = control.clamp_bounds(episode.applied, lo, hi)
+  store.set(episode_key(climate), episode)
+  ha.log("info", string.format(
+    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f k=%.3f offset=%.2f commanded=%.1f%s",
+    climate, requested, current, episode.rise, episode.k_used, episode.offset,
+    episode.commanded, watching and " (observe-only)" or ""))
+  return episode
+end
+
+local function close_episode(climate, episode, at)
+  local k_before = learned_k(climate)
+  local k_after, outcome, reason = overshoot.close(episode, k_before)
+  if outcome == "discarded" then
+    -- warn, not debug: needing to raise the log level to notice the learner has
+    -- never once run would defeat the point of journaling it.
+    ha.log("warn", string.format(
+      "overshoot %s: discarded (%s) requested=%.1f rise=%.1f peak=%.1f",
+      climate, reason, episode.requested, episode.rise, episode.peak))
+  else
+    store.set(k_key(climate), k_after)
+    store.set(samples_key(climate), learned_samples(climate) + 1)
+    ha.log("info", string.format(
+      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f k %.3f -> %.3f",
+      climate, outcome, episode.peak, episode.requested,
+      episode.peak - episode.requested, k_before, k_after))
+  end
+  journal(climate, overshoot.record(episode, climate, k_before, k_after, outcome, reason, at))
+  store.delete(episode_key(climate))
+end
+
+-- Closes a live episode without a new observation, for the paths that leave the
+-- climate uncontrolled entirely: a boost expiring with no schedule under it has
+-- no request left to judge the run against.
+local function abandon_episode(climate, now, reason)
+  local episode = live_episode(climate)
+  if episode == nil then return end
+  overshoot.invalidate(episode, reason)
+  close_episode(climate, episode, now:unix())
+end
+
+-- The learner's numbers for the companion payload and the Ingress page. `offset`
+-- is the live episode's latched offset, not a recomputed one — a correction is
+-- only ever as big as what it decided when the episode opened.
+--
+-- k without the sample count is not reportable: "1.2° low" says nothing about
+-- whether to trust it, "1.2° low, learned over 6 nights" does.
+local function overshoot_status(climate)
+  local episode = live_episode(climate)
+  return {
+    k = learned_k(climate),
+    samples = learned_samples(climate),
+    offset = episode ~= nil and episode.offset or 0,
+    observe_only = observe_only(climate),
+  }
+end
+
+-- Advances the climate's episode by one observation and returns the setpoint to
+-- command, which is the request whenever no episode is running.
+--
+-- An episode opens when the REQUEST CHANGES to something above the room, not
+-- merely whenever the room sits below the setpoint — which is true on every tick
+-- of a normal hold and would open an episode a minute.
+local function overshoot_step(climate, now, requested, previous)
+  local at = now:unix()
+  local current = current_temp(climate)
+  local heating = mode(climate) == "heat"
+  local window = window_open(climate)
+  local requested_changed = requested ~= previous
+
+  local episode = live_episode(climate)
+
+  if episode ~= nil then
+    if requested_changed then overshoot.invalidate(episode, "setpoint_changed") end
+    if not heating then overshoot.invalidate(episode, "mode_left_heat") end
+    if window then overshoot.invalidate(episode, "window_open") end
+    -- Switching observe-only mid-episode: the episode latched its setpoint from
+    -- the old setting and cannot be judged against the new one.
+    if episode.observe_only ~= observe_only(climate) then
+      overshoot.invalidate(episode, "observe_changed")
+    end
+    local phase = "heating"
+    if current ~= nil then phase = overshoot.step(episode, current, at) end
+    if episode.invalid ~= nil or phase == "done" then
+      close_episode(climate, episode, at)
+      episode = nil
+    else
+      store.set(episode_key(climate), episode)
+    end
+  end
+
+  if episode == nil and requested_changed and heating and not window and current ~= nil then
+    episode = open_episode(climate, requested, current, at)
+  end
+
+  if episode == nil then return requested end
+  return episode.applied
+end
+
 local function set_temp(climate, temp)
   ha.log("info", "set_temperature " .. climate .. " = " .. tostring(temp) .. "°")
   ha.call_service("climate", "set_temperature", { entity_id = climate, temperature = temp })
@@ -220,6 +380,7 @@ local function publish_companion(climate, now, desired_temp)
     -- `written`: it then also shows the frost setpoint while a window is open,
     -- and exposes a write that never landed (overshoot-spec.md §8).
     commanded = current_target(climate),
+    overshoot = overshoot_status(climate),
     window = { sensors = window_sensors_of(climate), open = window_open(climate) },
     presets = cfg.presets,
     min_temp = lo,
@@ -276,8 +437,11 @@ local function apply_climate(climate, now, dow, minute)
   local lo, hi = temp_bounds(climate)
   if desired_temp ~= nil then
     desired_temp = control.clamp_bounds(desired_temp, lo, hi)
+    -- Read before the publish below overwrites it: a request differing from the
+    -- last one published is what opens an overshoot episode.
+    local last_requested = store.get(desired_key(climate))
+    local commanded_temp = overshoot_step(climate, now, desired_temp, last_requested)
     store.set(desired_key(climate), desired_temp)
-    local commanded_temp = desired_temp
     if mode(climate) == "heat" then
       local current = current_target(climate)
       if window_open(climate) then
@@ -291,6 +455,9 @@ local function apply_climate(climate, now, dow, minute)
     end
     store.set(written_key(climate), commanded_temp)
   else
+    -- Nothing is requested any more, so a live episode has no target left to be
+    -- judged against.
+    abandon_episode(climate, now, "setpoint_changed")
     -- A boost ending with no schedule or hold under it must still put the dial
     -- back where it found it, or the boost temperature sticks forever.
     local restored = type(previous) == "number" and control.clamp_bounds(previous, lo, hi) or nil
@@ -443,6 +610,13 @@ local function remove_climate(climate)
   store.delete(desired_key(climate))
   store.delete(written_key(climate))
   store.delete(restore_key(climate)) -- a re-add must not resurrect a pre-boost setpoint
+  -- A re-added climate starts learning from scratch rather than inheriting a k
+  -- measured on a plant that may since have been replumbed.
+  store.delete(k_key(climate))
+  store.delete(samples_key(climate))
+  store.delete(episode_key(climate))
+  store.delete(journal_key(climate))
+  store.delete(observe_key(climate))
   published[climate] = nil -- a re-add must re-publish, not skip against the stale cache
   local _, err = card.remove(slug_of(climate)) -- the companion disappears with it
   if err then

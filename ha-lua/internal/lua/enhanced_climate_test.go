@@ -58,10 +58,9 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 	if err := os.MkdirAll(libDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "control.lua"), filepath.Join(libDir, "control.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "schedule.lua"), filepath.Join(libDir, "schedule.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "card.lua"), filepath.Join(libDir, "card.lua"))
-	copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", "climate.lua"), filepath.Join(libDir, "climate.lua"))
+	for _, lib := range []string{"control.lua", "schedule.lua", "card.lua", "climate.lua", "overshoot.lua"} {
+		copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", lib), filepath.Join(libDir, lib))
+	}
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "enhanced_climate.lua"), filepath.Join(dir, "enhanced_climate.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "enhanced_climate.html"), filepath.Join(dir, "enhanced_climate.html"))
 
@@ -330,9 +329,59 @@ func (f *enhancedFixture) storeNumber(key string) float64 {
 // two keys the script normally keeps equal apart.
 func (f *enhancedFixture) setStoreNumber(key string, value float64) {
 	f.t.Helper()
+	f.setStore(key, value)
+}
+
+// setStore seeds one of the script's own KV values, standing in for state the
+// script would otherwise take days to accumulate.
+func (f *enhancedFixture) setStore(key string, value any) {
+	f.t.Helper()
 	if err := f.kv.Set(f.ctx, key, value); err != nil {
 		f.t.Fatalf("write %s: %v", key, err)
 	}
+}
+
+// storeMap reads one of the script's own KV values as a table, or nil.
+func (f *enhancedFixture) storeMap(key string) map[string]any {
+	f.t.Helper()
+	v, err := f.kv.Get(f.ctx, key)
+	if err != nil {
+		f.t.Fatalf("read %s: %v", key, err)
+	}
+	m, _ := v.(map[string]any)
+	return m
+}
+
+// overshootJournal reads the episode journal, newest last.
+func (f *enhancedFixture) overshootJournal(climate string) []map[string]any {
+	f.t.Helper()
+	v, err := f.kv.Get(f.ctx, "overshoot_journal:"+climate)
+	if err != nil {
+		f.t.Fatalf("read journal: %v", err)
+	}
+	rows, _ := v.([]any)
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		if m, ok := row.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// waitJournal polls the journal until it holds at least n rows.
+func (f *enhancedFixture) waitJournal(climate string, n int, desc string) []map[string]any {
+	f.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if rows := f.overshootJournal(climate); len(rows) >= n {
+			return rows
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	f.t.Fatalf("timeout waiting for %d journal row(s) for %s (%s); got %+v",
+		n, climate, desc, f.overshootJournal(climate))
+	return nil
 }
 
 // TestEnhancedClimateConfigure drives the configure/remove command handlers:
@@ -595,6 +644,128 @@ func TestEnhancedClimateCompanionSplitsRequestedAndCommanded(t *testing.T) {
 	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(state string, attrs map[string]any) bool {
 		return state == "21" && attrs["commanded"] == 18.0
 	}, "state 21 (requested) with commanded 18 (what the device carries)")
+}
+
+// TestEnhancedClimateOvershootObserveOnlyWrites pins the safety gate
+// (overshoot-spec.md §9.4): observe-only defaults ON, so a seeded, converged k
+// still writes the UNCORRECTED request. The episode is opened and recorded
+// either way — that is the point of the mode.
+func TestEnhancedClimateOvershootObserveOnlyWrites(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.setStoreNumber("overshoot_k:climate.lr", 0.4) // would cut 1.2° off a 3° rise
+
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "observe-only writes the request, not the corrected value")
+	if temps := f.setTemps(); slices.Contains(temps, 19.8) {
+		t.Fatalf("set_temperature calls %v include the corrected value while observing", temps)
+	}
+
+	// Recorded regardless: a week of what it WOULD have done is the whole
+	// purpose of shipping this way.
+	ep := f.storeMap("overshoot_episode:climate.lr")
+	if ep == nil {
+		t.Fatal("no episode opened, so observe-only recorded nothing to judge")
+	}
+	if ep["offset"] != 1.2000000000000002 && ep["offset"] != 1.2 {
+		t.Fatalf("episode offset = %v, want 1.2 (k 0.4 x rise 3)", ep["offset"])
+	}
+	if ep["applied"] != 21.0 {
+		t.Fatalf("episode applied = %v, want 21 (the uncorrected request)", ep["applied"])
+	}
+	if ep["commanded"] != 19.8 {
+		t.Fatalf("episode commanded = %v, want 19.8 (what it would have written)", ep["commanded"])
+	}
+}
+
+// TestEnhancedClimateOvershootCorrects takes one climate out of observe-only and
+// checks the correction reaches the device: a 18->21 warmup with k=0.4 is
+// commanded to 19.8, while the REQUEST stays 21 for everything that displays
+// intent (§5, §8).
+func TestEnhancedClimateOvershootCorrects(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.setStoreNumber("overshoot_k:climate.lr", 0.4)
+	f.setStore("overshoot_observe:climate.lr", false)
+
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(19.8, "the corrected cutoff is what the device is commanded to")
+
+	if got := f.storeNumber("desired:climate.lr"); got != 21 {
+		t.Fatalf("desired = %v, want 21: the request must survive the correction", got)
+	}
+	if got := f.storeNumber("written:climate.lr"); got != 19.8 {
+		t.Fatalf("written = %v, want 19.8", got)
+	}
+}
+
+// TestEnhancedClimateOvershootOffsetIsLatched is the one the design calls the
+// easiest thing to get wrong (§5): the offset is fixed when the episode opens
+// and must NOT be recomputed as the room warms. Recomputed, the commanded value
+// would climb with the shrinking rise and converge on the request without ever
+// cutting early — the correction would silently do nothing.
+func TestEnhancedClimateOvershootOffsetIsLatched(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.setStoreNumber("overshoot_k:climate.lr", 0.4)
+	f.setStore("overshoot_observe:climate.lr", false)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(19.8, "episode opens and latches a 1.2° offset")
+
+	// The room climbs to 20 and the device now carries the corrected setpoint.
+	// A recomputed offset would be 0.4 x 1 = 0.4, i.e. a command of 20.6.
+	f.seedClimate("climate.lr", `{"current_temperature":20,"temperature":19.8,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("settings", `{"climate_entity":"climate.lr","override_temp":24}`)
+
+	time.Sleep(200 * time.Millisecond) // the re-latch would be a non-event
+	if got := f.storeNumber("written:climate.lr"); got != 19.8 {
+		t.Fatalf("written = %v after the room warmed, want 19.8: the offset was recomputed instead of latched", got)
+	}
+	if temps := f.setTemps(); slices.Contains(temps, 20.6) {
+		t.Fatalf("set_temperature calls %v show a recomputed offset", temps)
+	}
+}
+
+// TestEnhancedClimateOvershootDiscardsOnWindow pins §9.1's central rule: a
+// discarded episode is a record with a reason, never a bare return. A window
+// opening mid-warmup makes the thermal picture meaningless, so the episode is
+// abandoned — but it lands in the journal, because a learner that silently
+// discards every episode is indistinguishable from one that has converged.
+func TestEnhancedClimateOvershootDiscardsOnWindow(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.setWindow("binary_sensor.w1", "off")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"]}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "episode opens on the warmup")
+
+	f.setWindow("binary_sensor.w1", "on")
+
+	rows := f.waitJournal("climate.lr", 1, "the window discard is journaled")
+	last := rows[len(rows)-1]
+	if last["outcome"] != "discarded" {
+		t.Fatalf("outcome = %v, want discarded", last["outcome"])
+	}
+	if last["reason"] != "window_open" {
+		t.Fatalf("reason = %v, want window_open", last["reason"])
+	}
+	// Both the inputs and the resulting action, so the episode can be re-judged
+	// later without the surrounding state.
+	if last["requested"] != 21.0 || last["rise"] != 3.0 {
+		t.Fatalf("journal row lost its deciding inputs: %+v", last)
+	}
+	if f.storeMap("overshoot_episode:climate.lr") != nil {
+		t.Fatal("an invalidated episode must close immediately, not limp on")
+	}
+	// Nothing was learned from it: a discard writes no sample at all.
+	if got, err := f.kv.Get(f.ctx, "overshoot_samples:climate.lr"); err != nil {
+		t.Fatalf("read samples: %v", err)
+	} else if got != nil && got != 0.0 {
+		t.Fatalf("samples = %v after a discard, want unset or 0", got)
+	}
 }
 
 // TestEnhancedClimateRemovalPage drives the Ingress removal page: /api/list
