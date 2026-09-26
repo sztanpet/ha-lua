@@ -4,6 +4,30 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.12.0 - 2026-09-26
+
+### Added
+- **The overshoot journal now records how the radiator cools down after the
+  cutoff.** That cool-down is not a symptom of the overshoot, it is the cause:
+  the heat that lands in the room after the relay drops is the integral of the
+  radiator's decay curve. Each episode kept only the endpoints of that curve
+  before, and two points cannot tell a curve from a straight line — so every
+  minute of the coast is now recorded, along with the room temperature it is
+  emptying into.
+- Each episode gains a **cool-down half-life**: how long the radiator took to
+  give up half its lead over the room. It appears in the journal table
+  (`Cool t½`) and in the episode's log line. A half-life rather than a fitted
+  time constant, because it needs no curve fitting, survives a missing reading,
+  and does not pretend the decay is clean when a slow valve makes it anything
+  but. It reads `—` when the lead never halved inside the 30-minute coast —
+  which is itself worth seeing, rather than being papered over with a number.
+- Nothing acts on any of it. The correction stays outcome-based: it measures the
+  peak it actually got. The curve is there to explain a coefficient rather than
+  merely report it, and to make a plant that has *changed* visible — a decay
+  that suddenly shortens is air in the radiator or a valve that has stopped
+  closing, which the seized-valve alarm cannot see, since it only checks whether
+  a radiator is hot while heating is claimed, never how it cools.
+
 ## 4.11.0 - 2026-09-26
 
 ### Added
