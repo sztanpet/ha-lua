@@ -270,6 +270,17 @@ func (f *enhancedFixture) setWindow(sensor, st string) {
 	f.reg.Dispatch(ha.Event{Type: "state_changed", Data: payload})
 }
 
+// setSensor upserts a plain numeric sensor into the mirror (no dispatch: these
+// are read on demand by the control tick, not subscribed to).
+func (f *enhancedFixture) setSensor(entity, value string) {
+	f.t.Helper()
+	payload := jsontext.Value(`{"entity_id":"` + entity + `","new_state":{"entity_id":"` + entity +
+		`","state":"` + value + `","attributes":{}}}`)
+	if err := f.tracker.HandleStateChanged(f.ctx, payload); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
 // allDaySchedule builds a schedule JSON where every weekday has a single
 // 00:00 transition to temp, so schedule.resolve returns temp at any time.
 func allDaySchedule(temp string) string {
@@ -870,6 +881,45 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 	rec = doReqID(f.router, "enhanced_climate", "POST", "/api/remove", `not json`)
 	if rec.Code != 400 {
 		t.Errorf("bad body status = %d, want 400", rec.Code)
+	}
+}
+
+// TestEnhancedClimateOvershootRecordsConditions pins the two columns that exist
+// purely to be analysed later (overshoot-spec.md §12): the outdoor temperature
+// and the radiator temperature an episode ran under. Nothing reads them — one
+// coefficient per climate assumes the plant gain is roughly constant, and these
+// are what will eventually say whether that assumption holds. A journal without
+// them makes the question permanently unanswerable.
+func TestEnhancedClimateOvershootRecordsConditions(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.setSensor("sensor.lr_rad", "28")
+	f.setSensor("sensor.outside", "4.5")
+	f.setWindow("binary_sensor.w1", "off")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"],`+
+		`"radiator_entity":"sensor.lr_rad","outdoor_entity":"sensor.outside"}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "episode opens with the radiator cold")
+
+	ep := f.storeMap("overshoot_episode:climate.lr")
+	if ep == nil {
+		t.Fatal("no episode opened")
+	}
+	if ep["outdoor_at_open"] != 4.5 {
+		t.Errorf("outdoor_at_open = %v, want 4.5", ep["outdoor_at_open"])
+	}
+	if ep["radiator_at_open"] != 28.0 {
+		t.Errorf("radiator_at_open = %v, want 28", ep["radiator_at_open"])
+	}
+
+	// The radiator heats up, the window opens, the episode is discarded — and
+	// the conditions travel into the journal row with everything else.
+	f.setSensor("sensor.lr_rad", "61")
+	f.setWindow("binary_sensor.w1", "on")
+	rows := f.waitJournal("climate.lr", 1, "the discard carries the conditions")
+	last := rows[len(rows)-1]
+	if last["outdoor_at_open"] != 4.5 || last["radiator_at_open"] != 28.0 {
+		t.Errorf("journal row lost the conditions: %+v", last)
 	}
 }
 

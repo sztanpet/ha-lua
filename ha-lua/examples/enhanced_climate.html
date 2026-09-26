@@ -329,7 +329,11 @@
       const table = document.createElement("table");
       table.className = "journal";
       const head = document.createElement("tr");
-      for (const label of ["Opened", "Request", "Rise", "Commanded", "Peak", "Error", "k", "Outcome"]) {
+      // Outside and Rad. are recorded, not acted on: they are the columns that
+      // will eventually say whether one k per climate is enough, or whether the
+      // coefficient has to vary with the weather and the radiator.
+      for (const label of ["Opened", "Request", "Rise", "Commanded", "Peak", "Error",
+        "Outside", "Rad. cut", "k", "Outcome"]) {
         const cell = document.createElement("th");
         cell.textContent = label;
         head.appendChild(cell);
@@ -349,6 +353,10 @@
           temp(row.commanded),
           discarded ? "—" : temp(row.peak),
           discarded ? "—" : signed(error),
+          temp(row.outdoor_at_open),
+          // The radiator at the cutoff: the stored energy about to land in the
+          // room, which is what the overshoot actually is.
+          temp(row.radiator_at_cutoff),
           round(row.k_before, 3) + " → " + round(row.k_after, 3),
           discarded ? "discarded: " + (row.reason || "?") : row.outcome,
         ];

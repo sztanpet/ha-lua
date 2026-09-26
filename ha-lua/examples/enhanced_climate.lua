@@ -220,6 +220,40 @@ local function observe_only(climate)
   return store.get(observe_key(climate)) ~= false
 end
 
+-- A numeric sensor state, or nil for an unseeded, unavailable or non-numeric
+-- one. Missing is recorded as missing; a zero would read as a freezing radiator.
+local function sensor_number(entity)
+  if type(entity) ~= "string" or entity == "" then return nil end
+  local state = ha.get_state(entity)
+  if state == nil then return nil end
+  return tonumber(state.state)
+end
+
+-- Both come from the card config, like everything else here: this script is
+-- provisioned at runtime and deliberately has nothing to edit in the file.
+local function radiator_of(climate)
+  local cfg = load_registry()[climate]
+  return cfg and cfg.radiator_entity or nil
+end
+
+-- The outdoor sensor is per-climate only because that is where the config lives;
+-- in practice every card points at the same one. A daily-average sensor beats an
+-- instantaneous reading here: the plant is slow enough that the momentary value
+-- at 06:00 is mostly noise.
+local function outdoor_of(climate)
+  local cfg = load_registry()[climate]
+  return cfg and cfg.outdoor_entity or nil
+end
+
+-- The conditions an episode ran under, sampled fresh each tick because the
+-- radiator temperature is the whole point: it swings 30° across one warmup.
+local function env_snapshot(climate)
+  return {
+    outdoor = sensor_number(outdoor_of(climate)),
+    radiator = sensor_number(radiator_of(climate)),
+  }
+end
+
 local function journal(climate, record)
   local rows = store.get(journal_key(climate))
   if type(rows) ~= "table" then rows = {} end
@@ -228,9 +262,9 @@ local function journal(climate, record)
   store.set(journal_key(climate), rows)
 end
 
-local function open_episode(climate, requested, current, at)
+local function open_episode(climate, requested, current, at, env)
   local watching = observe_only(climate)
-  local episode = overshoot.open(requested, current, learned_k(climate), watching, at)
+  local episode = overshoot.open(requested, current, learned_k(climate), watching, at, env)
   if episode == nil then return nil end
   -- An unclamped command HA drops would leave the episode waiting for a cutoff
   -- that cannot arrive.
@@ -239,9 +273,10 @@ local function open_episode(climate, requested, current, at)
   episode.applied = control.clamp_bounds(episode.applied, lo, hi)
   store.set(episode_key(climate), episode)
   ha.log("info", string.format(
-    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f k=%.3f offset=%.2f commanded=%.1f%s",
+    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f k=%.3f offset=%.2f commanded=%.1f outdoor=%s radiator=%s%s",
     climate, requested, current, episode.rise, episode.k_used, episode.offset,
-    episode.commanded, watching and " (observe-only)" or ""))
+    episode.commanded, tostring(episode.outdoor_at_open), tostring(episode.radiator_at_open),
+    watching and " (observe-only)" or ""))
   return episode
 end
 
@@ -258,9 +293,10 @@ local function close_episode(climate, episode, at)
     store.set(k_key(climate), k_after)
     store.set(samples_key(climate), learned_samples(climate) + 1)
     ha.log("info", string.format(
-      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f k %.3f -> %.3f",
+      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f radiator_at_cutoff=%s k %.3f -> %.3f",
       climate, outcome, episode.peak, episode.requested,
-      episode.peak - episode.requested, k_before, k_after))
+      episode.peak - episode.requested, tostring(episode.radiator_at_cutoff),
+      k_before, k_after))
   end
   journal(climate, overshoot.record(episode, climate, k_before, k_after, outcome, reason, at))
   store.delete(episode_key(climate))
@@ -304,6 +340,7 @@ local function overshoot_step(climate, now, requested, previous)
   local heating = mode(climate) == "heat"
   local window = window_open(climate)
   local requested_changed = requested ~= previous
+  local env = env_snapshot(climate)
 
   local episode = live_episode(climate)
 
@@ -317,7 +354,7 @@ local function overshoot_step(climate, now, requested, previous)
       overshoot.invalidate(episode, "observe_changed")
     end
     local phase = "heating"
-    if current ~= nil then phase = overshoot.step(episode, current, at) end
+    if current ~= nil then phase = overshoot.step(episode, current, at, env) end
     if episode.invalid ~= nil or phase == "done" then
       close_episode(climate, episode, at)
       episode = nil
@@ -327,7 +364,7 @@ local function overshoot_step(climate, now, requested, previous)
   end
 
   if episode == nil and requested_changed and heating and not window and current ~= nil then
-    episode = open_episode(climate, requested, current, at)
+    episode = open_episode(climate, requested, current, at, env)
   end
 
   if episode == nil then return requested end
@@ -552,16 +589,19 @@ end)
 
 -- Defaults the optional lists, so later code never type-checks them.
 --
--- `radiator_entity` is the sensor strapped to this zone's radiator. The card has
--- rendered it for a while; the daemon needs it too, because the radiator
--- temperature at the cutoff is what the overshoot journal records as the stored
--- energy about to land in the room. Empty string means none.
+-- `radiator_entity` is the sensor strapped to this zone's radiator, and
+-- `outdoor_entity` the house's outdoor temperature. Both are recorded with every
+-- overshoot episode and neither is acted on: the radiator temperature at the
+-- cutoff IS the stored energy about to land in the room, and the pair is what
+-- will eventually say whether one coefficient per climate is enough
+-- (overshoot-spec.md §12). Empty string means none.
 local function normalize(data)
   return {
     climate_entity = data.climate_entity,
     window_sensors = type(data.window_sensors) == "table" and data.window_sensors or {},
     presets = type(data.presets) == "table" and data.presets or {},
     radiator_entity = type(data.radiator_entity) == "string" and data.radiator_entity or "",
+    outdoor_entity = type(data.outdoor_entity) == "string" and data.outdoor_entity or "",
   }
 end
 
@@ -582,6 +622,7 @@ local function config_equal(x, y)
       and list_equal(x.window_sensors, y.window_sensors)
       and list_equal(x.presets, y.presets)
       and (x.radiator_entity or "") == (y.radiator_entity or "")
+      and (x.outdoor_entity or "") == (y.outdoor_entity or "")
 end
 
 -- Idempotent upsert, fired by the card on load and on any config change.
@@ -742,6 +783,7 @@ local function list_climates()
       window_sensors = cfg.window_sensors or {},
       presets = cfg.presets or {},
       radiator_entity = cfg.radiator_entity or "",
+      outdoor_entity = cfg.outdoor_entity or "",
       overshoot = overshoot_status(climate),
     }
   end

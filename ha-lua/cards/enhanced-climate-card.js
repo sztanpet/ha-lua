@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.36";
+const VERSION = "0.3.37";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -122,6 +122,7 @@ const MESSAGES = {
     "editor.climate": "Climate entity (required)",
     "editor.window_sensors": "Window sensor",
     "editor.radiator": "Radiator temperature sensor",
+    "editor.outdoor": "Outdoor temperature sensor",
     "editor.presets": "Override presets (minutes)",
     "editor.name": "Name",
   },
@@ -188,6 +189,7 @@ const MESSAGES = {
     "editor.climate": "Klíma entitás (kötelező)",
     "editor.window_sensors": "Ablakérzékelő",
     "editor.radiator": "Radiátor hőmérséklet-érzékelő",
+    "editor.outdoor": "Külső hőmérséklet-érzékelő",
     "editor.presets": "Felülbírálás gombok (perc)",
     "editor.name": "Név",
   },
@@ -279,6 +281,7 @@ function configHash(config) {
     window_sensors: config.window_sensors || [],
     presets: config.presets || [],
     radiator_entity: config.radiator_entity || "",
+    outdoor_entity: config.outdoor_entity || "",
   });
 }
 
@@ -644,6 +647,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       window_sensors: this._config.window_sensors || [],
       presets: this._config.presets || [],
       radiator_entity: this._config.radiator_entity || "",
+      outdoor_entity: this._config.outdoor_entity || "",
     });
   }
 
@@ -1258,8 +1262,8 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
     });
     form.append(windowPicker);
 
-    // Display-only: the radiator temp sensor is never sent to the daemon; the
-    // card just shows it on the status line as a valve-health hint.
+    // Shown on the status line as a valve-health hint, and sent to the daemon,
+    // which records its temperature with every overshoot episode.
     const radiatorPicker = document.createElement("ha-entity-picker");
     radiatorPicker.hass = this._hass;
     radiatorPicker.value = this._config.radiator_entity || "";
@@ -1275,6 +1279,24 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
       }
     });
     form.append(radiatorPicker);
+
+    // Recorded with every overshoot episode, never acted on — the column that
+    // will say whether one coefficient per climate is enough.
+    const outdoorPicker = document.createElement("ha-entity-picker");
+    outdoorPicker.hass = this._hass;
+    outdoorPicker.value = this._config.outdoor_entity || "";
+    outdoorPicker.includeDomains = ["sensor"];
+    outdoorPicker.label = translate("editor.outdoor");
+    outdoorPicker.addEventListener("value-changed", (ev) => {
+      const sensor = ev.detail.value;
+      if (sensor) {
+        this._update({ outdoor_entity: sensor });
+      } else {
+        delete this._config.outdoor_entity;
+        this._emit();
+      }
+    });
+    form.append(outdoorPicker);
 
     const presetsInput = h("input", {
       type: "text", inputmode: "numeric",
