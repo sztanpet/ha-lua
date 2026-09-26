@@ -4,6 +4,31 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.12.1 - 2026-09-26
+
+### Fixed
+- **Setting the setpoint on the enhanced-climate card is instant again.** 4.11.0
+  moved the target stepper onto the request rather than the device setpoint —
+  the right number to show, since the overshoot correction makes the device
+  carry something lower — but the request comes from the companion sensor, which
+  only updates after a full daemon round trip. The stepper never echoed the tap
+  locally, so it sat frozen until that round trip landed.
+- **The stepper no longer fights back.** The card rebuilds its whole DOM on
+  every relevant state push, and 4.11.0 made the radiator sensor relevant. A
+  rebuild carrying the pre-tap request rewound the number on screen and made the
+  next tap step from the rewound value, so rapid tapping went backwards. A tap
+  now outranks a source that has not caught up, while a genuine external change
+  (a schedule transition, another phone) still wins immediately.
+- **Rapid +/- taps now send one write instead of one per tap.** A TRV queues
+  every `set_temperature` and answers them one at a time, so a burst made the
+  setpoint visibly walk to its destination after the tapping stopped. Typing a
+  value still writes as soon as the field is left.
+- The override-temp stepper gets the same treatment, and needed it more: it
+  writes through the daemon, and its own "applying" render was rebuilding the
+  control with the old value immediately after the tap.
+- A flaky thermostat-UI browser test that sampled the page in the instant
+  between a re-render clearing the zone list and refilling it.
+
 ## 4.12.0 - 2026-09-26
 
 ### Added
