@@ -2,10 +2,13 @@
 
 > **Working state:** [`state/overshoot.md`](state/overshoot.md) — implementation progress and decisions.
 
-Status: **built**, shipping in observe-only mode (§9.4). §11's five commits are
-in; §12 lists what is deliberately deferred. Where the code and this document
-disagreed, the document was corrected — the notes saying so are kept
-deliberately, since each marks something that was got wrong on paper first.
+Status: **built for both controllers**, shipping in observe-only mode (§9.4).
+§11's five commits landed in `thermostat.lua`; §12's port to
+`enhanced_climate.lua` — which is where the children's room actually lives, and
+was wrongly assumed not to be — is done too. See `state/overshoot.md`. Where
+the code and this document disagreed, the document was corrected: the notes
+saying so are kept deliberately, since each marks something that was got wrong
+on paper first.
 
 ## 1. Goal
 
@@ -418,12 +421,62 @@ is the smaller bisectable unit and it keeps the wiring commit readable.
 
 ## 12. Deferred
 
-- **`enhanced_climate.lua` and the Lovelace card.** The children's room lives
-  in `lib/zones.lua`, so `thermostat.lua` is the whole target. Extending it
-  means §7's two sites plus card config, editor fields and a `VERSION` bump.
-- **Bucketing `k` by conditions** (outdoor temperature, time of day). One
-  scalar per zone assumes the plant gain is roughly constant across episodes of
-  different sizes; proportional-to-rise handles the size, but not a mild day
-  versus a cold one. Add buckets only if the measured error stays visibly
-  correlated with the weather after `k` converges.
+- ~~**`enhanced_climate.lua` and the Lovelace card.**~~ **DONE** — and it was
+  never optional. The premise recorded here, that the children's room lives in
+  `lib/zones.lua`, was wrong and was never checked against the running install:
+  the room is `climate.konyha_gyerekszoba_futes`, an enhanced climate, and the
+  `thermostat.lua` on the box is an unmodified example copy pointing at entities
+  that do not exist. The feature therefore sat in observe-only for three weeks
+  having never opened a single episode. See `state/overshoot.md`, "Field check".
+
+  The port brought two things this spec did not anticipate. The card's target
+  stepper reads the setpoint off the climate entity, so it would have shown the
+  COMMANDED value where the user set the request — and a nudge from a corrected
+  19.8 lands inside `control.is_manual`'s 0.1 ° tolerance, so the tap would have
+  appeared to do nothing at all. §8's "the shipped card does not read `target`"
+  holds for `thermostat.html` only. And a live episode has to be abandoned when
+  a climate stops being controlled entirely, which is a real case here (a boost
+  expiring with no schedule under it) and not one in the zone model.
+- **Varying `k` with conditions** (outdoor temperature, radiator temperature).
+  One scalar per zone assumes the plant gain is roughly constant across
+  episodes; proportional-to-rise handles the size of an episode, but not a mild
+  day versus a cold one, nor a radiator that was already hot when the run
+  started. Gate unchanged: do this only if the measured error stays visibly
+  correlated with those columns after `k` converges.
+
+  **The evidence is now being collected.** Every episode records
+  `outdoor_at_open`, `radiator_at_open`, `radiator_at_cutoff` and
+  `radiator_at_peak`, and the Ingress journal shows the first and third. This
+  costs nothing and is what makes the question answerable at all — without the
+  columns, "decide later from the data" is not a plan.
+
+  **A lookup table keyed on outdoor temperature is the wrong shape**, and was
+  rejected before any code. The data rate is about one episode per night per
+  zone and `k` converges in four or five, so a single scalar is right within a
+  week. Split into, say, nine 3 °C buckets across a season and each bucket needs
+  its own four or five episodes — a month at best, and the shoulder buckets
+  collect a handful all year. Worse, `K_INIT = 0` means every bucket the weather
+  has not yet visited starts with the correction switched OFF: the overshoot
+  would come back every time the weather moved into a new band, which is a
+  regression triggered by precisely the thing the buckets were meant to handle.
+
+  If the data justifies varying `k`, fit it instead:
+
+  ```
+  k = k0 + k1 * (T_out - T_ref)
+  ```
+
+  Two parameters by recursive least squares, both updated by every episode. No
+  bucket can starve, it interpolates across the range and extrapolates past it,
+  there is no discontinuity at a bucket edge, and there is no cold start ever.
+
+  Note also which variable is which. The overshoot is stored energy in the
+  radiator body — metal at 50–70 °C radiating for 10–20 minutes after the relay
+  drops — and that quantity is set by the radiator's mass and water temperature,
+  NOT by the outdoor temperature. Outdoor temperature governs how fast that
+  energy leaks back out through the walls during the coast, so it is the
+  second-order term despite being the obvious suspect. `radiator_at_cutoff` is
+  the first-order one. If the boiler runs weather compensation the two become
+  correlated, because the flow temperature then tracks the weather — which is
+  exactly the sort of thing the journal will show and an argument will not.
 - **Cycle amplitude.** §2 — `heat_deadband` on the node, not here.

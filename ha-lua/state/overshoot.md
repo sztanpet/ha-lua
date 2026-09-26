@@ -3,10 +3,12 @@
 Working state for the learned early-cutoff correction. Spec:
 `overshoot-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **built, but wired into the wrong script.** All five §11 commits are in
-and ship in observe-only mode — inside `thermostat.lua`, which does not control
-the children's room and in fact controls nothing on the live install. See
-"Field check, 2026-09-26" below before doing anything else here.
+Status: **ported to `enhanced_climate.lua`, still observe-only.** The five §11
+commits landed in `thermostat.lua`, which turned out to control nothing on the
+live install ("Field check, 2026-09-26" below). The port to the controller that
+actually owns the children's room is done — nine commits on 2026-09-26, listed
+under "The port" — and ships observe-only, so the next step is still field data,
+but now from a zone that will actually produce episodes.
 
 ## Why it exists (2026-09-06)
 - Field problem: the children's room is small and its thermostat sails 1–2 °C
@@ -208,14 +210,87 @@ is exactly the silent failure the section was written to prevent, and it is the
 failure that actually happened. A zone that has produced no episode in N days
 needs to say so.
 
+## The port to enhanced_climate.lua (2026-09-26)
+Nine commits, each green on `make test`:
+
+| commit | what |
+|--------|------|
+| `b1f9219` | `desired`/`written` split; `control.is_manual` moved onto `written` |
+| `dc94213` | `commanded` in the companion, read back off the device |
+| `ee8c0d8` | the learner itself, keyed by climate entity |
+| `a78e384` | `/api/overshoot`, `/reset`, `/observe` + the card's `overshoot` command |
+| `8a89781` | card stepper edits the REQUEST (0.3.34) |
+| `16cfca2` | card tap disclosure (0.3.35) |
+| `d25d7d5` | journal table on the Ingress page |
+| `ae7fb24` | `lib/overshoot.lua` carries an optional env snapshot |
+| `ce216b3` | `radiator_entity` reaches the daemon (0.3.36) |
+| `e09d0ab` | outdoor + radiator recorded per episode (0.3.37) |
+
+Decisions worth keeping:
+
+- **The card's stepper was a real ratchet bug**, which spec §8 had dismissed
+  after checking `thermostat.html`. This card DOES read the setpoint off the
+  climate entity, so it would have shown 19.8 where the user set 21 — and worse
+  than misreporting: a nudge from 19.8 gives 19.9, inside `is_manual`'s 0.1 °
+  tolerance, so the dial change would not register and the next tick would put
+  19.8 back. The tap would look broken. It now reads the companion's state
+  (the request) whenever `controlled`, falling back to the device setpoint.
+- **A live episode is abandoned when the climate stops being controlled.**
+  A boost expiring with no schedule under it is a real case here and is not one
+  in the zone model; without it the episode sits open until the 4-hour timeout.
+- **Observe-only switching is detected in the step function**, not only at the
+  command that flipped it, so an episode latched under the old setting cannot be
+  judged under the new one however the flag was changed.
+- **Removing a climate drops its k, journal and flags.** A re-added climate
+  should not inherit a coefficient measured on a plant that may since have been
+  replumbed.
+- **`radiator_entity` moved into `configHash`**, reversing the v2.9.0 decision
+  that deliberately kept it out. That decision was right while it was
+  display-only; the learner needs the id daemon-side, so a change to it is now a
+  real config change.
+- **The outdoor sensor is card config, not a module constant.** A constant was
+  written first and thrown away: this script's whole premise is that it is
+  provisioned at runtime and has nothing to edit in the file, and a constant
+  cannot be tested without patching it.
+- **A missing sensor records nil, never 0.** A zero would read as a freezing
+  radiator and poison exactly the analysis the columns exist for.
+- The Ingress journal table was checked in headless Chromium at 420 px and
+  760 px, which turned up two real layout bugs (flex items will not shrink below
+  their content without `min-width: 0`, so the table pushed Remove off the row;
+  and the status sentence pushed the arm/reset buttons off the edge).
+
+## On bucketing k by outdoor temperature (asked 2026-09-26)
+The user's instinct that outdoor temperature matters is right; a lookup table
+keyed on it is the wrong shape. Full reasoning is now in spec §12. Short
+version: ~1 episode/night and k converges in 4–5, so a single scalar is right
+within a week while nine buckets need a month and the shoulder buckets starve —
+and `K_INIT = 0` means an unvisited bucket ships with the correction OFF, so the
+overshoot returns every time the weather moves into a new band. If the data
+justifies it, fit `k = k0 + k1*(T_out - T_ref)` by recursive least squares
+instead: nothing starves, it interpolates, no cold start.
+
+Also worth remembering which variable is which: the overshoot is stored energy
+in the radiator body, set by its mass and water temperature, so
+`radiator_at_cutoff` is the first-order term and outdoor temperature (which only
+governs the leak rate during the coast) is second-order — unless the boiler runs
+weather compensation, which would correlate them. The journal will show it.
+
 ## Pending
-- Port the correction to `enhanced_climate.lua` (§7's two sites, `:314`/`:365`
-  in the spec's numbering) — that is where the children's room actually lives.
-  §12 is no longer "deferred nice-to-have", it is the whole feature.
-- Decide what happens to the example `thermostat.lua`/`heating_windows.lua`
-  copies squatting in `scripts/`: they were never customised and their real
-  versions are in `disabled/`.
-- Add the "no episodes seen" warning above.
-- Only then: field data, then take the zone out of observe-only.
+- **Deploy.** The scripts on the box are hand-copied into
+  `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so
+  none of this reaches the children's room until they are re-copied. The card
+  also needs a new image plus a restart to re-materialize (0.3.37).
+- Set `radiator_entity` and `outdoor_entity` on the four enhanced-climate cards.
+  `sensor.kinti_atlagos_napi_homerseklet` is the house's daily-average outdoor
+  sensor (it already drives the heat/off automation at 14.5/17 °).
+- Field data: a week of `/api/overshoot?climate=climate.konyha_gyerekszoba_futes`
+  or the Ingress panel, THEN take that climate out of observe-only.
+- Still open: the "no episodes in N days" warning. A discard is journaled with a
+  reason, but an episode that never OPENS leaves no trace — which is the failure
+  that actually happened here.
+- The example `thermostat.lua`/`heating_windows.lua` copies squatting in
+  `scripts/` were left alone on the user's instruction (2026-09-26: "dont delete
+  anything"). They were never customised; the real versions are in `disabled/`.
+- A CHANGELOG entry and a release, when asked.
 - Commit 5 was larger than the spec first implied: the card has no setpoint
   display to hang the disclosure off, so one had to be added.

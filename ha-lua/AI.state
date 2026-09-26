@@ -10,14 +10,16 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**The overshoot correction is wired into a script that controls nothing**
-(detail: `state/overshoot.md`, "Field check, 2026-09-26"). Checked against the
-live install: every `thermostat.lua` zone reports `k=0, samples=0, journal={}`
-— not one episode in three weeks — because `scripts/lib/zones.lua` there is
-byte-identical to the bundled example, so the zones point at climate entities
-that do not exist. The children's room is `climate.konyha_gyerekszoba_futes`,
-owned by `enhanced_climate.lua`, which the spec deferred (§12). Porting it
-there is the whole feature, not an extension of it.
+**The overshoot correction, ported to the controller that actually owns the
+children's room** (detail: `state/overshoot.md`). It had been built into
+`thermostat.lua`, which on the live install is an unmodified example copy
+pointing at climate entities that do not exist — every zone `k=0, samples=0,
+journal={}`, not one episode in three weeks of "gathering field data". The room
+is `climate.konyha_gyerekszoba_futes`, an `enhanced_climate.lua` climate. Ten
+commits (`b1f9219`..`e09d0ab`), card 0.3.33 -> 0.3.37, still observe-only.
+Episodes now also record the outdoor and radiator temperatures so spec §12's
+"vary k with conditions" can be decided from data. NOT YET DEPLOYED: the scripts
+on the box are hand-copied and must be re-copied.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -150,6 +152,12 @@ here.
   to golangci-lint v2.13.2's own go.mod: gobwas/glob v0.2.3, alecthomas/
   go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when golangci-lint
   catches up; do not "fix" them forward.
+
+- **A learner's diagnostics must cover "it never ran", not only "it ran and
+  discarded".** The overshoot journal records every DISCARDED episode with a
+  reason, at warn, precisely so silent failure is impossible — and then failed
+  silently anyway, because an episode that never OPENS leaves no record at all.
+  Any counter-based safeguard needs a "nothing has happened in N days" arm.
 
 - **Check a feature's target against the RUNNING install, not against the
   example tree.** The overshoot learner was specced, built and shipped over
