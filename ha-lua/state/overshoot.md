@@ -275,6 +275,10 @@ in the radiator body, set by its mass and water temperature, so
 governs the leak rate during the coast) is second-order — unless the boiler runs
 weather compensation, which would correlate them. The journal will show it.
 
+## Released
+v4.11.0 (`c0d46a8`, tagged, 2026-09-26) carries the whole port. What shipped is
+in `CHANGELOG.md`; not repeated here.
+
 ## Pending
 - **Deploy.** The scripts on the box are hand-copied into
   `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so

@@ -18,8 +18,9 @@ journal={}`, not one episode in three weeks of "gathering field data". The room
 is `climate.konyha_gyerekszoba_futes`, an `enhanced_climate.lua` climate. Ten
 commits (`b1f9219`..`e09d0ab`), card 0.3.33 -> 0.3.37, still observe-only.
 Episodes now also record the outdoor and radiator temperatures so spec §12's
-"vary k with conditions" can be decided from data. NOT YET DEPLOYED: the scripts
-on the box are hand-copied and must be re-copied.
+"vary k with conditions" can be decided from data. Released as v4.11.0.
+DEPLOY STILL PENDING: the scripts on the box are hand-copied and must be
+re-copied before any of this reaches the children's room.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
