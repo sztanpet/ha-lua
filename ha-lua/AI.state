@@ -21,8 +21,12 @@ Episodes now also record the outdoor and radiator temperatures, and the
 radiator's whole post-cutoff decay curve plus its half-life, so spec §12's
 "vary k with conditions" can be decided from data. Deployed 2026-09-26, with
 `radiator_entity`/`outdoor_entity` set on the nappali and gyerekszoba climates.
-v4.12.1 then fixed the setpoint-stepper lag the port caused (card 0.3.38);
-still observe-only, still waiting on field data.
+v4.12.1 then fixed the setpoint-stepper lag the port caused. v4.13.0 fixed the
+model itself: the room has no schedule and overheats on its own heating
+cycles, which the request-change trigger could never see, so an episode now
+also opens when the relay closes and the offset gained a learned floor
+(`base + slope * rise`). Card 0.3.39. Still observe-only; with every cycle an
+episode now, a day or two of data should converge `base`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -172,6 +176,14 @@ here.
   poll). The read lands in the gap and sees nothing; it only shows up under a
   full-suite run and looks like flake. Poll on the condition and stash the value
   on `window` inside the same expression.
+
+- **The learner's trigger is the relay, not the request.** The overshoot
+  model was written for a warmup from setback and shipped with "the request
+  rose above the room" as its only trigger; the children's room has no
+  schedule and overheats on hysteresis cycles, during which the request never
+  moves. Do not re-narrow it to request changes. Corollary: the offset needs a
+  floor (`base`), because a rise-proportional cut on a deadband-sized rise is
+  capped at nothing, while the radiator reaches full temperature either way.
 
 - **A learner's diagnostics must cover "it never ran", not only "it ran and
   discarded".** The overshoot journal records every DISCARDED episode with a

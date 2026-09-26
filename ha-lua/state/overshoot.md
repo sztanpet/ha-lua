@@ -277,7 +277,8 @@ weather compensation, which would correlate them. The journal will show it.
 
 ## Released
 v4.11.0 (`c0d46a8`) carries the whole port; v4.12.0 (`655335a`) adds the coast
-decay curve; v4.12.1 (`c05cd5d`) fixes the stepper lag the port introduced.
+decay curve; v4.12.1 (`c05cd5d`) fixes the stepper lag the port introduced;
+v4.13.0 adds the relay trigger and the floor term.
 What shipped is in `CHANGELOG.md`; not repeated here.
 
 The decay work answers the user's 2026-09-26 question about measuring heat-up
@@ -318,6 +319,43 @@ slower-answering source is a UI change, not just a data change.** Optimism-free
 is right for server data and wrong for the number in a control the user is
 touching — that number is their own input.
 
+## The trigger that could not fire (v4.13.0)
+Same evening, second report: "there was a heating cycle but i can't see
+anything about the overshoot". Checked on the box: zero `overshoot` lines in
+both log files (which cover 18:35 onward), empty journal. Not a logging
+failure — nothing had happened. The request on the children's room had been a
+flat 23.7 since a stepper nudge at 18:37 (a 24h manual hold; the room has NO
+schedule), and the only trigger was "the request rises above the room". A
+cycle inside a hold never moves the request. The model was built for a warmup
+from setback in a room that does not exist here.
+
+Two side findings while looking:
+- The add-on runs at `log_level: debug`, and at debug the daemon writes a
+  `lua: event dispatch delay` line for every event to every script — 12,427
+  lines in 25 minutes, so the 5 MiB budget rotates in about an hour. The log
+  is a rolling one-hour window, not a record; the journal (SQLite) is the
+  record. Told the user; the per-event debug line itself was left alone.
+- `overshoot.open` returning nil for "nothing to climb" is silent. The two
+  0.1° nudges at 18:37 produced no episode and no line. Still silent; the
+  "no episodes in N days" warning has now been offered four times and not
+  asked for.
+
+The fix, spec first (`781ba91`) then four commits: `{base, slope}` learned
+by NLMS on `[1, rise]` (`389c53f`), the relay trigger with the handlers
+reordered so manual detection runs before the re-apply (`3139ff6`), the card
+(`0.3.39`). §4.2's rejection of a flat offset was kept for the PERMANENT case
+and corrected on its premise: the offset is only ever applied for the episode.
+`MIN_RISE` is gone (it would have discarded every cycle), replaced by
+`never_heated`, which is gated only on an explicit hvac_action = idle so a
+device without hvac_action is not locked out.
+
+What to watch for once it has data: on a cycle the correction can command a
+setpoint at or below the room and the relay switches straight back off — by
+design; `base` then comes down until a short run lands the room on the
+request. If `base` converges to something near the deadband and the room
+still overshoots, the radiator's stored heat is more than a run of any length
+can avoid and the answer is on the node (`heat_deadband`), not here.
+
 ## Pending
 - **Deploy.** The scripts on the box are hand-copied into
   `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so
@@ -330,7 +368,11 @@ touching — that number is their own input.
   `sensor.kinti_atlagos_napi_homerseklet` is the house's daily-average outdoor
   sensor (it already drives the heat/off automation at 14.5/17 °).
 - Field data: a week of `/api/overshoot?climate=climate.konyha_gyerekszoba_futes`
-  or the Ingress panel, THEN take that climate out of observe-only.
+  or the Ingress panel, THEN take that climate out of observe-only. With the
+  relay trigger, every cycle is an episode now, so a week is dozens of samples
+  rather than seven — `base` should be converged within a day or two.
+- The 23.7 manual hold from 18:37 pins the room until it expires (no
+  schedule → 24h); the user was told.
 - Still open: the "no episodes in N days" warning. A discard is journaled with a
   reason, but an episode that never OPENS leaves no trace — which is the failure
   that actually happened here.
