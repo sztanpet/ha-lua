@@ -262,6 +262,53 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(env_row.radiator_at_cutoff == 61, "journal carries the cutoff radiator temp")
 		assert(env_row.radiator_at_peak == 49, "journal carries the peak radiator temp")
 
+		-- The coast decay series: the cool-down is not a correlate of the
+		-- overshoot, it IS the overshoot, so the middle of the curve is kept and
+		-- not just its endpoints.
+		local decay = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		o.step(decay, 20, 60, { radiator = 55 })   -- still heating, nothing recorded
+		assert(decay.decay == nil, "no decay samples before the cutoff")
+		o.step(decay, 21, 120, { radiator = 60 })  -- cutoff: lead over the room is 39
+		assert(#decay.decay == 1 and decay.decay[1].t == 0, "cutoff is the first sample")
+		assert(decay.decay[1].rad == 60 and decay.decay[1].room == 21, "sample carries both")
+		o.step(decay, 21.5, 300, { radiator = 45 })
+		o.step(decay, 21.5, 600, { radiator = 32 })
+		assert(#decay.decay == 3, "coast samples appended")
+		-- Lead starts at 39 and halves at 19.5. At t=180 it is 45-21.5 = 23.5, at
+		-- t=480 it is 32-21.5 = 10.5, so it crosses partway between.
+		local half = o.half_life(decay)
+		assert(half ~= nil and half > 180 and half < 480, "half-life interpolated, got "..tostring(half))
+		local row = o.record(decay, "z", 0, 0, "learned", nil, 900)
+		assert(#row.decay == 3 and row.decay_half_life == half, "journal carries the curve")
+
+		-- A lead that never halves inside the coast reports nil rather than a
+		-- made-up number: "did not halve in 30 minutes" is itself the finding.
+		local slow = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		o.step(slow, 21, 60, { radiator = 60 })
+		o.step(slow, 21, 120, { radiator = 59 })
+		assert(o.half_life(slow) == nil, "no halving -> nil")
+
+		-- A radiator already at room temperature has no lead to halve.
+		local cold_rad = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		o.step(cold_rad, 21, 60, { radiator = 21 })
+		o.step(cold_rad, 21, 120, { radiator = 21 })
+		assert(o.half_life(cold_rad) == nil, "no lead -> nil")
+
+		-- The series is bounded, so a faster tick cannot grow the journal row
+		-- without limit.
+		local many = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		o.step(many, 21, 1, { radiator = 60 })
+		for i = 2, o.DECAY_MAX_SAMPLES + 20 do
+			o.step(many, 21, i, { radiator = 60 - i * 0.1 })
+		end
+		assert(#many.decay == o.DECAY_MAX_SAMPLES, "decay series capped, got "..tostring(#many.decay))
+
+		-- A missing radiator reading is skipped, not recorded as zero.
+		local gap = o.open(21, 18, 0, false, 0, { radiator = 20 })
+		o.step(gap, 21, 60, { radiator = 60 })
+		o.step(gap, 21, 120, {})
+		assert(#gap.decay == 1, "a nil radiator adds no sample")
+
 		-- No env is the old behaviour exactly: thermostat.lua passes none and
 		-- must keep working unchanged.
 		local bare = o.open(21, 18, 0.4, false, 0)

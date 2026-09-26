@@ -34,6 +34,10 @@ M.COAST_SECONDS = 30 * 60
 -- An episode that has not reached its setpoint in this long is abandoned, so a
 -- room the heating cannot satisfy fails loudly instead of staying open forever.
 M.MAX_EPISODE_SECONDS = 4 * 3600
+-- Ceiling on the coast decay series. A 30-minute coast on a 1-minute tick fills
+-- about 30 slots; the cap is what stops a faster tick from growing the journal
+-- row without bound.
+M.DECAY_MAX_SAMPLES = 40
 
 local function clamp(value, lo, hi)
   if value < lo then return lo end
@@ -116,6 +120,7 @@ function M.step(episode, current, at, env)
     if current >= episode.applied then
       episode.cutoff_at = at
       episode.radiator_at_cutoff = radiator
+      M.sample_decay(episode, current, at, radiator)
       return "coasting"
     end
     if at - episode.opened_at >= M.MAX_EPISODE_SECONDS then
@@ -124,8 +129,64 @@ function M.step(episode, current, at, env)
     end
     return "heating"
   end
+  M.sample_decay(episode, current, at, radiator)
   if at - episode.cutoff_at >= M.COAST_SECONDS then return "done" end
   return "coasting"
+end
+
+-- Appends one point of the coast decay curve: seconds since the cutoff, the
+-- radiator, and the room it is emptying into.
+--
+-- The cool-down is not a correlate of the overshoot, it IS the overshoot — the
+-- heat that lands in the room after the relay drops is the integral of this
+-- curve. Two endpoints cannot tell an exponential from a straight line, which
+-- is why the middle is kept rather than just a start and an end.
+--
+-- Recorded, never acted on. The correction stays outcome-based: it measures the
+-- peak it actually got. This is here to explain a coefficient, and to make a
+-- plant that has CHANGED visible — a decay that suddenly shortens is air in the
+-- radiator or a valve that stopped closing, which no peak measurement shows.
+function M.sample_decay(episode, room, at, radiator)
+  if radiator == nil or episode.cutoff_at == nil then return end
+  if episode.decay == nil then episode.decay = {} end
+  if #episode.decay >= M.DECAY_MAX_SAMPLES then return end
+  episode.decay[#episode.decay + 1] = {
+    t = at - episode.cutoff_at,
+    rad = radiator,
+    room = room,
+  }
+end
+
+-- Seconds for the radiator's lead over the room to fall to half what it was at
+-- the cutoff, by linear interpolation between the bracketing samples. nil when
+-- there is no series, no lead to halve, or it had not halved before the coast
+-- window closed — "did not halve in 30 minutes" is itself worth seeing.
+--
+-- A half-life rather than a fitted time constant: it needs two samples and no
+-- regression, it survives a missing reading in the middle, and it does not
+-- pretend the decay is a clean exponential when a radiator with a slow valve is
+-- not one.
+function M.half_life(episode)
+  local series = episode.decay
+  if type(series) ~= "table" or #series < 2 then return nil end
+  local first = series[1]
+  local lead0 = first.rad - first.room
+  if lead0 <= 0 then return nil end
+  local target = lead0 / 2
+  local prev = first
+  for index = 2, #series do
+    local point = series[index]
+    local lead = point.rad - point.room
+    if lead <= target then
+      local prev_lead = prev.rad - prev.room
+      local span = prev_lead - lead
+      if span <= 0 then return point.t - first.t end
+      local fraction = (prev_lead - target) / span
+      return (prev.t + (point.t - prev.t) * fraction) - first.t
+    end
+    prev = point
+  end
+  return nil
 end
 
 -- Whether an episode may be learned from, plus why not. The reason is returned
@@ -179,6 +240,8 @@ function M.record(episode, zone, k_before, k_after, outcome, reason, closed_at)
     radiator_at_open = episode.radiator_at_open,
     radiator_at_cutoff = episode.radiator_at_cutoff,
     radiator_at_peak = episode.radiator_at_peak,
+    decay = episode.decay,
+    decay_half_life = M.half_life(episode),
     error = episode.peak - episode.requested,
     k_before = k_before,
     k_after = k_after,

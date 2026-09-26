@@ -292,11 +292,12 @@ local function close_episode(climate, episode, at)
   else
     store.set(k_key(climate), k_after)
     store.set(samples_key(climate), learned_samples(climate) + 1)
+    local half = overshoot.half_life(episode)
     ha.log("info", string.format(
-      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f radiator_at_cutoff=%s k %.3f -> %.3f",
+      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f radiator_at_cutoff=%s cool_half_life=%s k %.3f -> %.3f",
       climate, outcome, episode.peak, episode.requested,
       episode.peak - episode.requested, tostring(episode.radiator_at_cutoff),
-      k_before, k_after))
+      half and string.format("%.0fs", half) or "n/a", k_before, k_after))
   end
   journal(climate, overshoot.record(episode, climate, k_before, k_after, outcome, reason, at))
   store.delete(episode_key(climate))

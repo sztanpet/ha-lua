@@ -333,7 +333,7 @@
       // will eventually say whether one k per climate is enough, or whether the
       // coefficient has to vary with the weather and the radiator.
       for (const label of ["Opened", "Request", "Rise", "Commanded", "Peak", "Error",
-        "Outside", "Rad. cut", "k", "Outcome"]) {
+        "Outside", "Rad. cut", "Cool t½", "k", "Outcome"]) {
         const cell = document.createElement("th");
         cell.textContent = label;
         head.appendChild(cell);
@@ -357,6 +357,10 @@
           // The radiator at the cutoff: the stored energy about to land in the
           // room, which is what the overshoot actually is.
           temp(row.radiator_at_cutoff),
+          // How long the radiator took to give up half its lead over the room.
+          // A value that suddenly shortens means the plant changed — air in the
+          // radiator, a valve that stopped closing — which no peak shows.
+          minutes(row.decay_half_life),
           round(row.k_before, 3) + " → " + round(row.k_after, 3),
           discarded ? "discarded: " + (row.reason || "?") : row.outcome,
         ];
@@ -379,6 +383,8 @@
       return String(Math.round(number * factor) / factor);
     };
     const temp = (value) => (Number.isFinite(Number(value)) ? round(value, 2) + "°" : "—");
+    const minutes = (seconds) => (Number.isFinite(Number(seconds))
+      ? round(Number(seconds) / 60, 1) + "m" : "—");
     const signed = (value) => (Number.isFinite(value)
       ? (value > 0 ? "+" : "") + round(value, 2) + "°" : "—");
     // Epoch seconds, as lib/overshoot.lua records them. No year and no seconds:
