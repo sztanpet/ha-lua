@@ -4,6 +4,40 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.13.0 - 2026-09-26
+
+### Changed
+- **The overshoot learner now sees a heating cycle.** It only ever opened an
+  episode when the requested setpoint rose above the room — a warmup from a
+  schedule setback. A room held at one temperature all day never changes its
+  request, so its heating cycles, and the overshoot on every one of them, went
+  entirely unrecorded: the children's room ran a full cycle on the first evening
+  and the journal stayed empty. An episode now also opens when the device
+  reports `hvac_action: heating` with none running, and the controller
+  re-applies on that transition rather than waiting for the next tick, since the
+  early cutoff is latched at the open.
+- **The correction gained a floor.** `offset = base + slope × rise`, both
+  learned. On a cycle the rise is the deadband, 0.2–0.5 °, and the old
+  rise-proportional coefficient could never cut more than about 0.4 ° off a
+  room that overshoots by 1.5 — while a relay that is on for ten minutes brings
+  the radiator to full temperature whether the room needed 0.3 ° or 3 °. The
+  two coefficients are updated by one normalised gradient step per episode,
+  which moves the offset at the observed rise by exactly the same amount the
+  single coefficient did, so nothing about convergence changes. With both at
+  zero the behaviour is exactly the old one.
+- The stored coefficient is now a `{base, slope}` pair; the card, the Climate
+  page and `/api/overshoot` show both. A leftover single-number `k` from 4.11
+  reads as nothing learned, which on every live climate it already was.
+- `MIN_RISE` is gone. It guarded a division by the rise that the normalised
+  step no longer has, and it would have discarded every cycle. Its replacement
+  is physical: an episode during which the relay was never seen on is
+  discarded as `never_heated`. A device that reports no `hvac_action` is not
+  gated.
+
+### Fixed
+- A dial change arriving in the same state event as the relay closing could
+  have been overwritten by the re-apply: manual detection now runs before it.
+
 ## 4.12.1 - 2026-09-26
 
 ### Fixed
