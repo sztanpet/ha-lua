@@ -138,15 +138,25 @@ func TestThermostatUIRendersZones(t *testing.T) {
 	ctx := newBrowserCtx(t)
 	srv := serveThermostatUI(t)
 
-	var zoneNames []string
+	// Poll and stash in one expression, rather than WaitVisible plus a separate
+	// read: render() empties the container before rebuilding it and the page's 5s
+	// poll keeps doing so, so a read that lands in that gap sees no zones at all.
+	// Under a full-suite run, where the browser shares a machine with every other
+	// test, it regularly did.
+	var ok bool
+	var got string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/s/thermostat/?lang=en"),
-		chromedp.WaitVisible(".card .zone", chromedp.ByQuery),
-		chromedp.Evaluate(`Array.from(document.querySelectorAll(".card .zone")).map(node => node.textContent)`, &zoneNames),
+		chromedp.Poll(`(() => {
+			const names = Array.from(document.querySelectorAll(".card .zone")).map(node => node.textContent);
+			if (names.length < 3) return false;
+			window.__zoneNames = names.join(", ");
+			return true;
+		})()`, &ok),
+		chromedp.Evaluate(`window.__zoneNames`, &got),
 	); err != nil {
 		t.Fatal(err)
 	}
-	got := strings.Join(zoneNames, ", ")
 	for _, want := range []string{"Bedroom", "Living room", "Children's"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("zone %q not rendered; got %q", want, got)
