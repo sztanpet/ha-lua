@@ -19,9 +19,10 @@ is `climate.konyha_gyerekszoba_futes`, an `enhanced_climate.lua` climate. Ten
 commits (`b1f9219`..`e09d0ab`), card 0.3.33 -> 0.3.37, still observe-only.
 Episodes now also record the outdoor and radiator temperatures, and the
 radiator's whole post-cutoff decay curve plus its half-life, so spec §12's
-"vary k with conditions" can be decided from data. Released as v4.11.0 and
-v4.12.0. DEPLOY STILL PENDING: the scripts on the box are hand-copied and must
-be re-copied before any of this reaches the children's room.
+"vary k with conditions" can be decided from data. Deployed 2026-09-26, with
+`radiator_entity`/`outdoor_entity` set on the nappali and gyerekszoba climates.
+v4.12.1 then fixed the setpoint-stepper lag the port caused (card 0.3.38);
+still observe-only, still waiting on field data.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -154,6 +155,23 @@ here.
   to golangci-lint v2.13.2's own go.mod: gobwas/glob v0.2.3, alecthomas/
   go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when golangci-lint
   catches up; do not "fix" them forward.
+
+- **Optimism-free is for server data, not for the number in a control the user
+  is touching.** Moving a control's displayed value onto a slower-answering
+  source is a UI change, not just a data change: the enhanced-climate stepper
+  swapped `attrs.temperature` (one hop) for the companion request (HA event ->
+  daemon -> republish -> push back) and instantly felt broken, because a tap
+  wrote nothing locally and the next DOM rebuild reset the step base to the
+  stale value. Any control here needs a local echo held against the value it was
+  tapped away FROM — so a source that has not caught up loses and a genuine
+  external change still wins — plus a debounce, because a TRV answers queued
+  writes one at a time.
+
+- **A WaitVisible followed by a separate Evaluate is not a safe pair** against
+  any page that rebuilds by emptying its container (all of ours do, plus a 5s
+  poll). The read lands in the gap and sees nothing; it only shows up under a
+  full-suite run and looks like flake. Poll on the condition and stash the value
+  on `window` inside the same expression.
 
 - **A learner's diagnostics must cover "it never ran", not only "it ran and
   discarded".** The overshoot journal records every DISCARDED episode with a

@@ -277,7 +277,8 @@ weather compensation, which would correlate them. The journal will show it.
 
 ## Released
 v4.11.0 (`c0d46a8`) carries the whole port; v4.12.0 (`655335a`) adds the coast
-decay curve. What shipped is in `CHANGELOG.md`; not repeated here.
+decay curve; v4.12.1 (`c05cd5d`) fixes the stepper lag the port introduced.
+What shipped is in `CHANGELOG.md`; not repeated here.
 
 The decay work answers the user's 2026-09-26 question about measuring heat-up
 and cool-down. Cool-down got the work because it IS the overshoot mechanism —
@@ -288,12 +289,44 @@ regression, survives a missing sample, and does not pretend a slow valve decays
 cleanly. nil when the lead never halved in the coast, because that is the
 finding rather than something to paper over.
 
+## The lag the port caused (v4.12.1)
+The user reported "setting the setpoint on the card is now extremely laggy"
+immediately after deploying. Two causes, both from commit 5 of the port:
+
+1. The stepper started rendering the REQUEST (`companion.state`) instead of
+   `attrs.temperature`. That is the correct number — while the correction cuts a
+   warmup short the device carries `requested - offset` — but it swapped a
+   one-hop source for HA event -> daemon -> `is_manual` -> `apply_climate` ->
+   republish -> push back. `commit()` never wrote `input.value`, so a tap changed
+   NOTHING on screen until that returned.
+2. `radiator_entity` joined `_relevantChanged`, so the radiator sensor now
+   rebuilds the whole shadow DOM. A rebuild carrying the pre-tap request reset
+   the stepper's `lastSent`, which rewound the number AND made the next tap step
+   from the rewound value. The stepper fought the user.
+
+Fix (`4868d27`, card 0.3.38): echo the tap into `input.value` at once, and keep
+`{value, from}` per stepper — `from` being the source value it was tapped away
+from. A source still reading `from` has not caught up, so the echo wins; a source
+that moved ANYWHERE ELSE is a real external change and outranks the echo. 8s
+expiry as the backstop so a write that lands nowhere cannot leave the card lying.
+Plus a 500ms debounce on the write: a TRV queues every `set_temperature`, so a
+burst of taps made the setpoint walk to its destination after the tapping
+stopped.
+
+The lesson worth keeping: **moving a control's displayed value onto a
+slower-answering source is a UI change, not just a data change.** Optimism-free
+is right for server data and wrong for the number in a control the user is
+touching — that number is their own input.
+
 ## Pending
 - **Deploy.** The scripts on the box are hand-copied into
   `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so
   none of this reaches the children's room until they are re-copied. The card
-  also needs a new image plus a restart to re-materialize (0.3.37).
-- Set `radiator_entity` and `outdoor_entity` on the four enhanced-climate cards.
+  also needs a new image plus a restart to re-materialize (0.3.38).
+- DONE 2026-09-26: scripts re-copied (mtime 18:29) and `radiator_entity` /
+  `outdoor_entity` set on the nappali and gyerekszoba climates — confirmed live
+  via `/s/enhanced_climate/api/list`. Fürdő and Háló still have neither, so
+  their episodes will carry no radiator or outdoor readings.
   `sensor.kinti_atlagos_napi_homerseklet` is the house's daily-average outdoor
   sensor (it already drives the heat/off automation at 14.5/17 °).
 - Field data: a week of `/api/overshoot?climate=climate.konyha_gyerekszoba_futes`
