@@ -789,6 +789,11 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 			ClimateEntity string   `json:"climate_entity"`
 			Name          string   `json:"name"`
 			WindowSensors []string `json:"window_sensors"`
+			Overshoot     *struct {
+				K           float64 `json:"k"`
+				Samples     int     `json:"samples"`
+				ObserveOnly bool    `json:"observe_only"`
+			} `json:"overshoot"`
 		} `json:"climates"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
@@ -799,6 +804,14 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 	}
 	if listed.Climates[0].Name != "Living Room" || len(listed.Climates[0].WindowSensors) != 1 {
 		t.Errorf("entry detail wrong: %+v", listed.Climates[0])
+	}
+	// The page renders the learner summary straight off this row, so it has to
+	// be here — and a fresh climate must read as observing, not as armed.
+	if listed.Climates[0].Overshoot == nil {
+		t.Fatal("/api/list carries no overshoot summary for the page to render")
+	}
+	if !listed.Climates[0].Overshoot.ObserveOnly {
+		t.Error("a newly configured climate is not in observe-only")
 	}
 
 	// GET / serves the self-contained HTML page.

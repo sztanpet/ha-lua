@@ -94,6 +94,102 @@
       opacity: .5;
       cursor: default;
     }
+
+    /* The overshoot panel. Collapsed by default: this page's job is removal,
+       and the learner is what you come looking for only when a room is wrong. */
+    li.climate {
+      flex-wrap: wrap;
+      /* Without this a flex item refuses to shrink below its content, and the
+         journal table pushes the row (and the Remove button) off-screen. */
+      min-width: 0;
+    }
+
+    details.overshoot {
+      flex: 1 0 100%;
+      min-width: 0;
+      margin-top: .5rem;
+      font-size: .85rem;
+    }
+
+    details.overshoot summary {
+      cursor: pointer;
+      opacity: .75;
+    }
+
+    .learner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .5rem;
+      margin: .6rem 0;
+    }
+
+    /* The sentence takes its own line so the two buttons always sit together
+       and neither is pushed off the edge on a phone. */
+    .learner .state {
+      flex: 1 1 100%;
+    }
+
+    .learner button {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: inherit;
+      border-radius: .4rem;
+      padding: .3rem .7rem;
+      font: inherit;
+      font-size: .85rem;
+      cursor: pointer;
+    }
+
+    .learner button:hover {
+      border-color: currentColor;
+    }
+
+    .learner .observing {
+      color: var(--accent);
+    }
+
+    /* The journal is wider than a phone. It scrolls on its own rather than
+       widening the card and pushing Remove out of reach. */
+    .journal-scroll {
+      overflow-x: auto;
+      margin-top: .4rem;
+    }
+
+    table.journal {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .78rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    table.journal th,
+    table.journal td {
+      text-align: right;
+      padding: .25rem .4rem;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+
+    table.journal th:first-child,
+    table.journal td:first-child {
+      text-align: left;
+    }
+
+    table.journal tr.discarded {
+      /* Dimmed, not hidden: a run of discards is the failure this page exists
+         to make visible. */
+      opacity: .6;
+    }
+
+    table.journal td.err-hot {
+      color: var(--accent);
+    }
+
+    .empty-journal {
+      opacity: .6;
+      padding: .4rem 0;
+    }
   </style>
 </head>
 
@@ -148,8 +244,151 @@
 
         row.appendChild(meta);
         row.appendChild(button);
+        row.appendChild(overshootPanel(climate));
         list.appendChild(row);
       }
+    }
+
+    // The overshoot learner, per climate. This is the curl-free way to read a
+    // week of episodes before deciding whether to trust the correction, and the
+    // reset that recovers from a bad coefficient without sqlite3 or a restart.
+    function overshootPanel(climate) {
+      const overshoot = climate.overshoot || {};
+      const samples = Number(overshoot.samples) || 0;
+      const observing = overshoot.observe_only !== false;
+
+      const details = document.createElement("details");
+      details.className = "overshoot";
+      const summary = document.createElement("summary");
+      summary.textContent = "Overshoot correction — " +
+        (observing ? "observing only" : "active") +
+        (samples > 0 ? ", k " + round(overshoot.k, 3) + " over " + samples + " episode(s)"
+          : ", nothing learned yet");
+      details.appendChild(summary);
+
+      const body = document.createElement("div");
+      body.className = "learner";
+      const state = document.createElement("span");
+      state.className = observing ? "state observing" : "state";
+      state.textContent = observing
+        ? "Computing and recording the correction; the heating is untouched."
+        : "Cutting warmups short by the learned offset.";
+      body.appendChild(state);
+
+      const arm = document.createElement("button");
+      arm.textContent = observing ? "Apply the correction" : "Observe only";
+      arm.onclick = () => post("overshoot/observe",
+        { climate_entity: climate.climate_entity, observe_only: !observing }, arm);
+      body.appendChild(arm);
+
+      const reset = document.createElement("button");
+      reset.textContent = "Reset learning";
+      reset.onclick = () => post("overshoot/reset",
+        { climate_entity: climate.climate_entity }, reset);
+      body.appendChild(reset);
+      details.appendChild(body);
+
+      // Loaded on open rather than with the list: 50 rows per climate is a lot
+      // to carry for a panel that is usually closed.
+      details.ontoggle = () => {
+        if (!details.open || details.dataset.loaded) return;
+        details.dataset.loaded = "1";
+        loadJournal(climate.climate_entity, details);
+      };
+      return details;
+    }
+
+    async function loadJournal(entity, details) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "empty-journal";
+      placeholder.textContent = "Loading episodes…";
+      details.appendChild(placeholder);
+
+      const response = await fetch(apiURL("overshoot?climate=" + encodeURIComponent(entity)));
+      if (!response.ok) {
+        placeholder.textContent = "Could not read the journal.";
+        return;
+      }
+      const report = await response.json();
+      const rows = Array.isArray(report.journal) ? report.journal : [];
+      if (rows.length === 0) {
+        // A learner with no episodes at all looks exactly like a converged one,
+        // so say which it is rather than showing an empty table.
+        placeholder.textContent = "No episodes recorded yet. Nothing has been learned " +
+          "and no correction is being applied.";
+        return;
+      }
+      placeholder.remove();
+      const scroller = document.createElement("div");
+      scroller.className = "journal-scroll";
+      scroller.appendChild(journalTable(rows));
+      details.appendChild(scroller);
+    }
+
+    function journalTable(rows) {
+      const table = document.createElement("table");
+      table.className = "journal";
+      const head = document.createElement("tr");
+      for (const label of ["Opened", "Request", "Rise", "Commanded", "Peak", "Error", "k", "Outcome"]) {
+        const cell = document.createElement("th");
+        cell.textContent = label;
+        head.appendChild(cell);
+      }
+      table.appendChild(head);
+
+      // Newest first: the question is almost always "what did it do last night".
+      for (const row of rows.slice().reverse()) {
+        const tr = document.createElement("tr");
+        const discarded = row.outcome === "discarded";
+        if (discarded) tr.className = "discarded";
+        const error = Number(row.error);
+        const cells = [
+          clock(row.opened_at),
+          temp(row.requested),
+          temp(row.rise),
+          temp(row.commanded),
+          discarded ? "—" : temp(row.peak),
+          discarded ? "—" : signed(error),
+          round(row.k_before, 3) + " → " + round(row.k_after, 3),
+          discarded ? "discarded: " + (row.reason || "?") : row.outcome,
+        ];
+        cells.forEach((text, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = text;
+          // The one number the whole feature exists to shrink.
+          if (index === 5 && !discarded && error > 0.3) cell.className = "err-hot";
+          tr.appendChild(cell);
+        });
+        table.appendChild(tr);
+      }
+      return table;
+    }
+
+    const round = (value, places) => {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return "—";
+      const factor = Math.pow(10, places);
+      return String(Math.round(number * factor) / factor);
+    };
+    const temp = (value) => (Number.isFinite(Number(value)) ? round(value, 2) + "°" : "—");
+    const signed = (value) => (Number.isFinite(value)
+      ? (value > 0 ? "+" : "") + round(value, 2) + "°" : "—");
+    // Epoch seconds, as lib/overshoot.lua records them. No year and no seconds:
+    // a 50-row ring never spans one, and the full locale string is wide enough
+    // to crowd out the numbers the table exists for.
+    const clock = (epoch) => (Number.isFinite(Number(epoch))
+      ? new Date(Number(epoch) * 1000).toLocaleString(undefined,
+        { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "—");
+
+    async function post(path, body, button) {
+      button.disabled = true;
+      await fetch(apiURL(path), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      load();
     }
 
     async function remove(entity, button) {
