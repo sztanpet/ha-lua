@@ -4,6 +4,63 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.11.0 - 2026-09-26
+
+### Added
+- **The heating overshoot correction now works on enhanced climates.** It
+  shipped in 4.9.0 inside `thermostat.lua`, which is the static
+  `lib/zones.lua` controller — so if your heating is driven by the
+  enhanced-climate card, the feature has been running against nothing at all.
+  It now runs per climate entity in `enhanced_climate.lua`: an episode opens
+  when the requested setpoint rises above the room, the controller commands
+  `requested - k * rise` for the whole warmup, and `k` is learned from the peak
+  that follows. The radiator keeps full power the entire way up, so warmups are
+  no slower — only the number the thermostat stops at moves.
+- **It ships in observe-only mode, per climate, defaulted on.** The correction
+  is computed, journalled and logged while the *uncorrected* setpoint is still
+  what gets written. Turning it off for a climate is the deliberate act of
+  trusting it, and the journal shows what it would have done in the meantime.
+- **Every episode is recorded**, discarded ones included, with the reason
+  (`window_open`, `mode_left_heat`, `never_reached`, …). A learner that quietly
+  discards every episode looks exactly like one that has converged, so discards
+  are logged at `warn` rather than `debug`.
+- Each episode also records the **outdoor and radiator temperatures** it ran
+  under, including the radiator temperature at the moment of cutoff. Nothing
+  acts on them; they are there so it can later be established whether one
+  coefficient per climate is enough.
+- New card options **Radiator temperature sensor** and **Outdoor temperature
+  sensor** in the visual editor. The radiator sensor was already a card option
+  for the status line and is now also sent to the daemon.
+- New endpoints on the add-on's Climate page: `GET /api/overshoot?climate=<id>`
+  returns the coefficient, the sample count, the live episode and the journal;
+  `POST /api/overshoot/reset` and `POST /api/overshoot/observe` are the two
+  writes. The Climate page itself grows a per-climate panel with the journal as
+  a table, so recovering from a bad coefficient never means editing the
+  database or restarting the add-on.
+- Card 0.3.37: tapping the overshoot line on the card opens the same controls —
+  what it commanded against what you asked for, the coefficient, how many
+  episodes it learned from, and the buttons to arm or reset it.
+
+### Fixed
+- **The card's target stepper showed the wrong number whenever a correction was
+  active.** It read the setpoint straight off the climate entity, which is what
+  the daemon *commanded* — so it would have shown 19.8° where you set 21°, and
+  a single nudge from there fell inside the manual-change tolerance, meaning
+  the tap appeared to do nothing and the value snapped back a minute later. The
+  stepper now edits the request.
+
+### Changed
+- The controller now remembers the requested and the commanded setpoint
+  separately. Manual-change detection compares the dial against the
+  **commanded** value, or it would read the correction as you turning the dial
+  and freeze the room at the reduced setpoint.
+- The companion sensor's state remains the requested setpoint; a new
+  `commanded` attribute carries what the device actually has. It is read back
+  from the device, so a write that never landed shows up as the two diverging.
+- Removing an enhanced climate now also clears its learned coefficient and
+  journal. A climate added back should not inherit a coefficient measured on a
+  plant that may since have been changed.
+
 ## 4.10.1 - 2026-09-25
 
 ### Changed
