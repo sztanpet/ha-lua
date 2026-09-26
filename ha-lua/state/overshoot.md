@@ -3,9 +3,10 @@
 Working state for the learned early-cutoff correction. Spec:
 `overshoot-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **complete.** All five §11 commits are in and the feature ships in
-observe-only mode. Next real step is field data: a week of the children's-room
-journal, then decide whether to take that zone out of observe-only.
+Status: **built, but wired into the wrong script.** All five §11 commits are in
+and ship in observe-only mode — inside `thermostat.lua`, which does not control
+the children's room and in fact controls nothing on the live install. See
+"Field check, 2026-09-26" below before doing anything else here.
 
 ## Why it exists (2026-09-06)
 - Field problem: the children's room is small and its thermostat sails 1–2 °C
@@ -177,9 +178,44 @@ raises or notifies; a learner just sits there with a wrong number in it.
    fetched on open rather than carried on `/api/state`, which is polled every
    5 s. A chromedp test pins that the panel is unreachable without a tap.
 
+## Field check, 2026-09-26: the feature was built into the wrong script
+
+Went looking for a week of journal data and there is none. Verified against
+the running add-on (LAN port 8100 and ssh root@homeassistant):
+
+- All three `thermostat.lua` zones report `k=0`, `samples=0`, `journal={}`.
+  **Not one episode has opened** in the three weeks since v4.9.0.
+- Because `thermostat.lua` controls nothing. `scripts/lib/zones.lua` on the
+  box is **byte-identical to the bundled example** — so are `thermostat.lua`
+  and `heating_windows.lua` — i.e. still the placeholder zones
+  `climate.living_room` / `climate.bedroom` / `climate.kitchen`, none of which
+  exist. Every zone reads `mode: "unknown"`. The real thermostat was moved to
+  `scripts/disabled/` on 2026-07-04; unmodified example copies have been
+  sitting in `scripts/` since, loading and ticking against dead entities.
+- The children's room is `climate.konyha_gyerekszoba_futes`, registered in
+  **`enhanced_climate.lua`** — the script §12 deliberately deferred. The live
+  file contains zero occurrences of "overshoot" and has no `desired`/`written`
+  split (only `desired_key`, `enhanced_climate.lua:69`).
+
+So the premise this file and spec §12 rested on — "the children's room is a
+`lib/zones.lua` zone, so `thermostat.lua` is the whole target" — is simply
+wrong, and was never checked against the running install. Flipping observe-only
+off would have changed nothing.
+
+**Diagnostic gap worth fixing regardless:** §9.1 makes every *discard* a record
+with a reason, but an episode that never *opens* leaves no trace at all — which
+is exactly the silent failure the section was written to prevent, and it is the
+failure that actually happened. A zone that has produced no episode in N days
+needs to say so.
+
 ## Pending
-- Nothing in §11. Field data next: read a week of the children's-room journal
-  (`/api/overshoot?zone=childrens`) before taking it out of observe-only. Commit 5 is larger than the spec first implied: the card
-  has no setpoint display to hang the disclosure off, so one has to be added.
-- `enhanced_climate.lua` + the Lovelace card are deferred (§12); the
-  children's room is a `lib/zones.lua` zone, so `thermostat.lua` is the target.
+- Port the correction to `enhanced_climate.lua` (§7's two sites, `:314`/`:365`
+  in the spec's numbering) — that is where the children's room actually lives.
+  §12 is no longer "deferred nice-to-have", it is the whole feature.
+- Decide what happens to the example `thermostat.lua`/`heating_windows.lua`
+  copies squatting in `scripts/`: they were never customised and their real
+  versions are in `disabled/`.
+- Add the "no episodes seen" warning above.
+- Only then: field data, then take the zone out of observe-only.
+- Commit 5 was larger than the spec first implied: the card has no setpoint
+  display to hang the disclosure off, so one had to be added.

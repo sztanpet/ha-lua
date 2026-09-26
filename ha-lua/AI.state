@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,11 +10,14 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Enhanced-climate card fallback presets** (`dcc8131`, detail:
-`state/enhanced-climate.md`). The card's DEFAULT_PRESETS went 10/30/60 ->
-15/30/60 and the version banner to 0.3.33. Fallback only: a dashboard whose
-card YAML sets `presets:` explicitly keeps its own values, so this is invisible
-to anyone who configured them. Released as v4.10.1.
+**The overshoot correction is wired into a script that controls nothing**
+(detail: `state/overshoot.md`, "Field check, 2026-09-26"). Checked against the
+live install: every `thermostat.lua` zone reports `k=0, samples=0, journal={}`
+— not one episode in three weeks — because `scripts/lib/zones.lua` there is
+byte-identical to the bundled example, so the zones point at climate entities
+that do not exist. The children's room is `climate.konyha_gyerekszoba_futes`,
+owned by `enhanced_climate.lua`, which the spec deferred (§12). Porting it
+there is the whole feature, not an extension of it.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -147,6 +150,15 @@ here.
   to golangci-lint v2.13.2's own go.mod: gobwas/glob v0.2.3, alecthomas/
   go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when golangci-lint
   catches up; do not "fix" them forward.
+
+- **Check a feature's target against the RUNNING install, not against the
+  example tree.** The overshoot learner was specced, built and shipped over
+  five commits into `thermostat.lua` on the stated premise that the children's
+  room was a `lib/zones.lua` zone. It is not — it is an `enhanced_climate.lua`
+  climate, and the `thermostat.lua`/`zones.lua` on the box are unmodified
+  example copies aimed at entities that do not exist. Three weeks of
+  "observe-only, gathering field data" gathered nothing. One curl against
+  `:8100` would have caught it before commit 1.
 
 - **`scripts/lib/` is deliberately NOT watched, and `/debug/` deliberately IS
   on the unauthenticated LAN port.** Both were raised in review round 4 and
