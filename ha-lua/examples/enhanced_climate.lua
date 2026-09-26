@@ -67,6 +67,11 @@ local function override_key(climate) return "override:" .. climate end
 local function manual_key(climate) return "manual:" .. climate end
 local function override_temp_key(climate) return "override_temp:" .. climate end
 local function desired_key(climate) return "desired:" .. climate end
+-- What the controller last COMMANDED, as against what the user asked for. The
+-- two differ once the overshoot correction cuts a warmup short
+-- (overshoot-spec.md §7), and anything comparing against the value on the
+-- device must read this one or it reads our own correction as a dial nudge.
+local function written_key(climate) return "written:" .. climate end
 local function restore_key(climate) return "restore:" .. climate end
 
 -- climate.living_room -> living_room, so the card can derive the companion id
@@ -241,10 +246,14 @@ local function publish_companion(climate, now, desired_temp)
 end
 
 -- The per-climate control step: compute the desired setpoint, clamp it, remember
--- it for manual detection, and write it when the shared gate allows. While any
--- bound window is open the frost setpoint is held instead, and the remembered
--- desired is restored once they all close. Configure, tick and every mutation
--- refresh the companion through this one path.
+-- it, and write it when the shared gate allows. While any bound window is open
+-- the frost setpoint is held instead, and the remembered desired is restored
+-- once they all close. Configure, tick and every mutation refresh the companion
+-- through this one path.
+--
+-- Two values are remembered, not one: `desired` is what was asked for, `written`
+-- is what the device was commanded to. Manual detection compares against
+-- `written`.
 local function apply_climate(climate, now, dow, minute)
   local desired_temp, source = desired(climate, now, dow, minute)
   -- The pre-boost snapshot matters only while the boost is the active source:
@@ -258,26 +267,32 @@ local function apply_climate(climate, now, dow, minute)
   if desired_temp ~= nil then
     desired_temp = control.clamp_bounds(desired_temp, lo, hi)
     store.set(desired_key(climate), desired_temp)
+    local commanded_temp = desired_temp
     if mode(climate) == "heat" then
       local current = current_target(climate)
       if window_open(climate) then
-        local frost = control.clamp_bounds(FROST_TEMP, lo, hi)
-        if current == nil or math.abs(current - frost) > 0.05 then
-          set_temp(climate, frost)
+        commanded_temp = control.clamp_bounds(FROST_TEMP, lo, hi)
+        if current == nil or math.abs(current - commanded_temp) > 0.05 then
+          set_temp(climate, commanded_temp)
         end
-      elseif control.should_write("heat", false, current, desired_temp) then
-        set_temp(climate, desired_temp)
+      elseif control.should_write("heat", false, current, commanded_temp) then
+        set_temp(climate, commanded_temp)
       end
     end
+    store.set(written_key(climate), commanded_temp)
   else
     -- A boost ending with no schedule or hold under it must still put the dial
     -- back where it found it, or the boost temperature sticks forever.
     local restored = type(previous) == "number" and control.clamp_bounds(previous, lo, hi) or nil
     if restored and control.should_write(mode(climate), false, current_target(climate), restored) then
       set_temp(climate, restored)
-      store.set(desired_key(climate), restored) -- our own write must not read as a dial nudge
+      -- Our own write must not read as a dial nudge, and the detector compares
+      -- against `written`.
+      store.set(desired_key(climate), restored)
+      store.set(written_key(climate), restored)
     else
       store.delete(desired_key(climate)) -- not controlled (no schedule/override/manual)
+      store.delete(written_key(climate))
     end
   end
   publish_companion(climate, now, desired_temp)
@@ -299,8 +314,8 @@ ha.every("1m", tick)
 
 -- ---------------------------------------------------------------------------
 -- Manual setpoint change detection (§7.2): this controller is the only thing that
--- writes the desired, and writes exactly it, so a target differing from the
--- published desired is the user at the dial. It becomes an ad-hoc manual hold
+-- writes the setpoint, and always writes what it recorded as `written`, so a
+-- target differing from that is the user at the dial. It becomes an ad-hoc manual hold
 -- lasting until the next schedule transition. One wildcard handler, because
 -- climates are registered at runtime and a load-time registration cannot see
 -- them.
@@ -321,8 +336,8 @@ ha.on_state_change("climate.*", function(data)
   -- setpoint, which must not be mistaken for a user dial change.
   if window_open(climate_entity) or window_unknown(climate_entity) then return end
 
-  local last_desired = store.get(desired_key(climate_entity))
-  if not control.is_manual(target, last_desired) then return end
+  local last_written = store.get(written_key(climate_entity))
+  if not control.is_manual(target, last_written) then return end
 
   local _, _, mins_to_next = schedule.resolve(load_schedule(climate_entity), dow, minute)
   local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
@@ -416,6 +431,7 @@ local function remove_climate(climate)
   reg[climate] = nil
   save_registry(reg)
   store.delete(desired_key(climate))
+  store.delete(written_key(climate))
   store.delete(restore_key(climate)) -- a re-add must not resurrect a pre-boost setpoint
   published[climate] = nil -- a re-add must re-publish, not skip against the stale cache
   local _, err = card.remove(slug_of(climate)) -- the companion disappears with it

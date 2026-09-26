@@ -40,6 +40,7 @@ type enhancedFixture struct {
 	reg     *Registry
 	router  *Router
 	global  *store.GlobalStore
+	kv      *store.Store
 	tracker *state.Tracker
 	ctx     context.Context
 	t       *testing.T
@@ -74,7 +75,14 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 	router := NewRouter(reg)
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
-	f := &enhancedFixture{reg: reg, router: router, global: global, tracker: tracker, t: t}
+	f := &enhancedFixture{
+		reg:     reg,
+		router:  router,
+		global:  global,
+		kv:      store.New(writeDB, readDB, "enhanced_climate"),
+		tracker: tracker,
+		t:       t,
+	}
 	callService := func(_ context.Context, domain, service string, data jsontext.Value) error {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -303,6 +311,30 @@ func (f *enhancedFixture) waitRegistry(check func(map[string]any) bool, desc str
 	return nil
 }
 
+// storeNumber reads one of the script's own KV values as a number, failing when
+// it is absent or not numeric.
+func (f *enhancedFixture) storeNumber(key string) float64 {
+	f.t.Helper()
+	v, err := f.kv.Get(f.ctx, key)
+	if err != nil {
+		f.t.Fatalf("read %s: %v", key, err)
+	}
+	n, ok := v.(float64)
+	if !ok {
+		f.t.Fatalf("%s = %#v, want a number", key, v)
+	}
+	return n
+}
+
+// setStoreNumber writes one of the script's own KV values, so a test can force
+// two keys the script normally keeps equal apart.
+func (f *enhancedFixture) setStoreNumber(key string, value float64) {
+	f.t.Helper()
+	if err := f.kv.Set(f.ctx, key, value); err != nil {
+		f.t.Fatalf("write %s: %v", key, err)
+	}
+}
+
 // TestEnhancedClimateConfigure drives the configure/remove command handlers:
 // configure creates a registry entry, a changed config updates it, and remove
 // deletes it.
@@ -401,6 +433,44 @@ func TestEnhancedClimateManualHold(t *testing.T) {
 			`"state":"heat","attributes":{"temperature":19,"min_temp":7,"max_temp":35}}}`),
 	})
 	f.waitSetTemp(19, "manual hold to the dialed 19")
+}
+
+// TestEnhancedClimateManualDetectionReadsWritten pins the manual-change detector
+// onto `written` rather than `desired` (overshoot-spec.md §7). The two are equal
+// whenever no correction is active, so they are forced apart here: with the
+// request at 21 and the commanded value at 19.8, a dial reading 19.8 is the
+// controller's own write and must NOT latch a manual hold, while 21 — the
+// requested value the detector used to compare against — must.
+func TestEnhancedClimateManualDetectionReadsWritten(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "schedule 21 establishes both setpoints")
+
+	// A correction cutting this warmup short would leave exactly this split.
+	f.setStoreNumber("written:climate.lr", 19.8)
+
+	f.reg.Dispatch(ha.Event{
+		Type: "state_changed",
+		Data: jsontext.Value(`{"entity_id":"climate.lr","new_state":{"entity_id":"climate.lr",` +
+			`"state":"heat","attributes":{"temperature":19.8,"min_temp":7,"max_temp":35}}}`),
+	})
+	time.Sleep(200 * time.Millisecond) // the rejection is a non-event; give it room
+	if got := f.storeNumber("desired:climate.lr"); got != 21 {
+		t.Fatalf("desired = %v after the commanded value appeared on the dial, want 21 (a manual hold latched on our own write)", got)
+	}
+	if temps := f.setTemps(); slices.Contains(temps, 19.8) {
+		t.Fatalf("set_temperature calls %v include the commanded value, so the detector read our own write as a dial change", temps)
+	}
+
+	// The requested value, by contrast, is a real dial change now.
+	f.reg.Dispatch(ha.Event{
+		Type: "state_changed",
+		Data: jsontext.Value(`{"entity_id":"climate.lr","new_state":{"entity_id":"climate.lr",` +
+			`"state":"heat","attributes":{"temperature":21,"min_temp":7,"max_temp":35}}}`),
+	})
+	f.waitSetTemp(21, "dialing to the requested value latches a manual hold")
 }
 
 // TestEnhancedClimateWindow confirms window cooperation: any bound window open
