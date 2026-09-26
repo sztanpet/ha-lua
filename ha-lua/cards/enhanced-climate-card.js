@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.37";
+const VERSION = "0.3.38";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -237,6 +237,19 @@ const DEFAULT_PRESETS = [15, 30, 60];
 // so the spinner normally clears within a fraction of this; the cap only guards
 // against a dropped command leaving the spinner stuck forever.
 const PENDING_TIMEOUT_MS = 6000;
+
+// How long a stepper keeps showing the value the user tapped when the source it
+// renders from has not caught up yet. The source for the target is the companion
+// sensor, which only changes after HA event -> daemon -> republish -> push back;
+// a render landing inside that window carries the OLD value and would rewind the
+// stepper under the user's finger. On expiry the truth wins, so a write that was
+// rejected or clamped cannot leave the card lying indefinitely.
+const ECHO_TIMEOUT_MS = 8000;
+
+// Rapid +/- taps coalesce into one write. A TRV queues every set_temperature and
+// answers each in turn, so five taps meant five radio writes and a setpoint that
+// visibly walked to its destination long after the tapping stopped.
+const COMMIT_DEBOUNCE_MS = 500;
 
 // HVAC mode -> mdi icon, mirroring Home Assistant's own climate card so the
 // mode buttons read the same. Modes without an entry fall back to a text label.
@@ -541,6 +554,17 @@ const STYLES = `
 const sentConfigures = new Set();
 
 class HaLuaEnhancedClimateCard extends HTMLElement {
+  constructor() {
+    super();
+    // Keyed by stepper: the value the user last tapped, its expiry timer, and the
+    // debounced write waiting to go out. Instance state is right here — a card
+    // element HA recreates has no tap of its own to echo.
+    this._echo = {};
+    this._echoTimers = {};
+    this._commitTimers = {};
+    this._pendingCommits = {};
+  }
+
   setConfig(config) {
     if (!config || !config.climate_entity) {
       throw new Error("enhanced-climate-card: climate_entity is required");
@@ -584,6 +608,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     dbg("disconnectedCallback", this._config && this._config.climate_entity);
     clearInterval(this._countdownTimer);
     clearTimeout(this._pendingTimer);
+    for (const key of Object.keys(this._echoTimers)) clearTimeout(this._echoTimers[key]);
+    // Flush rather than drop: HA recreates card elements freely, and a tap a
+    // moment before one must still reach the device.
+    for (const key of Object.keys(this._commitTimers)) this._flushCommit(key);
   }
 
   getCardSize() {
@@ -869,6 +897,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // back to 0.1 when the device advertises none.
     const tempStep = Number(attrs.target_temp_step) || 0.1;
     const target = this._stepperControl(translate, {
+      echo: "target",
       label: translate("target"),
       value: Number.isFinite(requested) ? requested : attrs.temperature,
       lo: Number(attrs.min_temp),
@@ -894,13 +923,79 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     this.shadowRoot.append(style, root);
   }
 
+  // _setEcho remembers the value a stepper was just tapped to, together with the
+  // source value it was tapped away FROM. The pair is what tells a source that has
+  // not caught up yet (still reads `from`, so the echo keeps showing the tap) from
+  // one that has moved somewhere else entirely (a schedule transition, another
+  // phone) — that is new information and outranks a pending tap.
+  //
+  // A burst of taps keeps the ORIGINAL `from`: every tap in it is aimed away from
+  // the same starting point.
+  _setEcho(key, value, from) {
+    const prev = this._echo[key];
+    this._echo[key] = { value: value, from: prev ? prev.from : from };
+    clearTimeout(this._echoTimers[key]);
+    this._echoTimers[key] = setTimeout(() => {
+      delete this._echoTimers[key];
+      delete this._echo[key];
+      this._render(); // guarded: never yank a field the user is still typing in
+    }, ECHO_TIMEOUT_MS);
+  }
+
+  // _echoValue is the tapped value to show for this stepper, or undefined when the
+  // source should be shown. Resolving it clears an echo that is done with.
+  _echoValue(key, source) {
+    const entry = this._echo[key];
+    if (entry === undefined) return undefined;
+    if (!Number.isFinite(source)) return entry.value; // no source to trust yet
+    if (Math.abs(source - entry.value) < 0.001) {
+      this._clearEcho(key); // the source caught up
+      return undefined;
+    }
+    if (Math.abs(source - entry.from) >= 0.001) {
+      this._clearEcho(key); // the source moved elsewhere; it wins
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  _clearEcho(key) {
+    clearTimeout(this._echoTimers[key]);
+    delete this._echoTimers[key];
+    delete this._echo[key];
+  }
+
+  // _queueCommit holds one pending write per stepper, replacing any earlier one,
+  // so a burst of taps sends only where the user stopped.
+  _queueCommit(key, run) {
+    this._pendingCommits[key] = run;
+    clearTimeout(this._commitTimers[key]);
+    this._commitTimers[key] = setTimeout(() => this._flushCommit(key), COMMIT_DEBOUNCE_MS);
+  }
+
+  _flushCommit(key) {
+    clearTimeout(this._commitTimers[key]);
+    delete this._commitTimers[key];
+    const run = this._pendingCommits[key];
+    delete this._pendingCommits[key];
+    if (run) run();
+  }
+
   // _stepperControl is the bare ± / typed numeric control (.stepper), clamped to
-  // [lo, hi] and committed through onCommit. lastSent (per render) dedupes no-op
-  // writes; the focused field suppresses the hass-driven re-render. opts.label
-  // is used as the input's aria-label so the control is named even with no
-  // visible label beside it.
+  // [lo, hi] and committed through onCommit. opts.echo names the stepper for the
+  // echo and debounce state; opts.label is used as the input's aria-label so the
+  // control is named even with no visible label beside it. The focused field
+  // suppresses the hass-driven re-render.
+  //
+  // The displayed value is the user's own last tap while one is outstanding, not
+  // the source: neither of these steppers writes somewhere that answers within a
+  // tap interval, and rendering the stale source between two taps both rewinds
+  // the number on screen and makes the NEXT tap step from the stale value.
   _stepperControl(translate, opts) {
-    const current = Number(opts.value);
+    const key = opts.echo;
+    const source = Number(opts.value);
+    const echoed = this._echoValue(key, source);
+    const current = echoed !== undefined ? echoed : source;
     let lastSent = Number.isFinite(current) ? current : null;
     const commit = (raw) => {
       const parsed = Number(raw);
@@ -908,7 +1003,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       const next = clampNumber(Math.round(parsed * 10) / 10, opts.lo, opts.hi);
       if (next === lastSent) return;
       lastSent = next;
-      opts.onCommit(next);
+      input.value = String(next); // instant feedback, with no render and no round trip
+      this._setEcho(key, next, source);
+      this._queueCommit(key, () => opts.onCommit(next));
     };
     const base = () => (lastSent != null ? lastSent : (Number.isFinite(opts.lo) ? opts.lo : 20));
 
@@ -922,12 +1019,19 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       max: Number.isFinite(opts.hi) ? String(opts.hi) : null,
       value: Number.isFinite(current) ? String(current) : "",
       onfocus: () => { this._fieldFocused = true; },
-      onblur: () => { this._fieldFocused = false; commit(input.value); },
+      // A typed value is done being typed, so it goes out now rather than waiting
+      // out the debounce that exists for +/- bursts.
+      onblur: () => { this._fieldFocused = false; commit(input.value); this._flushCommit(key); },
       onkeydown: (ev) => {
         if (ev.key === "Enter") {
           input.blur();
         } else if (ev.key === "Escape") {
-          input.value = Number.isFinite(current) ? String(current) : "";
+          this._clearEcho(key);
+          clearTimeout(this._commitTimers[key]);
+          delete this._commitTimers[key];
+          delete this._pendingCommits[key];
+          lastSent = Number.isFinite(source) ? source : null;
+          input.value = Number.isFinite(source) ? String(source) : "";
           input.blur();
         }
       },
@@ -1023,6 +1127,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const section = h("div", { class: "enhanced" });
 
     const overrideTemp = this._stepperControl(translate, {
+      echo: "override_temp",
       label: translate("override_temp"),
       value: companionAttrs.override_temp,
       lo: Number(companionAttrs.min_temp),

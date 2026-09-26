@@ -249,13 +249,15 @@ func TestEnhancedClimateCard(t *testing.T) {
 		t.Errorf("command went over REST fetch, want websocket only; api calls = %s", apiCalls)
 	}
 
-	// Click the target stepper's + (second .step in the first stepper) -> native
-	// set_temperature at 20.5.
+	// Click the target stepper's + (second .step in the first stepper). The number
+	// must move at once; the climate service call itself is debounced.
 	var serviceCalls string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__clickAll(".stepper .step", 1)`, &ok),
-		chromedp.Evaluate(`JSON.stringify(window.__calls.service)`, &serviceCalls),
 		chromedp.Evaluate(`window.__val(".stepper .value")`, &target),
+		// An earlier mode click is already in the spy, so wait for THIS service.
+		chromedp.Poll(`window.__calls.service.some(c => c.service === "set_temperature")`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls.service)`, &serviceCalls),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -267,14 +269,18 @@ func TestEnhancedClimateCard(t *testing.T) {
 			t.Errorf("target + did not call %s; service calls = %s", want, serviceCalls)
 		}
 	}
-	// Optimism-free: the spy did not update hass, so the field still shows the
-	// server value (21), not an optimistic 21.5.
-	if target != "21" {
-		t.Errorf("target value after click = %q, want 21 (optimism-free)", target)
+	// The card stays optimism-free about SERVER data, but a stepper echoes the
+	// user's own input: the request it renders is the companion sensor, which only
+	// catches up after a daemon round trip, and a number frozen that long reads as
+	// a broken card. See TestEnhancedClimateCardStepperEcho.
+	if target != "21.5" {
+		t.Errorf("target value right after click = %q, want 21.5 (local echo)", target)
 	}
 
 	// Reconcile from a fresh hass: the target follows the new REQUEST, which is
-	// the companion's state.
+	// the companion's state — and it outranks the pending echo of 21.5, because a
+	// source that moved to neither the tapped value nor the value tapped away from
+	// is a real external change (schedule transition, another phone).
 	reconciled := strings.Replace(cardStates, `"state": "21"`, `"state": "22"`, 1)
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__apply("en", `+reconciled+`)`, &ok),
@@ -522,6 +528,90 @@ func TestEnhancedClimateCardOvershootDisclosure(t *testing.T) {
 	}
 	if noteAfter != "absent" {
 		t.Error("a second tap did not close the panel")
+	}
+}
+
+// TestEnhancedClimateCardStepperEcho covers the two halves of what made setting
+// the setpoint feel laggy once the stepper started rendering the REQUEST (the
+// companion sensor) instead of the device setpoint.
+//
+// The companion only changes after HA event -> daemon -> is_manual -> republish ->
+// push back, which is slower than a person taps. Meanwhile every relevant entity
+// in the install pushes hass and the card rebuilds its whole shadow DOM, so a
+// rebuild landing between two taps used to rewind the number under the user's
+// finger AND make the next tap step from the rewound value. The taps also went out
+// one radio write each, which a TRV answers one at a time.
+func TestEnhancedClimateCardStepperEcho(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	var ok bool
+	var afterTaps, afterPush string
+	awaitPromise := func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }
+	const flushRAF = `new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`
+	// Both taps in ONE evaluation: a CDP round trip between them could outlast the
+	// debounce and legitimately produce two writes, which is not what is under test.
+	const twoTaps = `(window.__clickAll(".stepper .step", 1), window.__clickAll(".stepper .step", 1), true)`
+	// A relevant push (the climate's current temperature moved) whose companion
+	// still carries the pre-tap request of 21 — exactly the stale rebuild.
+	stale := strings.Replace(cardStates, `"current_temperature": 19.5`, `"current_temperature": 19.8`, 1)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok),
+		chromedp.Poll(`window.__val(".stepper .value") === "21"`, &ok),
+		chromedp.Evaluate(twoTaps, &ok),
+		chromedp.Evaluate(`window.__val(".stepper .value")`, &afterTaps),
+		// Mark the current DOM, push the stale hass, wait for the rebuild.
+		chromedp.Evaluate(`(window.__shadow("ha-card").__marker = true, true)`, &ok),
+		chromedp.Evaluate(`window.__apply("en", `+stale+`)`, &ok),
+		chromedp.Poll(`!window.__shadow("ha-card").__marker`, &ok),
+		chromedp.Evaluate(flushRAF, &ok, awaitPromise),
+		chromedp.Evaluate(`window.__val(".stepper .value")`, &afterPush),
+	); err != nil {
+		t.Fatal(err)
+	}
+	// Two taps of 0.5 accumulate from the request, with no push in between.
+	if afterTaps != "22" {
+		t.Errorf("value after two + taps = %q, want 22", afterTaps)
+	}
+	if afterPush != "22" {
+		t.Errorf("value after a stale rebuild = %q, want 22 (the echo outranks a source that has not caught up)", afterPush)
+	}
+
+	// The burst coalesced into ONE write, and it carries where the user stopped.
+	var serviceCalls string
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(`window.__calls.service.length > 0`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls.service)`, &serviceCalls),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(serviceCalls, `"service":"set_temperature"`); got != 1 {
+		t.Errorf("two taps sent %d set_temperature calls; want 1 coalesced; calls = %s", got, serviceCalls)
+	}
+	if !strings.Contains(serviceCalls, `"temperature":22`) {
+		t.Errorf("coalesced write did not carry 22; calls = %s", serviceCalls)
+	}
+
+	// Once the companion catches up the echo retires, and the value stays put
+	// rather than flickering through the stale one first.
+	caught := strings.Replace(cardStates, `"state": "21"`, `"state": "22"`, 1)
+	var afterCatchUp string
+	var echoLeft int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__apply("en", `+caught+`)`, &ok),
+		chromedp.Evaluate(flushRAF, &ok, awaitPromise),
+		chromedp.Evaluate(`window.__val(".stepper .value")`, &afterCatchUp),
+		chromedp.Evaluate(`Object.keys(window.__card._echo).length`, &echoLeft),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if afterCatchUp != "22" {
+		t.Errorf("value after the companion caught up = %q, want 22", afterCatchUp)
+	}
+	if echoLeft != 0 {
+		t.Errorf("%d echo entries left after the source caught up; want 0", echoLeft)
 	}
 }
 
