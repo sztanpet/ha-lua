@@ -677,6 +677,30 @@ card.on("override", function(data)
   apply_climate(climate, now, dow, minute)
 end)
 
+-- The card's half of §9.5/§9.4: reset a learned coefficient, or take a climate
+-- out of observe-only. Same two writes as the HTTP endpoints, reached over the
+-- card's own channel so the panel needs no Ingress URL.
+card.on("overshoot", function(data)
+  local climate = data.climate_entity
+  if not is_registered(climate) then return end
+  if data.reset then
+    -- The in-flight episode goes too: it would close against a k that no longer
+    -- exists and journal a row nobody could account for.
+    store.delete(episode_key(climate))
+    store.delete(k_key(climate))
+    store.delete(samples_key(climate))
+    store.delete(journal_key(climate))
+    ha.log("warn", "overshoot " .. climate .. ": k and journal reset")
+  elseif type(data.observe_only) == "boolean" then
+    store.set(observe_key(climate), data.observe_only)
+    ha.log("warn", string.format("overshoot %s: observe_only = %s", climate, tostring(data.observe_only)))
+  else
+    return
+  end
+  local now, dow, minute = now_parts()
+  apply_climate(climate, now, dow, minute)
+end)
+
 -- Edits the temperature a boost jumps to, bounded by the device's range.
 card.on("settings", function(data)
   local climate = data.climate_entity
@@ -709,6 +733,7 @@ local function list_climates()
       name = friendly_name(climate),
       window_sensors = cfg.window_sensors or {},
       presets = cfg.presets or {},
+      overshoot = overshoot_status(climate),
     }
   end
   return out
@@ -725,6 +750,81 @@ ha.serve("POST", "/api/remove", function(req)
   end
   remove_climate(body.climate_entity)
   return 200, json.encode({ climates = list_climates() }), JSON_HDR
+end)
+
+-- ---------------------------------------------------------------------------
+-- Overshoot introspection (§9.5, §9.6). The learner is the only thing here that
+-- fails SILENTLY — it accumulates a number over days from episodes nobody
+-- watched, and a wrong one shows up as a room quietly too cold in February. So
+-- k, the journal and the two writes are curl-able, and recovering from a bad k
+-- must never be `sqlite3 /data/ha-lua.db` or a restart.
+-- ---------------------------------------------------------------------------
+
+-- The live episode is included so "why is it commanding that" is answerable
+-- while it is still happening, not only afterwards from the journal.
+local function overshoot_report(climate)
+  local status = overshoot_status(climate)
+  status.climate_entity = climate
+  status.name = friendly_name(climate)
+  status.episode = live_episode(climate)
+  status.journal = store.get(journal_key(climate)) or {}
+  return status
+end
+
+ha.serve("GET", "/api/overshoot", function(req)
+  local climate = req.query.climate
+  if not is_registered(climate) then
+    return 404, "unknown climate: " .. tostring(climate), TEXT_HDR
+  end
+  return 200, json.encode(overshoot_report(climate)), JSON_HDR
+end)
+
+-- Decodes a body that must name a registered climate; returns nil plus the
+-- response triple to hand straight back.
+local function climate_from_body(req)
+  local ok, body = pcall(json.decode, req.body)
+  if not ok or type(body) ~= "table" then
+    return nil, 400, "invalid JSON body", TEXT_HDR
+  end
+  if not is_registered(body.climate_entity) then
+    return nil, 404, "unknown climate: " .. tostring(body.climate_entity), TEXT_HDR
+  end
+  return body
+end
+
+ha.serve("POST", "/api/overshoot/reset", function(req)
+  local body, status, text, hdr = climate_from_body(req)
+  if body == nil then return status, text, hdr end
+  local climate = body.climate_entity
+  -- The in-flight episode goes too: it would close against a k that no longer
+  -- exists and journal a row nobody could account for.
+  store.delete(episode_key(climate))
+  store.delete(k_key(climate))
+  store.delete(samples_key(climate))
+  store.delete(journal_key(climate))
+  -- warn: zeroing a learned coefficient is a deliberate act and the log is where
+  -- a later "why did it forget everything" gets answered.
+  ha.log("warn", "overshoot " .. climate .. ": k and journal reset")
+  local now, dow, minute = now_parts()
+  apply_climate(climate, now, dow, minute) -- republish the companion at once
+  return 200, json.encode(overshoot_report(climate)), JSON_HDR
+end)
+
+ha.serve("POST", "/api/overshoot/observe", function(req)
+  local body, status, text, hdr = climate_from_body(req)
+  if body == nil then return status, text, hdr end
+  if type(body.observe_only) ~= "boolean" then
+    return 400, "observe_only must be a boolean", TEXT_HDR
+  end
+  local climate = body.climate_entity
+  store.set(observe_key(climate), body.observe_only)
+  -- Trusting the correction with a real room is worth a warn, not a debug line.
+  ha.log("warn", string.format("overshoot %s: observe_only = %s", climate, tostring(body.observe_only)))
+  -- Closes a running episode through the step function's observe_changed check
+  -- rather than a minute later.
+  local now, dow, minute = now_parts()
+  apply_climate(climate, now, dow, minute)
+  return 200, json.encode(overshoot_report(climate)), JSON_HDR
 end)
 
 local PAGE = assert(fs.read("enhanced_climate.html"),

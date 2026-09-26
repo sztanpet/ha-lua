@@ -830,6 +830,112 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateOvershootAPI covers §9.5/§9.6: the learner's state is
+// curl-able, and recovering from a bad k is neither `sqlite3 /data/ha-lua.db`
+// nor a restart. The reset and observe writes go through both channels the user
+// has — the Ingress endpoints and the card's command event.
+func TestEnhancedClimateOvershootAPI(t *testing.T) {
+	f := newEnhancedFixture(t)
+	waitRouteID(t, f.router, "enhanced_climate", "GET", "/api/overshoot")
+
+	f.seedClimate("climate.lr", `{"friendly_name":"Living Room","current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
+	f.setStoreNumber("overshoot_k:climate.lr", 0.4)
+	f.setStoreNumber("overshoot_samples:climate.lr", 6)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "observe-only warmup opens an episode")
+
+	type report struct {
+		ClimateEntity string  `json:"climate_entity"`
+		K             float64 `json:"k"`
+		Samples       int     `json:"samples"`
+		ObserveOnly   bool    `json:"observe_only"`
+		Episode       *struct {
+			Requested float64 `json:"requested"`
+			Commanded float64 `json:"commanded"`
+			Offset    float64 `json:"offset"`
+		} `json:"episode"`
+	}
+	get := func() report {
+		t.Helper()
+		rec := doReqID(f.router, "enhanced_climate", "GET", "/api/overshoot?climate=climate.lr", "")
+		if rec.Code != 200 {
+			t.Fatalf("GET /api/overshoot status %d body %q", rec.Code, rec.Body.String())
+		}
+		var r report
+		if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
+			t.Fatalf("decode %q: %v", rec.Body.String(), err)
+		}
+		return r
+	}
+
+	// The live episode is reachable while it is still running, which is the only
+	// way to answer "why is it commanding that" before the journal exists.
+	got := get()
+	if got.K != 0.4 || got.Samples != 6 || !got.ObserveOnly {
+		t.Fatalf("report = %+v, want k 0.4 over 6 samples, observing", got)
+	}
+	if got.Episode == nil || got.Episode.Commanded != 19.8 {
+		t.Fatalf("live episode = %+v, want commanded 19.8", got.Episode)
+	}
+
+	// Taking it out of observe-only over HTTP closes the running episode rather
+	// than judging it under a setting it did not latch.
+	rec := doReqID(f.router, "enhanced_climate", "POST", "/api/overshoot/observe",
+		`{"climate_entity":"climate.lr","observe_only":false}`)
+	if rec.Code != 200 {
+		t.Fatalf("POST observe status %d body %q", rec.Code, rec.Body.String())
+	}
+	if got := get(); got.ObserveOnly {
+		t.Fatal("observe_only still set after the write")
+	}
+	rows := f.waitJournal("climate.lr", 1, "the latched episode is closed, not silently dropped")
+	if last := rows[len(rows)-1]; last["reason"] != "observe_changed" {
+		t.Fatalf("reason = %v, want observe_changed", last["reason"])
+	}
+
+	// Reset zeroes k and clears the journal, with no restart and no sqlite3.
+	rec = doReqID(f.router, "enhanced_climate", "POST", "/api/overshoot/reset",
+		`{"climate_entity":"climate.lr"}`)
+	if rec.Code != 200 {
+		t.Fatalf("POST reset status %d body %q", rec.Code, rec.Body.String())
+	}
+	if got := get(); got.K != 0 || got.Samples != 0 {
+		t.Fatalf("after reset %+v, want k 0 over 0 samples", got)
+	}
+	if rows := f.overshootJournal("climate.lr"); len(rows) != 0 {
+		t.Fatalf("journal survived the reset: %+v", rows)
+	}
+
+	// The card reaches the same two writes over its own channel.
+	f.fireCommand("overshoot", `{"climate_entity":"climate.lr","observe_only":true}`)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && !get().ObserveOnly {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !get().ObserveOnly {
+		t.Fatal("the card's overshoot command did not set observe_only")
+	}
+
+	// An unknown climate is a 404 on every route, not a silent success.
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/api/overshoot?climate=climate.nope", ""},
+		{"POST", "/api/overshoot/reset", `{"climate_entity":"climate.nope"}`},
+		{"POST", "/api/overshoot/observe", `{"climate_entity":"climate.nope","observe_only":true}`},
+	} {
+		if rec := doReqID(f.router, "enhanced_climate", tc.method, tc.path, tc.body); rec.Code != 404 {
+			t.Errorf("%s %s status = %d, want 404", tc.method, tc.path, rec.Code)
+		}
+	}
+	// A non-boolean observe_only is a 400, so a typo cannot quietly arm the
+	// correction on a child's bedroom.
+	if rec := doReqID(f.router, "enhanced_climate", "POST", "/api/overshoot/observe",
+		`{"climate_entity":"climate.lr","observe_only":"false"}`); rec.Code != 400 {
+		t.Errorf("string observe_only status = %d, want 400", rec.Code)
+	}
+}
+
 // TestEnhancedClimateCompanionDedupsUnchanged verifies the controller does not
 // rewrite a companion whose state+attributes are unchanged: an identical
 // re-apply issues no set_state, while a real change still publishes. This is
