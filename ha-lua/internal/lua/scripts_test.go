@@ -370,6 +370,8 @@ func TestOvershootPureLib(t *testing.T) {
 		o.step(fired, 21, 60, { heating = false })
 		o.step(fired, 21.3, 60 + o.COAST_SECONDS, { heating = false })
 		assert(o.valid(fired) == true, "a run that fired is learnable")
+		assert(o.record(fired, "z", K(0, 0), K(0, 0), "learned", nil, 0).heated == true,
+			"the journal carries whether the relay was seen on")
 		-- A device that reports no hvac_action is not gated: unknown is not off.
 		local mute = o.open(21, 20.8, K(0, 0.4), false, 0, {})
 		o.step(mute, 21, 60, {})

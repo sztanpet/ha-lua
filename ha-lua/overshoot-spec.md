@@ -355,7 +355,7 @@ script's KV store:
 opened_at, closed_at, zone
 requested, current_at_open, rise
 k_used, offset, commanded          -- what it decided, and from what
-peak, peak_at, error               -- what actually happened
+peak, peak_at, error, heated       -- what actually happened
 k_before, k_after                  -- what it concluded
 outcome  "learned" | "discarded" | "observed"
 reason   nil | "window_open" | "mode_left_heat" | "setpoint_changed"

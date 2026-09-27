@@ -278,6 +278,7 @@ function M.record(episode, zone, k_before, k_after, outcome, reason, closed_at)
     radiator_at_peak = episode.radiator_at_peak,
     decay = episode.decay,
     decay_half_life = M.half_life(episode),
+    heated = episode.heated,
     error = episode.peak - episode.requested,
     k_before = k_before,
     k_after = k_after,
