@@ -27,15 +27,22 @@ M.SLOPE_MAX = 0.8
 -- Absolute ceiling on one cutoff, whatever the coefficients say; bounds `base`
 -- too, a floor beyond the cap being meaningless.
 M.MAX_OFFSET = 2.5
--- How long past the cutoff the peak is watched for; the coast is a broad hump.
-M.COAST_SECONDS = 30 * 60
+-- The coast ends when the room has turned, not on a timer: 0.2 below its peak
+-- (clear of 0.1° flicker), with the peak settled for PEAK_HOLD_SECONDS. The
+-- first live radiator took 28 minutes to shed half its lead, so a fixed
+-- 30-minute window measured every peak short.
+M.PEAK_DROP = 0.2
+M.PEAK_HOLD_SECONDS = 5 * 60
+-- Backstop for a room that never turns — a sunny window, another heat source —
+-- so the episode cannot sit open all afternoon.
+M.MAX_COAST_SECONDS = 90 * 60
 -- An episode that has not reached its setpoint in this long is abandoned, so a
 -- room the heating cannot satisfy fails loudly instead of staying open forever.
 M.MAX_EPISODE_SECONDS = 4 * 3600
--- Ceiling on the coast decay series. A 30-minute coast on a 1-minute tick fills
--- about 30 slots; the cap is what stops a faster tick from growing the journal
+-- Ceiling on the coast decay series. The longest coast on a 1-minute tick fills
+-- about 90 slots; the cap is what stops a faster tick from growing the journal
 -- row without bound.
-M.DECAY_MAX_SAMPLES = 40
+M.DECAY_MAX_SAMPLES = 100
 
 local function clamp(value, lo, hi)
   if value < lo then return lo end
@@ -124,7 +131,8 @@ function M.invalidate(episode, reason)
 end
 
 -- Advances an episode by one observation and reports its phase: "heating" (still
--- climbing to the cutoff), "coasting" (cut off, watching the peak) or "done".
+-- climbing to the cutoff), "coasting" (cut off, watching for the room to turn)
+-- or "done".
 --
 -- `env` is the optional snapshot of M.open. The radiator temperature AT THE
 -- CUTOFF is the interesting one: it is the stored energy about to be dumped into
@@ -155,8 +163,22 @@ function M.step(episode, current, at, env)
     return "heating"
   end
   M.sample_decay(episode, current, at, radiator)
-  if at - episode.cutoff_at >= M.COAST_SECONDS then return "done" end
+  -- The relay closing again, once seen open, is the next run: its peak must not
+  -- be credited to this one, whatever the sensor's resolution.
+  if env and env.heating == false then episode.released = true end
+  if env and env.heating == true and episode.released then return "done" end
+  if M.coast_over(episode, current, at) then return "done" end
   return "coasting"
+end
+
+-- Whether the coast has ended: the room turned down after its peak, or the
+-- backstop ran out. Called after the peak has been updated for this sample, so
+-- a new high is never a turn.
+function M.coast_over(episode, current, at)
+  if at - episode.cutoff_at >= M.MAX_COAST_SECONDS then return true end
+  -- The tolerance is float error, not slack: 16.08 - 0.2 lands a hair below 15.88.
+  return current <= episode.peak - M.PEAK_DROP + 1e-6
+    and at - episode.peak_at >= M.PEAK_HOLD_SECONDS
 end
 
 -- Appends one point of the coast decay curve: seconds since the cutoff, the
@@ -185,7 +207,7 @@ end
 -- Seconds for the radiator's lead over the room to fall to half what it was at
 -- the cutoff, by linear interpolation between the bracketing samples. nil when
 -- there is no series, no lead to halve, or it had not halved before the coast
--- window closed — "did not halve in 30 minutes" is itself worth seeing.
+-- ended — "did not halve before the room turned" is itself worth seeing.
 --
 -- A half-life rather than a fitted time constant: it needs two samples and no
 -- regression, it survives a missing reading in the middle, and it does not

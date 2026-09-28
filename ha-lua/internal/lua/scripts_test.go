@@ -223,8 +223,41 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(phase == "coasting" and ep.peak == 20.6 and ep.peak_at == 1300, "peak tracked while coasting")
 		phase = o.step(ep, 20.2, 1400)
 		assert(phase == "coasting" and ep.peak == 20.6, "peak is a running max, not the last sample")
-		phase = o.step(ep, 20.1, 1120 + o.COAST_SECONDS)
-		assert(phase == "done", "coast window closes the episode")
+		-- A full step below the peak, but the peak is only 100 s old: a flicker
+		-- right after a new high must not end the coast.
+		assert(o.step(ep, 20.4, 1400) == "coasting", "fresh peak: not a turn yet")
+		phase = o.step(ep, 20.1, 1120 + o.MAX_COAST_SECONDS)
+		assert(phase == "done", "the backstop closes the episode")
+
+		-- The coast normally ends when the room TURNS: a full step below its
+		-- peak, with the peak at least PEAK_HOLD_SECONDS old. A fixed window
+		-- under-measured a radiator that was still feeding the room at 30 min.
+		local turn = o.open(21, 18, K(0, 0), false, 0)
+		o.step(turn, 21, 600)                              -- cutoff
+		o.step(turn, 21.4, 1500)                           -- peak at 1500
+		assert(o.step(turn, 21.3, 1560) == "coasting", "0.1 below is inside noise")
+		assert(o.step(turn, 21.2, 1620) == "coasting", "a full step, but the peak is 2 min old")
+		assert(o.step(turn, 21.2, 1500 + o.PEAK_HOLD_SECONDS) == "done", "turned: full step below a settled peak")
+		assert(turn.peak == 21.4 and turn.peak_at == 1500, "the peak is the turn's, not the last sample")
+		-- Exactly one step down counts, float error or not.
+		local exact = o.open(16, 15, K(0, 0), false, 0)
+		o.step(exact, 16.08, 60)                           -- cutoff, and the peak
+		assert(exact.peak == 16.08, "peak is 16.08")
+		assert(o.step(exact, 15.88, 60 + o.PEAK_HOLD_SECONDS) == "done", "16.08 -> 15.88 is a turn")
+		-- The relay closing again ends the coast even without a full step down:
+		-- a fine-grained sensor lets the ESP re-fire 0.1 below a small peak, and
+		-- that new run's peak must not be credited to this episode.
+		local rerun = o.open(21, 20.8, K(0, 0), false, 0, { heating = true })
+		o.step(rerun, 21, 60, { heating = true })          -- cutoff
+		assert(o.step(rerun, 21.05, 120, { heating = true }) == "coasting", "action still lagging: not a new run")
+		assert(o.step(rerun, 21.05, 180, { heating = false }) == "coasting", "relay released")
+		assert(o.step(rerun, 20.94, 240, { heating = true }) == "done", "relay closed again: the next run")
+		assert(rerun.peak == 21.05, "the next run's heat never reached this peak")
+		-- And a room that never turns still ends on the backstop.
+		local flat = o.open(21, 18, K(0, 0), false, 0)
+		o.step(flat, 21, 600)
+		assert(o.step(flat, 21.4, 600 + o.MAX_COAST_SECONDS - 60) == "coasting", "still coasting before the backstop")
+		assert(o.step(flat, 21.4, 600 + o.MAX_COAST_SECONDS) == "done", "backstop")
 
 		-- close: the peak landed 0.4 below the request, so both come down — one
 		-- normalised gradient step on [1, rise].
@@ -243,7 +276,7 @@ func TestOvershootPureLib(t *testing.T) {
 		-- same 1° error moves slope by rise/(1+rise²) of what it moves base.
 		local cycle = o.open(21, 20.6, K(0, 0), false, 0)
 		o.step(cycle, 21, 60)
-		o.step(cycle, 22, 60 + o.COAST_SECONDS)
+		o.step(cycle, 22, 60 + o.MAX_COAST_SECONDS)
 		local k_cycle = o.close(cycle, K(0, 0))
 		assert(near(k_cycle.base, 0.5 * 1 / 1.16), "cycle teaches base, got "..tostring(k_cycle.base))
 		assert(near(k_cycle.slope, 0.5 * 0.4 / 1.16), "cycle barely moves slope, got "..tostring(k_cycle.slope))
@@ -252,7 +285,7 @@ func TestOvershootPureLib(t *testing.T) {
 		local hot = o.open(21, 18, K(0, 0.4), false, 0)
 		o.step(hot, 19.8, 60)
 		o.step(hot, 40, 120)
-		o.step(hot, 40, 60 + o.COAST_SECONDS + 120)
+		o.step(hot, 40, 60 + o.MAX_COAST_SECONDS + 120)
 		local k_hot = o.close(hot, K(2.4, 0.4))
 		assert(k_hot.slope == o.SLOPE_MAX, "slope clamped to SLOPE_MAX, got "..tostring(k_hot.slope))
 		assert(k_hot.base == o.MAX_OFFSET, "base clamped to MAX_OFFSET, got "..tostring(k_hot.base))
@@ -263,7 +296,7 @@ func TestOvershootPureLib(t *testing.T) {
 		-- the step is clamped away, so it shrinks by less than that.
 		local cold = o.open(21, 18, K(0, 0.4), false, 0)
 		o.step(cold, 19.8, 60)
-		o.step(cold, 19.8, 60 + o.COAST_SECONDS)
+		o.step(cold, 19.8, 60 + o.MAX_COAST_SECONDS)
 		local k_cold = o.close(cold, K(0, 0.4))
 		local shrunk = o.offset(k_cold, 3)
 		assert(shrunk >= 0.6 and shrunk < 1.2, "worst case halves the offset at most, got "..tostring(shrunk))
@@ -310,7 +343,7 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(#row.decay == 3 and row.decay_half_life == half, "journal carries the curve")
 
 		-- A lead that never halves inside the coast reports nil rather than a
-		-- made-up number: "did not halve in 30 minutes" is itself the finding.
+		-- made-up number: "did not halve before the room turned" is itself the finding.
 		local slow = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
 		o.step(slow, 21, 60, { radiator = 60 })
 		o.step(slow, 21, 120, { radiator = 59 })
@@ -361,21 +394,21 @@ func TestOvershootPureLib(t *testing.T) {
 		-- up on its own — has no stored energy to teach from.
 		local unfired = o.open(21, 20.8, K(0, 0.4), false, 0, { heating = false })
 		o.step(unfired, 21, 60, { heating = false })
-		o.step(unfired, 21.3, 60 + o.COAST_SECONDS, { heating = false })
+		o.step(unfired, 21.3, 60 + o.MAX_COAST_SECONDS, { heating = false })
 		ok, why = o.valid(unfired)
 		assert(ok == false and why == "never_heated", "relay never closed, got "..tostring(why))
 		-- Seen on once is enough, and it sticks through the idle coast.
 		local fired = o.open(21, 20.8, K(0, 0.4), false, 0, { heating = true })
 		o.step(fired, 20.9, 30, { heating = true })
 		o.step(fired, 21, 60, { heating = false })
-		o.step(fired, 21.3, 60 + o.COAST_SECONDS, { heating = false })
+		o.step(fired, 21.3, 60 + o.MAX_COAST_SECONDS, { heating = false })
 		assert(o.valid(fired) == true, "a run that fired is learnable")
 		assert(o.record(fired, "z", K(0, 0), K(0, 0), "learned", nil, 0).heated == true,
 			"the journal carries whether the relay was seen on")
 		-- A device that reports no hvac_action is not gated: unknown is not off.
 		local mute = o.open(21, 20.8, K(0, 0.4), false, 0, {})
 		o.step(mute, 21, 60, {})
-		o.step(mute, 21.3, 60 + o.COAST_SECONDS, {})
+		o.step(mute, 21.3, 60 + o.MAX_COAST_SECONDS, {})
 		assert(o.valid(mute) == true, "no hvac_action -> not gated")
 
 		-- An episode that never reaches its setpoint is abandoned rather than

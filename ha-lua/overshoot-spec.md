@@ -147,8 +147,10 @@ offset  = clamp(k.base + k.slope * rise, 0, MAX_OFFSET)    -- both learned (§6)
 command = requested − offset
 ```
 
-`command` is held for the whole episode. The episode closes when the coast
-window after the cutoff runs out, or when the requested setpoint changes again;
+`command` is held for the whole episode. The episode closes when the room has
+turned down after its coast peak, when the relay closes again for the next run
+(so that run's peak is never credited to this one), or when the coast backstop
+runs out — or early, when the requested setpoint changes again;
 then the command returns to `requested`, so the offset never becomes the
 permanent lowering §4.2 rejects.
 
@@ -189,7 +191,9 @@ early.
 | `GAIN` | `0.5` | Fraction of the measured error folded in per episode. Converges in ~4–5 episodes, damped enough not to ring. |
 | `SLOPE_MAX` | `0.8` | Hard bound on `slope`. Sanity only; a plant needing more than this is broken elsewhere. `base` is bounded by `MAX_OFFSET`. |
 | `MAX_OFFSET` | `2.5 °C` | Absolute cap on a single cutoff, whatever the coefficients say. |
-| `COAST_WINDOW` | `30 min` | How long after cutoff the peak is watched for. |
+| `PEAK_DROP` | `0.2 °C` | The coast is over once the room reads this far below its peak — one full step of a 0.2° sensor, out of reach of 0.1° noise. |
+| `PEAK_HOLD` | `5 min` | …and the peak is at least this old, so one flickering reading right after a new high does not end it. |
+| `MAX_COAST` | `90 min` | Backstop for a room that never turns (a sunny window, another heat source). Originally a fixed 30-minute window; the first live episode's radiator had a 28-minute half-life and was still 10° above a room still at its peak when that closed, so every peak was a lower bound. |
 
 ## 6. The learner
 
@@ -197,7 +201,7 @@ Two numbers per zone, `k = {base, slope}`, in the script's KV store. After
 each episode:
 
 ```
-peak    = max room temperature observed within COAST_WINDOW of the cutoff
+peak    = max room temperature observed until the room turns down (§5.1)
 error   = peak − requested                      -- >0 too hot, <0 undershot
 norm    = 1 + rise²
 base    = clamp(base  + GAIN * error        / norm, 0, MAX_OFFSET)
