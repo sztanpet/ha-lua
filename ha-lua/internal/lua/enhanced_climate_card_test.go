@@ -644,6 +644,36 @@ func TestEnhancedClimateCardStepperEcho(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateCardOvershootNoRadiator: the cut is decided on the
+// radiator, so a card with none configured must not read "overshoot idle", as
+// if the correction were merely waiting.
+func TestEnhancedClimateCardOvershootNoRadiator(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	idle := strings.Replace(cardStates, `"would_hold": true`, `"would_hold": false`, 1)
+	var ok bool
+	var without, with string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`window.__apply("en", `+idle+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".subtitle .overshoot")`, &ok),
+		chromedp.Evaluate(`window.__text(".subtitle .overshoot")`, &without),
+		chromedp.Evaluate(`window.__card.setConfig({ climate_entity: "climate.lr", radiator_entity: "sensor.lr_rad" }),
+			window.__apply("en", `+idle+`)`, &ok),
+		chromedp.Poll(`window.__text(".subtitle .overshoot") !== `+"`"+`overshoot: no radiator sensor`+"`", &ok),
+		chromedp.Evaluate(`window.__text(".subtitle .overshoot")`, &with),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if without != "overshoot: no radiator sensor" {
+		t.Errorf("segment without a radiator = %q", without)
+	}
+	if with != "overshoot idle" {
+		t.Errorf("segment with a radiator = %q, want overshoot idle", with)
+	}
+}
+
 // TestEnhancedClimateCardOvershootHolding: an armed cut in force reads as
 // "stopped early" on the status line, while the stepper keeps showing the
 // request — the hold is the controller's business, not a new setpoint.

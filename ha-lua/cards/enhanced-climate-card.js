@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.41";
+const VERSION = "0.3.42";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -91,6 +91,7 @@ const MESSAGES = {
     "overshoot.holding": "stopped early",
     "overshoot.would_hold": "would stop early",
     "overshoot.idle": "overshoot idle",
+    "overshoot.no_radiator": "overshoot: no radiator sensor",
     "overshoot.title": "Overshoot correction",
     "overshoot.commanded": "Commanded {temp}° for a request of {requested}°",
     "overshoot.learned": "+{per10}° per 10° of radiator after the heat stops, learned over {samples} run(s)",
@@ -159,6 +160,7 @@ const MESSAGES = {
     "overshoot.holding": "korábban leállítva",
     "overshoot.would_hold": "korábban leállítaná",
     "overshoot.idle": "túlfutás-korrekció tétlen",
+    "overshoot.no_radiator": "túlfutás: nincs radiátor-érzékelő",
     "overshoot.title": "Túlfutás-korrekció",
     "overshoot.commanded": "{requested}° kérésre {temp}°-ot vezérel",
     "overshoot.learned": "10° radiátortöbblet +{per10}° a fűtés leállása után, {samples} fűtésből tanulva",
@@ -867,7 +869,8 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // the primary number; showing 19.8 where somebody set 21 reads as a bug.
     const overshoot = companionAttrs && companionAttrs.overshoot;
     if (overshoot) {
-      let label = translate("overshoot.idle");
+      // The cut is decided on the radiator, so without one it can never act.
+      let label = translate(radiatorEntity ? "overshoot.idle" : "overshoot.no_radiator");
       if (overshoot.holding) label = translate("overshoot.holding");
       else if (overshoot.would_hold) label = translate("overshoot.would_hold");
       subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
