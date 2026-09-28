@@ -687,6 +687,59 @@ func TestEnhancedClimateDialWhileOffHolds(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateHoldWithoutSchedule: with no schedule, nothing would take
+// over when a dial hold expired, so the climate dropped out of control 24 h
+// after every dial change, window pause and overshoot learner with it. The
+// hold now lasts until replaced; a schedule saved later bounds it, and removing
+// the climate drops it.
+func TestEnhancedClimateHoldWithoutSchedule(t *testing.T) {
+	const companion = "sensor.ha_lua_enhanced_climate_lr"
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.pushClimate("climate.lr",
+		`{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`,
+		`{"current_temperature":18,"temperature":21,"min_temp":7,"max_temp":35}`)
+	f.waitCompanion(companion, func(state string, attrs map[string]any) bool {
+		manual, _ := attrs["manual"].(map[string]any)
+		return state == "21" && manual["active"] == true && manual["until"] == nil
+	}, "a hold with no end")
+	if manual := f.storeMap("manual:climate.lr"); manual["temp"] != 21.0 || manual["expires"] != nil {
+		t.Fatalf("stored hold = %+v, want temp 21 and no expires", manual)
+	}
+
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("20")+`}`)
+	f.waitCompanion(companion, func(state string, attrs map[string]any) bool {
+		manual, _ := attrs["manual"].(map[string]any)
+		return state == "21" && manual["until"] != nil
+	}, "a schedule bounds the hold to its next transition")
+
+	f.fireCommand("remove", `{"climate_entity":"climate.lr"}`)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && f.storeMap("manual:climate.lr") != nil {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if manual := f.storeMap("manual:climate.lr"); manual != nil {
+		t.Fatalf("remove kept the hold for a re-add: %+v", manual)
+	}
+}
+
+// TestEnhancedClimateExpiredHoldWithoutSchedule: a hold written before holds
+// on a schedule-less climate lost their end still carries one. It must keep
+// controlling past it, or the children's room lapses at 18:11 as before.
+func TestEnhancedClimateExpiredHoldWithoutSchedule(t *testing.T) {
+	f := newEnhancedFixture(t, func(ctx context.Context, kv *store.Store, _ *store.GlobalStore) {
+		if err := kv.Set(ctx, "manual:climate.lr", map[string]any{
+			"temp": 21.0, "expires": "2026-01-01T00:00:00Z",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.waitSetTemp(21, "the old hold still controls")
+}
+
 // TestEnhancedClimateManualDetectionReadsWritten pins the manual-change detector
 // onto `written` rather than `desired` (overshoot-spec.md §7). The two are equal
 // whenever no correction is active, so they are forced apart here: with the

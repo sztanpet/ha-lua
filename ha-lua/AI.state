@@ -219,6 +219,12 @@ here.
   declined on 2026-09-25. A lib edit needs a restart; the LAN port is
   LAN-trust, debug page included. Do not re-raise either.
 
+- **A dial hold on a schedule-less climate lasts until replaced.** With no
+  schedule nothing takes over when a hold expires, so the room dropped out of
+  control 24 h after each dial change, window pause and overshoot learner
+  with it. The user chose this over a schedule entry, which would revert every
+  dial change at midnight. Do not give it back a fixed lifetime.
+
 ## Removed (do not add back without explicit user request)
 - state_stats_hourly / state_stats_daily tables, `ha.get_stats`, the `is_numeric`
   column, and the 4-step transactional purge

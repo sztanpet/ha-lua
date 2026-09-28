@@ -212,7 +212,12 @@ Built fresh (not a rework of `thermostat.lua`), reusing the pure
    >0.05). Manual detection: `control.is_manual(target, published_desired)` — a
    climate target differing from the published desired (≥0.075, i.e. one
    0.1 dial step but not a device-rounded write) starts a manual
-   hold until the next schedule transition. `control.clamp_bounds` against the
+   hold until the next schedule transition — or, on a climate with no schedule,
+   until replaced: nothing would take over at expiry, and the climate would
+   drop out of control. Saving a schedule bounds such a hold to its next
+   transition; removing the climate drops it. A boost outranks the hold
+   without clearing it, so the hold takes back over when the boost ends.
+   `control.clamp_bounds` against the
    climate's `min_temp`/`max_temp` so nothing pushes a setpoint HA silently
    drops (AI.state 2.3.0).
 3. **Multi-sensor window cooperation built in.** Each climate's `window_sensors`
@@ -290,8 +295,9 @@ The card **replaces a native `tile` climate card** (e.g. `type: tile` with
 - **target temperature** → `climate.set_temperature` (the tile's
   `target-temperature` feature). No custom command: a setpoint change ≠ published
   desired *is* the daemon's manual-hold signal (until the next schedule
-  transition, §7.2). The card shows a "held until HH:MM" badge from the
-  companion's `manual`.
+  transition, §7.2, or until replaced with no schedule). The card shows a
+  "held until HH:MM" badge from the companion's `manual` — none for an
+  unbounded hold, which carries no `until`.
 - **HVAC mode** → `climate.set_hvac_mode` (the tile's `climate-hvac-modes`
   feature). The daemon gates control on `mode==heat`.
 

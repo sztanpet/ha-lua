@@ -108,6 +108,15 @@ local function load_schedule(climate)
   return {}
 end
 
+-- When a dial hold on `days` ends: the next transition, or nil for an empty
+-- week. Without a schedule nothing would take over at expiry, and the climate
+-- would drop out of control with its window pause and overshoot learner.
+local function hold_expiry(days, now, dow, minute)
+  local _, _, mins_to_next = schedule.resolve(days, dow, minute)
+  if mins_to_next == nil then return nil end
+  return now:add(mins_to_next * 60):format(time.RFC3339)
+end
+
 -- The window sensors the card bound to this climate at configure time.
 local function window_sensors_of(climate)
   local cfg = load_registry()[climate]
@@ -151,10 +160,14 @@ local function active_override(climate, now)
 end
 
 -- The live manual hold, or nil, clearing it once `expires` has passed. ("until"
--- would be a Lua keyword.)
+-- would be a Lua keyword.) Without a schedule a hold lasts until replaced, and
+-- a stored `expires` is ignored, which also covers holds written before that.
 local function active_manual(climate, now)
   local manual = store.get(manual_key(climate))
-  if type(manual) ~= "table" or type(manual.temp) ~= "number" or type(manual.expires) ~= "string" then
+  if type(manual) ~= "table" or type(manual.temp) ~= "number" then return nil end
+  if schedule.resolve(load_schedule(climate), 0, 0) == nil then return { temp = manual.temp } end
+  if type(manual.expires) ~= "string" then
+    store.delete(manual_key(climate))
     return nil
   end
   local exp = parse_time(manual.expires)
@@ -569,7 +582,8 @@ ha.every("1m", tick)
 -- Manual setpoint change detection (§7.2): this controller is the only thing that
 -- writes the setpoint, and always writes what it recorded as `written`, so a
 -- target differing from that is the user at the dial. It becomes an ad-hoc manual hold
--- lasting until the next schedule transition. One wildcard handler, because
+-- lasting until the next schedule transition, or until replaced when there is
+-- no schedule. One wildcard handler, because
 -- climates are registered at runtime and a load-time registration cannot see
 -- them.
 -- ---------------------------------------------------------------------------
@@ -587,13 +601,10 @@ local function manual_change(climate_entity, new_state, now, dow, minute)
   local last_written = store.get(written_key(climate_entity))
   if not control.is_manual(target, last_written) then return false end
 
-  local _, _, mins_to_next = schedule.resolve(load_schedule(climate_entity), dow, minute)
-  local hold = mins_to_next ~= nil and mins_to_next * 60 or 24 * 3600
-  store.set(manual_key(climate_entity), {
-    temp = target,
-    expires = now:add(hold):format(time.RFC3339),
-  })
-  ha.log("info", "manual change on " .. climate_entity .. " -> " .. tostring(target) .. "° (held to next transition)")
+  local expires = hold_expiry(load_schedule(climate_entity), now, dow, minute)
+  store.set(manual_key(climate_entity), { temp = target, expires = expires })
+  ha.log("info", "manual change on " .. climate_entity .. " -> " .. tostring(target) ..
+    (expires and "° (held to next transition)" or "° (held until replaced)"))
   return true
 end
 
@@ -718,6 +729,7 @@ local function remove_climate(climate)
   store.delete(desired_key(climate))
   store.delete(written_key(climate))
   store.delete(restore_key(climate)) -- a re-add must not resurrect a pre-boost setpoint
+  store.delete(manual_key(climate)) -- nor a hold that, without a schedule, never expires
   -- A re-added climate starts learning from scratch rather than inheriting a c
   -- measured on a plant that may since have been replumbed.
   store.delete(c_key(climate))
@@ -746,9 +758,16 @@ card.on("schedule", function(data)
   if not is_registered(climate) then return end
   local lo, hi = temp_bounds(climate)
   if not schedule.validate(data.schedule, lo, hi) then return end
-  store.set(sched_key(climate), { days = data.schedule })
-  ha.log("info", "schedule updated for " .. climate)
   local now, dow, minute = now_parts()
+  -- Judged under the old schedule, then re-bounded by the new one: a hold kept
+  -- until replaced gains an end, and an emptied week makes it unbounded.
+  local manual = active_manual(climate, now)
+  store.set(sched_key(climate), { days = data.schedule })
+  if manual then
+    manual.expires = hold_expiry(data.schedule, now, dow, minute)
+    store.set(manual_key(climate), manual)
+  end
+  ha.log("info", "schedule updated for " .. climate)
   apply_climate(climate, now, dow, minute)
 end)
 
