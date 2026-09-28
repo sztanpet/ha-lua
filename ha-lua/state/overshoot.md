@@ -474,8 +474,8 @@ Same day, at the user's request or with their go-ahead:
   statistics helper the user created (average_step, 72 h; matched an
   independent computation 16.95 vs 16.96). Paused 09:42 → ~11:45 so the 10:00
   check would not switch off on the 24 h mean the user was replacing.
-- Open question to the user: "Fürdő fűtés reggelente" still conditions the
-  morning bathroom boost on the 24 h mean < 17.
+- "Fürdő fűtés reggelente" keeps the 24 h mean (< 17) for the morning bathroom
+  boost — asked 2026-09-28, the user said no to moving it to the 3-day helper.
 - Then watch the journal's would-cut rows in observe-only before arming.
 - Whether 17 is the right switch-off threshold (see the Sunday note above).
 - **Deploy.** The scripts on the box are hand-copied into
