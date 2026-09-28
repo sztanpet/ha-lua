@@ -52,7 +52,9 @@ type enhancedFixture struct {
 	removed []string
 }
 
-func newEnhancedFixture(t *testing.T) *enhancedFixture {
+// newEnhancedFixture loads enhanced_climate.lua against real SQLite. prepare
+// runs before the script loads, for state a previous daemon run left behind.
+func newEnhancedFixture(t *testing.T, prepare ...func(context.Context, *store.Store, *store.GlobalStore)) *enhancedFixture {
 	t.Helper()
 	dir := t.TempDir()
 	libDir := filepath.Join(dir, "lib")
@@ -116,6 +118,9 @@ func newEnhancedFixture(t *testing.T) *enhancedFixture {
 	ctx, cancel := context.WithCancel(context.Background())
 	f.ctx = ctx
 	t.Cleanup(func() { cancel(); sup.Wait() })
+	for _, fn := range prepare {
+		fn(ctx, f.kv, global)
+	}
 	if err := sched.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -466,6 +471,38 @@ func TestEnhancedClimateOvershootOpensOnHeating(t *testing.T) {
 	// off before the first tick cannot be discarded as never having heated.
 	if ep["heated"] != true {
 		t.Errorf("heated = %v at the open, want true", ep["heated"])
+	}
+}
+
+// TestEnhancedClimateAbandonsEpisodeOnRestart: an episode in flight when the
+// daemon stopped is abandoned at load, not resumed — its timing is broken — and
+// journaled with the reason, because an episode that vanishes silently is
+// exactly the failure spec §9.1 exists to prevent.
+func TestEnhancedClimateAbandonsEpisodeOnRestart(t *testing.T) {
+	stale := map[string]any{
+		"opened_at": 1000, "requested": 21.0, "current_at_open": 18.0, "rise": 3.0,
+		"observe_only": false, "peak": 19.9, "peak_at": 1200,
+	}
+	f := newEnhancedFixture(t, func(ctx context.Context, kv *store.Store, global *store.GlobalStore) {
+		if err := global.Set(ctx, "enhanced_climate:registry", map[string]any{
+			"climate.lr": map[string]any{
+				"climate_entity": "climate.lr", "window_sensors": []any{}, "presets": []any{},
+				"radiator_entity": "", "outdoor_entity": "",
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := kv.Set(ctx, "overshoot_episode:climate.lr", stale); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	rows := f.waitJournal("climate.lr", 1, "the stale episode is journaled at load")
+	if last := rows[len(rows)-1]; last["outcome"] != "discarded" || last["reason"] != "restart" {
+		t.Fatalf("outcome/reason = %v/%v, want discarded/restart", last["outcome"], last["reason"])
+	}
+	if ep := f.storeMap("overshoot_episode:climate.lr"); ep != nil {
+		t.Fatalf("the stale episode survived the load: %+v", ep)
 	}
 }
 

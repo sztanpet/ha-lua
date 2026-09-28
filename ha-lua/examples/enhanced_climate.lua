@@ -919,8 +919,15 @@ end)
 -- Re-publish at load, before the first tick: an HA restart drops REST-set states,
 -- so this is what makes the companions reappear.
 do
+  local now = now_parts()
   local count = 0
-  for _ in pairs(load_registry()) do count = count + 1 end
+  for climate in pairs(load_registry()) do
+    count = count + 1
+    -- An episode in flight when the daemon stopped is abandoned, not resumed:
+    -- its timing is broken, and one lost sample costs less than a corrupted
+    -- coefficient (spec §6). Journaled, so the gap is visible.
+    abandon_episode(climate, now, "restart")
+  end
   ha.log("info", "enhanced_climate loaded, resuming " .. count .. " climate(s)")
 end
 apply_all(now_parts())
