@@ -4,6 +4,54 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.14.0 - 2026-09-28
+
+### Changed
+- **The overshoot correction is rebuilt around two rules: heating starts the
+  moment the room is below the setpoint, and a run is cut short only once the
+  radiator has been seen warming.** 4.13 latched an offset when the relay
+  closed. On a thermostat that switches at a single threshold — which is what
+  these ESPHome nodes are — the room is exactly at the switch-on point at that
+  moment, so the offset cancelled the run it was meant to shorten: armed on a
+  real room it produced a one-minute relay pulse every half hour into a
+  radiator that never warmed. Now nothing is written when a run starts. Once
+  the radiator has climbed 1 °C above its lowest reading in the run, the
+  controller predicts every minute where the room would end up if the heat
+  stopped now — the room plus a learned share of the radiator's lead over it —
+  and when that reaches the request it holds the setpoint half a degree below
+  the room. The hold is released the moment the stored heat can no longer
+  carry the room to the request, so heating resumes as soon as the room needs
+  it. A zone without a radiator sensor is never cut: there is no evidence to
+  cut on.
+- **What is learned is now `c`: how far the room rises after the heat stops,
+  per degree the radiator is above it.** It is measured on every run at
+  whichever cutoff happened — the correction's or the thermostat's own — and
+  smoothed. The 4.13 coefficients were integrated from the error, which in
+  observe-only mode could never respond to them, so they climbed with every
+  watched run towards their limit. `c` converges in observe-only exactly as
+  it does armed. It is stored under a new key and starts from zero; the old
+  coefficients meant something else.
+- The coast after a run now ends when the room turns down (a reading 0.2°
+  below a peak that has held for five minutes), or when the relay closes again
+  for the next run, with a 90-minute backstop. It was a fixed 30 minutes, and a
+  radiator that took nearly half an hour to shed half its heat was still
+  warming the room when that closed, so every peak was measured short.
+- The card reads "stopped early" while a cut is holding and "would stop early"
+  in observe-only, and states `c` per 10° of radiator. The Climate page's
+  journal shows when the radiator was seen warming, who stopped the run, the
+  radiator's lead, the prediction, and `c` measured → learned.
+- **If you run copies of these example scripts, copy them all together and
+  restart the add-on.** `lib/` is not hot-reloaded, and the new controller does
+  not run against the old `lib/overshoot.lua`.
+
+### Fixed
+- The enhanced-climate controller never discarded an overshoot episode that
+  was in flight when the daemon stopped — the thermostat controller always
+  had — so a cut's hold could have outlived a restart.
+- The journal now records whether the heating relay was seen on in each run.
+- The run count behind "learned over N runs" starts over with the new model
+  instead of counting the old one's runs.
+
 ## 4.13.0 - 2026-09-26
 
 ### Changed
