@@ -941,7 +941,7 @@ func TestEnhancedClimateOvershootDiscardsOnWindow(t *testing.T) {
 		t.Fatal("an invalidated episode must close immediately, not limp on")
 	}
 	// Nothing was learned from it: a discard writes no sample at all.
-	if got, err := f.kv.Get(f.ctx, "overshoot_samples:climate.lr"); err != nil {
+	if got, err := f.kv.Get(f.ctx, "overshoot_c_samples:climate.lr"); err != nil {
 		t.Fatalf("read samples: %v", err)
 	} else if got != nil && got != 0.0 {
 		t.Fatalf("samples = %v after a discard, want unset or 0", got)
@@ -1074,7 +1074,7 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
 	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
 	f.setStoreNumber("overshoot_c:climate.lr", 0.02)
-	f.setStoreNumber("overshoot_samples:climate.lr", 6)
+	f.setStoreNumber("overshoot_c_samples:climate.lr", 6)
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
 	f.waitSetTemp(21, "the warmup opens a run")
 

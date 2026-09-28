@@ -189,7 +189,8 @@ end
 -- A new key rather than the old overshoot_k: that one held v4.13's {base,
 -- slope}, which means something else entirely.
 local function c_key(climate) return "overshoot_c:" .. climate end
-local function samples_key(climate) return "overshoot_samples:" .. climate end
+-- Counts runs of the model c belongs to; the old key counted v4.13's runs.
+local function samples_key(climate) return "overshoot_c_samples:" .. climate end
 local function episode_key(climate) return "overshoot_episode:" .. climate end
 local function journal_key(climate) return "overshoot_journal:" .. climate end
 local function observe_key(climate) return "overshoot_observe:" .. climate end

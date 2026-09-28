@@ -1198,7 +1198,7 @@ func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
 	}
 
 	// A discard must not count as a sample; nothing was learned.
-	if v, err := kv.Get(ctx, "overshoot_samples:bedroom"); err != nil {
+	if v, err := kv.Get(ctx, "overshoot_c_samples:bedroom"); err != nil {
 		t.Fatal(err)
 	} else if v != nil {
 		t.Errorf("samples = %v, want unset after a discard", v)

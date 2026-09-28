@@ -137,7 +137,8 @@ end
 -- A new key rather than the old overshoot_k: that one held v4.13's {base,
 -- slope}, which means something else entirely.
 local function c_key(zone) return "overshoot_c:" .. zone end
-local function samples_key(zone) return "overshoot_samples:" .. zone end
+-- Counts runs of the model c belongs to; the old key counted v4.13's runs.
+local function samples_key(zone) return "overshoot_c_samples:" .. zone end
 local function episode_key(zone) return "overshoot_episode:" .. zone end
 local function journal_key(zone) return "overshoot_journal:" .. zone end
 local function observe_key(zone) return "overshoot_observe:" .. zone end
