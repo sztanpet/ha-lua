@@ -177,16 +177,18 @@ local function desired(climate, now, dow, minute)
 end
 
 -- ---------------------------------------------------------------------------
--- Overshoot correction (overshoot-spec.md). lib/overshoot.lua holds the math;
--- the state machine is here because the offset must be latched at the instant
--- the episode is detected, and because store.* is per-script.
+-- Overshoot correction (overshoot-spec.md): heat on demand, cut on evidence.
+-- lib/overshoot.lua holds the math; the episode lives here because store.* is
+-- per-script and the cut has to reach the device through this controller.
 --
 -- A learner that discards every episode looks exactly like one that has
 -- converged, which is why every episode is journaled with its reason and
 -- discards log at warn.
 -- ---------------------------------------------------------------------------
 
-local function k_key(climate) return "overshoot_k:" .. climate end
+-- A new key rather than the old overshoot_k: that one held v4.13's {base,
+-- slope}, which means something else entirely.
+local function c_key(climate) return "overshoot_c:" .. climate end
 local function samples_key(climate) return "overshoot_samples:" .. climate end
 local function episode_key(climate) return "overshoot_episode:" .. climate end
 local function journal_key(climate) return "overshoot_journal:" .. climate end
@@ -194,18 +196,16 @@ local function observe_key(climate) return "overshoot_observe:" .. climate end
 
 local JOURNAL_MAX = 50
 
--- The learned {base, slope}; anything else stored under the key (including the
--- single number the first version kept) reads as nothing learned.
-local function learned_k(climate)
-  local value = store.get(k_key(climate))
-  if type(value) == "table" and type(value.base) == "number" and type(value.slope) == "number" then
-    return { base = value.base, slope = value.slope }
-  end
-  return overshoot.k_init()
+-- Zero until learned: the prediction is then the room itself, so the earliest
+-- cut is the moment the room reaches the request — never before the node's own.
+local function learned_c(climate)
+  local value = store.get(c_key(climate))
+  if type(value) == "number" then return value end
+  return 0
 end
 
--- How many episodes the coefficients were learned from: "1.2° low" alone says
--- nothing about whether to trust it.
+-- How many runs c was learned from: a coefficient alone says nothing about
+-- whether to trust it.
 local function learned_samples(climate)
   local value = store.get(samples_key(climate))
   if type(value) == "number" then return value end
@@ -250,7 +250,7 @@ local function outdoor_of(climate)
 end
 
 -- The conditions an episode ran under, sampled fresh each tick because the
--- radiator temperature is the whole point: it swings 30° across one warmup.
+-- radiator is the evidence the cut is decided on: it swings 30° across one run.
 -- `heating` is the relay, which is what says a run actually happened.
 local function env_snapshot(climate)
   return {
@@ -270,44 +270,59 @@ end
 
 local function open_episode(climate, requested, current, at, env)
   local watching = observe_only(climate)
-  local episode = overshoot.open(requested, current, learned_k(climate), watching, at, env)
+  local episode = overshoot.open(requested, current, learned_c(climate), watching, at, env)
   if episode == nil then return nil end
-  -- An unclamped command HA drops would leave the episode waiting for a cutoff
-  -- that cannot arrive.
-  local lo, hi = temp_bounds(climate)
-  episode.commanded = control.clamp_bounds(episode.commanded, lo, hi)
-  episode.applied = control.clamp_bounds(episode.applied, lo, hi)
   store.set(episode_key(climate), episode)
   ha.log("info", string.format(
-    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f base=%.2f slope=%.2f offset=%.2f commanded=%.1f outdoor=%s radiator=%s%s",
-    climate, requested, current, episode.rise, episode.k_used.base, episode.k_used.slope,
-    episode.offset, episode.commanded, tostring(episode.outdoor_at_open),
-    tostring(episode.radiator_at_open), watching and " (observe-only)" or ""))
+    "overshoot %s: run started requested=%.1f room=%.1f radiator=%s outdoor=%s c=%.3f%s",
+    climate, requested, current, tostring(episode.radiator_at_open),
+    tostring(episode.outdoor_at_open), episode.c_used, watching and " (observe-only)" or ""))
   return episode
 end
 
 local function close_episode(climate, episode, at)
-  local k_before = learned_k(climate)
-  local k_after, outcome, reason = overshoot.close(episode, k_before)
+  local c_before = learned_c(climate)
+  local c_after, outcome, reason = overshoot.close(episode, c_before)
   if outcome == "discarded" then
     -- warn, not debug: needing to raise the log level to notice the learner has
     -- never once run would defeat the point of journaling it.
     ha.log("warn", string.format(
-      "overshoot %s: discarded (%s) requested=%.1f rise=%.1f peak=%.1f",
-      climate, reason, episode.requested, episode.rise, episode.peak))
+      "overshoot %s: discarded (%s) requested=%.1f room=%.1f peak=%.1f",
+      climate, reason, episode.requested, episode.current_at_open, episode.peak))
   else
-    store.set(k_key(climate), k_after)
+    store.set(c_key(climate), c_after)
     store.set(samples_key(climate), learned_samples(climate) + 1)
     local half = overshoot.half_life(episode)
     ha.log("info", string.format(
-      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f radiator_at_cutoff=%s cool_half_life=%s base %.2f -> %.2f slope %.2f -> %.2f",
-      climate, outcome, episode.peak, episode.requested,
-      episode.peak - episode.requested, tostring(episode.radiator_at_cutoff),
-      half and string.format("%.0fs", half) or "n/a",
-      k_before.base, k_after.base, k_before.slope, k_after.slope))
+      "overshoot %s: %s cut_by=%s lead=%.1f peak=%.2f requested=%.1f error=%+.2f cool_half_life=%s c %.3f -> %.3f (observed %.3f)",
+      climate, outcome, episode.cut_by, episode.lead_at_cutoff, episode.peak, episode.requested,
+      episode.peak - episode.requested, half and string.format("%.0fs", half) or "n/a",
+      c_before, c_after, episode.c_observed))
   end
-  journal(climate, overshoot.record(episode, climate, k_before, k_after, outcome, reason, at))
+  journal(climate, overshoot.record(episode, climate, c_before, c_after, outcome, reason, at))
   store.delete(episode_key(climate))
+end
+
+-- The three decisions a run can make, logged as they happen rather than only in
+-- the journal row at the end: "why did the heating stop at 23.1" has to be
+-- answerable from the log while the room is still coasting.
+local function log_decisions(climate, episode, before)
+  if episode.cutoff_at ~= nil and before.cutoff_at == nil and episode.cut_by == "overshoot" then
+    ha.log("info", string.format(
+      "overshoot %s: cut early room=%.1f radiator=%.1f lead=%.1f predicted=%.2f requested=%.1f hold=%.1f",
+      climate, episode.room_at_cutoff, episode.radiator_at_cutoff, episode.lead_at_cutoff,
+      episode.predicted_at_cutoff, episode.requested, episode.hold_temp))
+  end
+  if episode.would_cut_at ~= nil and before.would_cut_at == nil then
+    ha.log("info", string.format(
+      "overshoot %s: would cut now (observe-only) lead=%.1f predicted=%.2f requested=%.1f",
+      climate, episode.would_cut_lead, episode.would_cut_predicted, episode.requested))
+  end
+  if episode.released_at ~= nil and before.released_at == nil then
+    ha.log("info", string.format(
+      "overshoot %s: hold released, the stored heat will not reach %.1f",
+      climate, episode.requested))
+  end
 end
 
 -- Closes a live episode without a new observation, for the paths that leave the
@@ -320,31 +335,27 @@ local function abandon_episode(climate, now, reason)
   close_episode(climate, episode, now:unix())
 end
 
--- The learner's numbers for the companion payload and the Ingress page. `offset`
--- is the live episode's latched offset, not a recomputed one — a correction is
--- only ever as big as what it decided when the episode opened.
---
--- The coefficients without the sample count are not reportable: "1.2° low"
--- says nothing about whether to trust it, "1.2° low, learned over 6 nights"
--- does.
+-- The learner's numbers for the companion payload and the Ingress page.
+-- `holding` is a cut in force right now; `would_hold` is observe-only's
+-- equivalent, true from the moment it would have cut until the run ends.
 local function overshoot_status(climate)
   local episode = live_episode(climate)
   return {
-    k = learned_k(climate),
+    c = learned_c(climate),
     samples = learned_samples(climate),
-    offset = episode ~= nil and episode.offset or 0,
+    holding = episode ~= nil and episode.hold == true,
+    would_hold = episode ~= nil and episode.observe_only and episode.would_cut_at ~= nil,
     observe_only = observe_only(climate),
   }
 end
 
 -- Advances the climate's episode by one observation and returns the setpoint to
--- command, which is the request whenever no episode is running.
+-- command: the request, except while an armed cut holds the run off.
 --
--- An episode opens on either trigger of spec §5: the REQUEST CHANGES to
--- something above the room (a warmup from setback), or the relay is on with no
--- episode running (a hold's own heating cycle, whose request never moves). Not
--- merely whenever the room sits below the setpoint, which is true on every tick
--- of a hold and would open an episode a minute.
+-- A run's episode opens when the relay is on with none running, or when the
+-- request changes to above the room (for a device that reports no relay). Not
+-- whenever the room sits below the setpoint, which is true on every tick of a
+-- hold and would open an episode a minute.
 local function overshoot_step(climate, now, requested, previous)
   local at = now:unix()
   local current = current_temp(climate)
@@ -360,13 +371,19 @@ local function overshoot_step(climate, now, requested, previous)
     if requested_changed then overshoot.invalidate(episode, "setpoint_changed") end
     if not heating then overshoot.invalidate(episode, "mode_left_heat") end
     if window then overshoot.invalidate(episode, "window_open") end
-    -- Switching observe-only mid-episode: the episode latched its setpoint from
-    -- the old setting and cannot be judged against the new one.
+    -- Switching observe-only mid-run: half of it ran under the other setting and
+    -- cannot be judged as either.
     if episode.observe_only ~= observe_only(climate) then
       overshoot.invalidate(episode, "observe_changed")
     end
+    local before = {
+      cutoff_at = episode.cutoff_at,
+      would_cut_at = episode.would_cut_at,
+      released_at = episode.released_at,
+    }
     local phase = "heating"
     if current ~= nil then phase = overshoot.step(episode, current, at, env) end
+    log_decisions(climate, episode, before)
     if episode.invalid ~= nil or phase == "done" then
       close_episode(climate, episode, at)
       episode = nil
@@ -379,8 +396,10 @@ local function overshoot_step(climate, now, requested, previous)
     episode = open_episode(climate, requested, current, at, env)
   end
 
-  if episode == nil then return requested end
-  return episode.applied
+  if episode == nil or not episode.hold then return requested end
+  -- Never above the request: the hold only ever stops heating, it cannot add any.
+  local lo, hi = temp_bounds(climate)
+  return control.clamp_bounds(math.min(episode.hold_temp, requested), lo, hi)
 end
 
 local function set_temp(climate, temp)
@@ -689,9 +708,9 @@ local function remove_climate(climate)
   store.delete(desired_key(climate))
   store.delete(written_key(climate))
   store.delete(restore_key(climate)) -- a re-add must not resurrect a pre-boost setpoint
-  -- A re-added climate starts learning from scratch rather than inheriting a k
+  -- A re-added climate starts learning from scratch rather than inheriting a c
   -- measured on a plant that may since have been replumbed.
-  store.delete(k_key(climate))
+  store.delete(c_key(climate))
   store.delete(samples_key(climate))
   store.delete(episode_key(climate))
   store.delete(journal_key(climate))
@@ -766,10 +785,10 @@ card.on("overshoot", function(data)
     -- The in-flight episode goes too: it would close against a k that no longer
     -- exists and journal a row nobody could account for.
     store.delete(episode_key(climate))
-    store.delete(k_key(climate))
+    store.delete(c_key(climate))
     store.delete(samples_key(climate))
     store.delete(journal_key(climate))
-    ha.log("warn", "overshoot " .. climate .. ": k and journal reset")
+    ha.log("warn", "overshoot " .. climate .. ": c and journal reset")
   elseif type(data.observe_only) == "boolean" then
     store.set(observe_key(climate), data.observe_only)
     ha.log("warn", string.format("overshoot %s: observe_only = %s", climate, tostring(data.observe_only)))
@@ -837,7 +856,7 @@ end)
 -- Overshoot introspection (§9.5, §9.6). The learner is the only thing here that
 -- fails SILENTLY — it accumulates a number over days from episodes nobody
 -- watched, and a wrong one shows up as a room quietly too cold in February. So
--- k, the journal and the two writes are curl-able, and recovering from a bad k
+-- c, the journal and the two writes are curl-able, and recovering from a bad c
 -- must never be `sqlite3 /data/ha-lua.db` or a restart.
 -- ---------------------------------------------------------------------------
 
@@ -880,12 +899,12 @@ ha.serve("POST", "/api/overshoot/reset", function(req)
   -- The in-flight episode goes too: it would close against a k that no longer
   -- exists and journal a row nobody could account for.
   store.delete(episode_key(climate))
-  store.delete(k_key(climate))
+  store.delete(c_key(climate))
   store.delete(samples_key(climate))
   store.delete(journal_key(climate))
   -- warn: zeroing a learned coefficient is a deliberate act and the log is where
   -- a later "why did it forget everything" gets answered.
-  ha.log("warn", "overshoot " .. climate .. ": k and journal reset")
+  ha.log("warn", "overshoot " .. climate .. ": c and journal reset")
   local now, dow, minute = now_parts()
   apply_climate(climate, now, dow, minute) -- republish the companion at once
   return 200, json.encode(overshoot_report(climate)), JSON_HDR

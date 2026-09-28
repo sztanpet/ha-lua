@@ -178,11 +178,11 @@ const MESSAGES = {
     "reveal_setpoint": "Show what is actually being commanded",
     "requested": "Requested",
     "commanded": "Commanded",
-    "commanded_cut": "{temp}° — cutting {offset}° early",
+    "commanded_hold": "{temp}° — held off, the radiator's heat will carry the room",
     "commanded_same": "{temp}° — no correction",
     "learning": "Learning",
-    "learning_from": "cuts {k}, from {n} episodes",
-    "learning_none": "{k}, nothing learned yet",
+    "learning_from": "+{c}° per 10° of radiator after a cut, from {n} runs",
+    "learning_none": "nothing learned yet",
     "mode_label": "Mode",
     "mode_watching": "watching only — the correction is not applied",
     "mode_correcting": "correcting",
@@ -192,15 +192,19 @@ const MESSAGES = {
     "reset_confirm": "Reset this zone's learned correction to zero?",
     "recent_episodes": "Recent episodes",
     "no_episodes": "none recorded yet",
-    "episode_line": "{requested}° → {applied}°, peaked {peak}° ({error}°)",
+    "episode_line": "{requested}° asked, {cut}, peaked {peak}° ({error}°)",
+    "cut.overshoot": "cut early at {room}°", "cut.device": "stopped by itself at {room}°",
+    "cut.none": "never stopped",
     "outcome.learned": "learned", "outcome.observed": "observed",
     "outcome.discarded": "discarded",
     "reason.window_open": "a window opened",
     "reason.mode_left_heat": "left heat mode",
     "reason.setpoint_changed": "the setpoint changed",
-    "reason.rise_too_small": "too small to learn from",
+    "reason.never_heated": "the heating never switched on",
+    "reason.no_radiator": "no radiator reading",
+    "reason.radiator_cold": "the radiator was still cold",
     "reason.restart": "the daemon restarted",
-    "reason.never_reached": "never reached the setpoint",
+    "reason.never_reached": "the run never stopped",
     "reason.observe_changed": "the mode was switched",
   },
   hu: {
@@ -235,11 +239,11 @@ const MESSAGES = {
     "reveal_setpoint": "Mutasd, mi van ténylegesen kiadva",
     "requested": "Kért",
     "commanded": "Kiadott",
-    "commanded_cut": "{temp}° — {offset}°-kal korábban áll le",
+    "commanded_hold": "{temp}° — lekapcsolva, a radiátor hője viszi tovább",
     "commanded_same": "{temp}° — nincs korrekció",
     "learning": "Tanulás",
-    "learning_from": "{k}-kal korábban, {n} ciklusból",
-    "learning_none": "{k}, még nem tanult semmit",
+    "learning_from": "10° radiátortöbblet +{c}° lekapcsolás után, {n} fűtésből",
+    "learning_none": "még nem tanult semmit",
     "mode_label": "Mód",
     "mode_watching": "csak figyel — a korrekció nincs alkalmazva",
     "mode_correcting": "korrigál",
@@ -249,15 +253,19 @@ const MESSAGES = {
     "reset_confirm": "Nullázzuk a zóna megtanult korrekcióját?",
     "recent_episodes": "Legutóbbi ciklusok",
     "no_episodes": "még nincs rögzítve",
-    "episode_line": "{requested}° → {applied}°, csúcs {peak}° ({error}°)",
+    "episode_line": "{requested}° kérve, {cut}, csúcs {peak}° ({error}°)",
+    "cut.overshoot": "korán lekapcsolva {room}°-nál", "cut.device": "magától leállt {room}°-nál",
+    "cut.none": "nem állt le",
     "outcome.learned": "tanult", "outcome.observed": "megfigyelt",
     "outcome.discarded": "eldobva",
     "reason.window_open": "ablak nyílt ki",
     "reason.mode_left_heat": "kilépett a fűtés módból",
     "reason.setpoint_changed": "változott a célhőmérséklet",
-    "reason.rise_too_small": "túl kicsi ahhoz, hogy tanuljon belőle",
+    "reason.never_heated": "nem kapcsolt be a fűtés",
+    "reason.no_radiator": "nincs radiátor-adat",
+    "reason.radiator_cold": "a radiátor még hideg volt",
     "reason.restart": "újraindult a szolgáltatás",
-    "reason.never_reached": "sosem érte el a célhőmérsékletet",
+    "reason.never_reached": "a fűtés sosem állt le",
     "reason.observe_changed": "átkapcsolt a mód",
   },
 };
@@ -551,28 +559,31 @@ async function toggleReveal(zone) {
 function episodeRow(row) {
   const signed = (value) => (value >= 0 ? "+" : "") + value.toFixed(1);
   const outcome = t("outcome." + row.outcome, null, row.outcome);
+  // Rows from before the radiator-gated cutoff carry no cut_by; they read as
+  // "never stopped" rather than breaking the list.
+  const cut = row.cut_by
+    ? t("cut." + row.cut_by, { room: Number(row.room_at_cutoff).toFixed(1) })
+    : t("cut.none");
   return h("li", null,
     h("span", { class: "when" }, fmtStamp(row.closed_at)),
     h("span", null, t("episode_line", {
-      requested: row.requested.toFixed(1), applied: row.applied.toFixed(1),
+      requested: row.requested.toFixed(1), cut,
       peak: row.peak.toFixed(1), error: signed(row.error),
     })),
     h("span", { class: "why" },
       row.reason ? outcome + ": " + t("reason." + row.reason, null, row.reason) : outcome));
 }
 
-// The disclosure behind the setpoint: what is actually commanded, how much of
-// that is the learned correction, how many episodes taught it, and the way out
-// if it has gone wrong. Reachable by one deliberate tap and no other way.
+// The disclosure behind the setpoint: what is actually commanded, whether a cut
+// is holding the run off, what was learned and from how many runs, and the way
+// out if it has gone wrong. Reachable by one deliberate tap and no other way.
 function disclosure(zone, status) {
   const watching = status.observe_only !== false;
-  const offset = Number(status.offset) || 0;
   const commanded = (status.commanded != null) ? status.commanded.toFixed(1) : "—";
   const rows = journals.get(zone) || [];
   const samples = Number(status.samples) || 0;
-  // {base, slope}: the floor every run gets, plus the part per degree of rise.
-  const coeff = status.k && typeof status.k === "object" ? status.k : { base: 0, slope: 0 };
-  const k = (Number(coeff.base) || 0).toFixed(2) + "° + " + (Number(coeff.slope) || 0).toFixed(2) + "°/°";
+  // c per 10° of radiator lead: 0.018 is unreadable, "+0.18° per 10°" is not.
+  const c = ((Number(status.c) || 0) * 10).toFixed(2);
 
   // Both actions change the journal — switching the mode ends the running
   // episode, and a reset wipes the lot — so refetch before re-rendering rather
@@ -588,12 +599,12 @@ function disclosure(zone, status) {
     h("dl", null,
       h("dt", null, t("requested")), h("dd", null, status.target.toFixed(1) + "°"),
       h("dt", null, t("commanded")),
-      h("dd", null, offset > 0.05
-        ? t("commanded_cut", { temp: commanded, offset: offset.toFixed(1) })
+      h("dd", null, status.holding
+        ? t("commanded_hold", { temp: commanded })
         : t("commanded_same", { temp: commanded })),
       h("dt", null, t("learning")),
-      h("dd", null, samples > 0 ? t("learning_from", { k, n: samples })
-                                : t("learning_none", { k })),
+      h("dd", null, samples > 0 ? t("learning_from", { c, n: samples })
+                                : t("learning_none")),
       h("dt", null, t("mode_label")),
       h("dd", null, watching ? t("mode_watching") : t("mode_correcting"))),
     h("div", { class: "acts" },

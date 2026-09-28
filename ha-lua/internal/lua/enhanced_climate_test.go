@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -429,19 +428,16 @@ func (f *enhancedFixture) waitEpisode(climate, desc string) map[string]any {
 	return nil
 }
 
-// TestEnhancedClimateOvershootOpensOnHeating pins the second trigger of spec
-// §5: a hold whose request never moves still opens an episode when the device
-// reports its relay closing. This is the case the children's room lives in —
-// no schedule, one temperature all day, overheating on every cycle — and the
-// one the first version could not see at all, because it only watched the
-// request.
+// TestEnhancedClimateOvershootOpensOnHeating: a hold whose request never moves
+// still opens a run when the device reports its relay closing. This is the case
+// the children's room lives in — no schedule, one temperature all day — and the
+// one the first version could not see at all. Opening a run writes nothing.
 func TestEnhancedClimateOvershootOpensOnHeating(t *testing.T) {
 	f := newEnhancedFixture(t)
-	// The room sits ABOVE the request, so establishing the hold opens nothing:
-	// the request changed, but there is nothing to climb.
+	// The room sits ABOVE the request, so establishing the hold opens nothing.
 	f.seedClimate("climate.lr", `{"current_temperature":21.4,"temperature":21,"min_temp":7,"max_temp":35,"hvac_action":"idle"}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.8, "slope": 0.0})
+	f.setStoreNumber("overshoot_c:climate.lr", 0.2)
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
 	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
 		return attrs["controlled"] == true
@@ -451,26 +447,17 @@ func TestEnhancedClimateOvershootOpensOnHeating(t *testing.T) {
 		t.Fatalf("an episode opened with the room above the request: %+v", ep)
 	}
 
-	// The room drifts under the deadband and the relay closes. The request is
-	// still 21 — nothing about it changed — and that alone must open the episode.
+	// The room drifts down and the relay closes. The request is still 21 —
+	// nothing about it changed — and that alone must open the run.
 	f.pushClimate("climate.lr",
 		`{"current_temperature":20.6,"temperature":21,"min_temp":7,"max_temp":35,"hvac_action":"idle"}`,
 		`{"current_temperature":20.6,"temperature":21,"min_temp":7,"max_temp":35,"hvac_action":"heating"}`)
-	ep := f.waitEpisode("climate.lr", "the relay closing opens a cycle's episode")
-	if rise, _ := ep["rise"].(float64); math.Abs(rise-0.4) > 1e-9 {
-		t.Errorf("rise = %v, want 0.4 (the deadband)", ep["rise"])
+	ep := f.waitEpisode("climate.lr", "the relay closing opens a run")
+	if ep["requested"] != 21.0 || ep["heated"] != true || ep["c_used"] != 0.2 {
+		t.Errorf("episode = requested %v, heated %v, c_used %v; want 21, true, 0.2", ep["requested"], ep["heated"], ep["c_used"])
 	}
-	// The floor is what a cycle gets: base 0.8 on a 0.4 rise is a cut of 0.8.
-	if commanded, _ := ep["commanded"].(float64); math.Abs(commanded-20.2) > 1e-9 {
-		t.Errorf("commanded = %v, want 20.2 (request minus the floor)", ep["commanded"])
-	}
-	if ep["applied"] != 21.0 {
-		t.Errorf("applied = %v, want 21: observe-only still writes the request", ep["applied"])
-	}
-	// The relay that opened it is on record from the open, so a cycle that cuts
-	// off before the first tick cannot be discarded as never having heated.
-	if ep["heated"] != true {
-		t.Errorf("heated = %v at the open, want true", ep["heated"])
+	if temps := f.setTemps(); len(temps) != 0 {
+		t.Errorf("opening a run wrote set_temperature %v; heating must never be delayed", temps)
 	}
 }
 
@@ -798,86 +785,127 @@ func TestEnhancedClimateCompanionSplitsRequestedAndCommanded(t *testing.T) {
 	}, "state 21 (requested) with commanded 18 (what the device carries)")
 }
 
-// TestEnhancedClimateOvershootObserveOnlyWrites pins the safety gate
-// (overshoot-spec.md §9.4): observe-only defaults ON, so a seeded, converged k
-// still writes the UNCORRECTED request. The episode is opened and recorded
-// either way — that is the point of the mode.
-func TestEnhancedClimateOvershootObserveOnlyWrites(t *testing.T) {
-	f := newEnhancedFixture(t)
-	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
-	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4}) // would cut 1.2° off a 3° rise
-
-	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
-	f.waitSetTemp(21, "observe-only writes the request, not the corrected value")
-	if temps := f.setTemps(); slices.Contains(temps, 19.8) {
-		t.Fatalf("set_temperature calls %v include the corrected value while observing", temps)
+// waitEpisodeWhere polls the live episode until check accepts it. The steps of
+// a run that must NOT write anything have no set_temperature to wait on, so the
+// episode's own record of the step is what proves the step happened.
+func (f *enhancedFixture) waitEpisodeWhere(climate string, check func(map[string]any) bool, desc string) map[string]any {
+	f.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if ep := f.storeMap("overshoot_episode:" + climate); ep != nil && check(ep) {
+			return ep
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	// Recorded regardless: a week of what it WOULD have done is the whole
-	// purpose of shipping this way.
-	ep := f.storeMap("overshoot_episode:climate.lr")
-	if ep == nil {
-		t.Fatal("no episode opened, so observe-only recorded nothing to judge")
-	}
-	if ep["offset"] != 1.2000000000000002 && ep["offset"] != 1.2 {
-		t.Fatalf("episode offset = %v, want 1.2 (k 0.4 x rise 3)", ep["offset"])
-	}
-	if ep["applied"] != 21.0 {
-		t.Fatalf("episode applied = %v, want 21 (the uncorrected request)", ep["applied"])
-	}
-	if ep["commanded"] != 19.8 {
-		t.Fatalf("episode commanded = %v, want 19.8 (what it would have written)", ep["commanded"])
-	}
+	f.t.Fatalf("timeout waiting for the episode on %s (%s); got %+v", climate, desc,
+		f.storeMap("overshoot_episode:"+climate))
+	return nil
 }
 
-// TestEnhancedClimateOvershootCorrects takes one climate out of observe-only and
-// checks the correction reaches the device: a 18->21 warmup with k=0.4 is
-// commanded to 19.8, while the REQUEST stays 21 for everything that displays
-// intent (§5, §8).
-func TestEnhancedClimateOvershootCorrects(t *testing.T) {
-	f := newEnhancedFixture(t)
-	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
-	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4})
-	f.setStore("overshoot_observe:climate.lr", false)
-
-	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
-	f.waitSetTemp(19.8, "the corrected cutoff is what the device is commanded to")
-
-	if got := f.storeNumber("desired:climate.lr"); got != 21 {
-		t.Fatalf("desired = %v, want 21: the request must survive the correction", got)
-	}
-	if got := f.storeNumber("written:climate.lr"); got != 19.8 {
-		t.Fatalf("written = %v, want 19.8", got)
-	}
+// tickNow re-applies the climate the way the minute tick would. The settings
+// command always re-applies, and an override temperature changes nothing while
+// no override is active.
+func (f *enhancedFixture) tickNow(climate string) {
+	f.t.Helper()
+	f.fireCommand("settings", `{"climate_entity":"`+climate+`","override_temp":24}`)
 }
 
-// TestEnhancedClimateOvershootOffsetIsLatched is the one the design calls the
-// easiest thing to get wrong (§5): the offset is fixed when the episode opens
-// and must NOT be recomputed as the room warms. Recomputed, the commanded value
-// would climb with the shrinking rise and converge on the request without ever
-// cutting early — the correction would silently do nothing.
-func TestEnhancedClimateOvershootOffsetIsLatched(t *testing.T) {
+// runStates are the device states one heating run passes through, for a room at
+// 23.3 under a 23.4 request. temp is the setpoint the device carries.
+func runState(action string, temp float64) string {
+	return fmt.Sprintf(`{"current_temperature":23.3,"temperature":%v,"min_temp":7,"max_temp":35,"hvac_action":%q}`,
+		temp, action)
+}
+
+// TestEnhancedClimateOvershootCutsOnEvidence drives one armed run through the
+// controller and the device writes, against the user's two rules (spec §5):
+// heating is never delayed — nothing is written when the run starts, nor while
+// the radiator is still cooling from the last one, even with a c that says the
+// stored heat already suffices — and the cut comes only once the radiator is
+// seen warming. Then the hold is given back the moment the stored heat runs
+// short, and the node firing again closes the run into the journal.
+func TestEnhancedClimateOvershootCutsOnEvidence(t *testing.T) {
 	f := newEnhancedFixture(t)
-	f.seedClimate("climate.lr", `{"current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
-	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
-	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4})
+	f.seedClimate("climate.lr", runState("idle", 23.4))
+	f.setSensor("sensor.lr_rad", "30") // still warm from the last run
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.lr_rad"}`)
+	f.setStoreNumber("overshoot_c:climate.lr", 0.2)
 	f.setStore("overshoot_observe:climate.lr", false)
-	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
-	f.waitSetTemp(19.8, "episode opens and latches a 1.2° offset")
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("23.4")+`}`)
+	f.waitEpisode("climate.lr", "the request rising above the room opens the run")
 
-	// The room climbs to 20 and the device now carries the corrected setpoint.
-	// A recomputed offset would be 0.4 x 1 = 0.4, i.e. a command of 20.6.
-	f.seedClimate("climate.lr", `{"current_temperature":20,"temperature":19.8,"min_temp":7,"max_temp":35}`)
-	f.fireCommand("settings", `{"climate_entity":"climate.lr","override_temp":24}`)
+	f.pushClimate("climate.lr", runState("idle", 23.4), runState("heating", 23.4))
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["heated"] == true }, "relay seen on")
 
-	time.Sleep(200 * time.Millisecond) // the re-latch would be a non-event
-	if got := f.storeNumber("written:climate.lr"); got != 19.8 {
-		t.Fatalf("written = %v after the room warmed, want 19.8: the offset was recomputed instead of latched", got)
+	f.setSensor("sensor.lr_rad", "29")
+	f.tickNow("climate.lr")
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["radiator_min"] == 29.0 }, "radiator still cooling")
+	if temps := f.setTemps(); len(temps) != 0 {
+		t.Fatalf("set_temperature %v before the radiator warmed: the start was delayed or cancelled", temps)
 	}
-	if temps := f.setTemps(); slices.Contains(temps, 20.6) {
-		t.Fatalf("set_temperature calls %v show a recomputed offset", temps)
+
+	// Seen warming: 30.5 is RAD_RISE above the 29 minimum. predicted = 23.3 +
+	// 0.2 * 7.2 >= 23.4, so the run is cut with a hold half a degree below the room.
+	f.setSensor("sensor.lr_rad", "30.5")
+	f.tickNow("climate.lr")
+	f.waitSetTemp(22.8, "the hold, once the radiator is seen warming")
+	if got := f.storeNumber("desired:climate.lr"); got != 23.4 {
+		t.Fatalf("desired = %v, want 23.4: the request must survive the cut", got)
+	}
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(state string, attrs map[string]any) bool {
+		overshoot, _ := attrs["overshoot"].(map[string]any)
+		return state == "23.4" && overshoot["holding"] == true
+	}, "companion: request 23.4, holding")
+
+	// The device takes the hold and the relay opens; the radiator then cools to
+	// barely above the room, so the stored heat can no longer reach 23.4 — the
+	// request goes back at once (rule 1).
+	f.pushClimate("climate.lr", runState("heating", 23.4), runState("idle", 22.8))
+	f.setSensor("sensor.lr_rad", "23.5")
+	f.tickNow("climate.lr")
+	f.waitSetTemp(23.4, "the request written back when the stored heat runs short")
+
+	// The node heats again: that is the next run, and it closes this one.
+	f.pushClimate("climate.lr", runState("idle", 22.8), runState("heating", 23.4))
+	rows := f.waitJournal("climate.lr", 1, "the run is journaled when the next begins")
+	last := rows[len(rows)-1]
+	if last["cut_by"] != "overshoot" || last["outcome"] != "learned" || last["reason"] != nil {
+		t.Fatalf("row = cut_by %v, outcome %v, reason %v; want overshoot/learned/nil", last["cut_by"], last["outcome"], last["reason"])
+	}
+	if last["released_at"] == nil || last["hold_temp"] != 22.8 {
+		t.Fatalf("row lost the hold: released_at %v, hold_temp %v", last["released_at"], last["hold_temp"])
+	}
+	// The room never rose: c observed 0, so c moves half way from 0.2 towards it.
+	if last["c_before"] != 0.2 || last["c_after"] != 0.1 {
+		t.Fatalf("c %v -> %v, want 0.2 -> 0.1", last["c_before"], last["c_after"])
+	}
+	f.waitEpisode("climate.lr", "the next run's episode is open")
+}
+
+// TestEnhancedClimateOvershootObserveOnlyNeverHolds: observe-only defaults ON
+// (spec §9.4), so the same run with the same c records when it WOULD have cut
+// and writes nothing at all.
+func TestEnhancedClimateOvershootObserveOnlyNeverHolds(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", runState("heating", 23.4))
+	f.setSensor("sensor.lr_rad", "29")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.lr_rad"}`)
+	f.setStoreNumber("overshoot_c:climate.lr", 0.2)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("23.4")+`}`)
+	f.waitEpisode("climate.lr", "run opened")
+
+	f.setSensor("sensor.lr_rad", "30.5")
+	f.tickNow("climate.lr")
+	ep := f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["would_cut_at"] != nil }, "would have cut")
+	if ep["hold"] != nil || ep["cutoff_at"] != nil {
+		t.Fatalf("observe-only cut the run: hold %v, cutoff_at %v", ep["hold"], ep["cutoff_at"])
+	}
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		overshoot, _ := attrs["overshoot"].(map[string]any)
+		return overshoot["would_hold"] == true && overshoot["holding"] == false
+	}, "companion: would hold, not holding")
+	if temps := f.setTemps(); len(temps) != 0 {
+		t.Fatalf("observe-only wrote set_temperature %v", temps)
 	}
 }
 
@@ -942,9 +970,9 @@ func TestEnhancedClimateRemovalPage(t *testing.T) {
 			Name          string   `json:"name"`
 			WindowSensors []string `json:"window_sensors"`
 			Overshoot     *struct {
-				K           struct{ Base, Slope float64 } `json:"k"`
-				Samples     int                           `json:"samples"`
-				ObserveOnly bool                          `json:"observe_only"`
+				C           float64 `json:"c"`
+				Samples     int     `json:"samples"`
+				ObserveOnly bool    `json:"observe_only"`
 			} `json:"overshoot"`
 		} `json:"climates"`
 	}
@@ -1045,20 +1073,20 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 	f.seedClimate("climate.lr", `{"friendly_name":"Living Room","current_temperature":18,"temperature":18,"min_temp":7,"max_temp":35}`)
 	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
 	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
-	f.setStore("overshoot_k:climate.lr", map[string]any{"base": 0.0, "slope": 0.4})
+	f.setStoreNumber("overshoot_c:climate.lr", 0.02)
 	f.setStoreNumber("overshoot_samples:climate.lr", 6)
 	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
-	f.waitSetTemp(21, "observe-only warmup opens an episode")
+	f.waitSetTemp(21, "the warmup opens a run")
 
 	type report struct {
-		ClimateEntity string                        `json:"climate_entity"`
-		K             struct{ Base, Slope float64 } `json:"k"`
-		Samples       int                           `json:"samples"`
-		ObserveOnly   bool                          `json:"observe_only"`
+		ClimateEntity string  `json:"climate_entity"`
+		C             float64 `json:"c"`
+		Samples       int     `json:"samples"`
+		ObserveOnly   bool    `json:"observe_only"`
+		Holding       bool    `json:"holding"`
 		Episode       *struct {
 			Requested float64 `json:"requested"`
-			Commanded float64 `json:"commanded"`
-			Offset    float64 `json:"offset"`
+			CUsed     float64 `json:"c_used"`
 		} `json:"episode"`
 	}
 	get := func() report {
@@ -1077,15 +1105,15 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 	// The live episode is reachable while it is still running, which is the only
 	// way to answer "why is it commanding that" before the journal exists.
 	got := get()
-	if got.K.Slope != 0.4 || got.K.Base != 0 || got.Samples != 6 || !got.ObserveOnly {
-		t.Fatalf("report = %+v, want slope 0.4 over 6 samples, observing", got)
+	if got.C != 0.02 || got.Samples != 6 || !got.ObserveOnly || got.Holding {
+		t.Fatalf("report = %+v, want c 0.02 over 6 samples, observing, not holding", got)
 	}
-	if got.Episode == nil || got.Episode.Commanded != 19.8 {
-		t.Fatalf("live episode = %+v, want commanded 19.8", got.Episode)
+	if got.Episode == nil || got.Episode.Requested != 21 || got.Episode.CUsed != 0.02 {
+		t.Fatalf("live episode = %+v, want requested 21 on c 0.02", got.Episode)
 	}
 
 	// Taking it out of observe-only over HTTP closes the running episode rather
-	// than judging it under a setting it did not latch.
+	// than judging a run that was half watched and half armed.
 	rec := doReqID(f.router, "enhanced_climate", "POST", "/api/overshoot/observe",
 		`{"climate_entity":"climate.lr","observe_only":false}`)
 	if rec.Code != 200 {
@@ -1099,14 +1127,14 @@ func TestEnhancedClimateOvershootAPI(t *testing.T) {
 		t.Fatalf("reason = %v, want observe_changed", last["reason"])
 	}
 
-	// Reset zeroes k and clears the journal, with no restart and no sqlite3.
+	// Reset zeroes c and clears the journal, with no restart and no sqlite3.
 	rec = doReqID(f.router, "enhanced_climate", "POST", "/api/overshoot/reset",
 		`{"climate_entity":"climate.lr"}`)
 	if rec.Code != 200 {
 		t.Fatalf("POST reset status %d body %q", rec.Code, rec.Body.String())
 	}
-	if got := get(); got.K.Base != 0 || got.K.Slope != 0 || got.Samples != 0 {
-		t.Fatalf("after reset %+v, want k 0 over 0 samples", got)
+	if got := get(); got.C != 0 || got.Samples != 0 {
+		t.Fatalf("after reset %+v, want c 0 over 0 samples", got)
 	}
 	if rows := f.overshootJournal("climate.lr"); len(rows) != 0 {
 		t.Fatalf("journal survived the reset: %+v", rows)

@@ -125,16 +125,18 @@ local function set_temp(zone, temp)
 end
 
 -- ---------------------------------------------------------------------------
--- Overshoot correction (overshoot-spec.md). lib/overshoot.lua holds the math;
--- the state machine is here because the offset must be latched at the instant
--- the episode is detected, and because store.* is per-script.
+-- Overshoot correction (overshoot-spec.md): heat on demand, cut on evidence.
+-- lib/overshoot.lua holds the math; the episode lives here because store.* is
+-- per-script and the cut has to reach the device through this controller.
 --
 -- A learner that discards every episode looks exactly like one that has
 -- converged, which is why every episode is journaled with its reason and
 -- discards log at warn.
 -- ---------------------------------------------------------------------------
 
-local function k_key(zone) return "overshoot_k:" .. zone end
+-- A new key rather than the old overshoot_k: that one held v4.13's {base,
+-- slope}, which means something else entirely.
+local function c_key(zone) return "overshoot_c:" .. zone end
 local function samples_key(zone) return "overshoot_samples:" .. zone end
 local function episode_key(zone) return "overshoot_episode:" .. zone end
 local function journal_key(zone) return "overshoot_journal:" .. zone end
@@ -142,18 +144,16 @@ local function observe_key(zone) return "overshoot_observe:" .. zone end
 
 local JOURNAL_MAX = 50
 
--- The learned {base, slope}; anything else stored under the key (including the
--- single number the first version kept) reads as nothing learned.
-local function learned_k(zone)
-  local value = store.get(k_key(zone))
-  if type(value) == "table" and type(value.base) == "number" and type(value.slope) == "number" then
-    return { base = value.base, slope = value.slope }
-  end
-  return overshoot.k_init()
+-- Zero until learned: the prediction is then the room itself, so the earliest
+-- cut is the moment the room reaches the request — never before the node's own.
+local function learned_c(zone)
+  local value = store.get(c_key(zone))
+  if type(value) == "number" then return value end
+  return 0
 end
 
--- How many episodes the coefficients were learned from: "1.2° low" alone says
--- nothing about whether to trust it.
+-- How many runs c was learned from: a coefficient alone says nothing about
+-- whether to trust it.
 local function learned_samples(zone)
   local value = store.get(samples_key(zone))
   if type(value) == "number" then return value end
@@ -180,58 +180,64 @@ local function journal(zone, record)
   store.set(journal_key(zone), rows)
 end
 
--- What the episode ran under. Only the relay here: zones carry no radiator or
--- outdoor sensor config, unlike the enhanced climates.
+-- A numeric sensor state, or nil for an unseeded, unavailable or non-numeric
+-- one. Missing is recorded as missing; a zero would read as a freezing radiator.
+local function sensor_number(entity)
+  if type(entity) ~= "string" or entity == "" then return nil end
+  local state = ha.get_state(entity)
+  if state == nil then return nil end
+  return tonumber(state.state)
+end
+
+-- What the run is doing: the radiator is the evidence a cut is decided on, the
+-- relay what says a run happened at all.
 local function env_snapshot(zone)
-  return { heating = climate.heating(entity_of(zone)) }
+  return {
+    radiator = sensor_number(zone_defs[zone].radiator),
+    heating = climate.heating(entity_of(zone)),
+  }
 end
 
 local function open_episode(zone, requested, current, at)
   local watching = observe_only(zone)
-  local episode = overshoot.open(requested, current, learned_k(zone), watching, at, env_snapshot(zone))
+  local episode = overshoot.open(requested, current, learned_c(zone), watching, at, env_snapshot(zone))
   if episode == nil then return nil end
-  -- An unclamped command HA drops would leave the episode waiting for a cutoff
-  -- that cannot arrive.
-  local lo, hi = temp_bounds(zone)
-  episode.commanded = control.clamp_bounds(episode.commanded, lo, hi)
-  episode.applied = control.clamp_bounds(episode.applied, lo, hi)
   store.set(episode_key(zone), episode)
   ha.log("info", string.format(
-    "overshoot %s: open requested=%.1f current=%.1f rise=%.1f base=%.2f slope=%.2f offset=%.2f commanded=%.1f%s",
-    zone, requested, current, episode.rise, episode.k_used.base, episode.k_used.slope,
-    episode.offset, episode.commanded, watching and " (observe-only)" or ""))
+    "overshoot %s: run started requested=%.1f room=%.1f radiator=%s c=%.3f%s",
+    zone, requested, current, tostring(episode.radiator_at_open), episode.c_used,
+    watching and " (observe-only)" or ""))
   return episode
 end
 
 local function close_episode(zone, episode, at)
-  local k_before = learned_k(zone)
-  local k_after, outcome, reason = overshoot.close(episode, k_before)
+  local c_before = learned_c(zone)
+  local c_after, outcome, reason = overshoot.close(episode, c_before)
   if outcome == "discarded" then
     -- warn, not debug: needing to raise the log level to notice the learner has
     -- never once run would defeat the point of journaling it.
     ha.log("warn", string.format(
-      "overshoot %s: discarded (%s) requested=%.1f rise=%.1f peak=%.1f",
-      zone, reason, episode.requested, episode.rise, episode.peak))
+      "overshoot %s: discarded (%s) requested=%.1f room=%.1f peak=%.1f",
+      zone, reason, episode.requested, episode.current_at_open, episode.peak))
   else
-    store.set(k_key(zone), k_after)
+    store.set(c_key(zone), c_after)
     store.set(samples_key(zone), learned_samples(zone) + 1)
     ha.log("info", string.format(
-      "overshoot %s: %s peak=%.2f requested=%.1f error=%+.2f base %.2f -> %.2f slope %.2f -> %.2f",
-      zone, outcome, episode.peak, episode.requested, episode.peak - episode.requested,
-      k_before.base, k_after.base, k_before.slope, k_after.slope))
+      "overshoot %s: %s cut_by=%s lead=%.1f peak=%.2f requested=%.1f error=%+.2f c %.3f -> %.3f (observed %.3f)",
+      zone, outcome, episode.cut_by, episode.lead_at_cutoff, episode.peak, episode.requested,
+      episode.peak - episode.requested, c_before, c_after, episode.c_observed))
   end
-  journal(zone, overshoot.record(episode, zone, k_before, k_after, outcome, reason, at))
+  journal(zone, overshoot.record(episode, zone, c_before, c_after, outcome, reason, at))
   store.delete(episode_key(zone))
 end
 
 -- Advances the zone's episode by one observation and returns the setpoint to
--- command, which is the request whenever no episode is running.
+-- command: the request, except while an armed cut holds the run off.
 --
--- An episode opens on either trigger of spec §5: the REQUEST CHANGES to
--- something above the room (a warmup from setback), or the relay is on with no
--- episode running (a hold's own heating cycle, whose request never moves). Not
--- merely whenever the room sits below the setpoint, which is true on every tick
--- of a hold and would open an episode a minute.
+-- A run's episode opens when the relay is on with none running, or when the
+-- request changes to above the room (for a device that reports no relay). Not
+-- whenever the room sits below the setpoint, which is true on every tick of a
+-- hold and would open an episode a minute.
 local function overshoot_step(zone, now, requested, previous)
   local at = now:unix()
   local current = current_temp(zone)
@@ -260,8 +266,10 @@ local function overshoot_step(zone, now, requested, previous)
     episode = open_episode(zone, requested, current, at)
   end
 
-  if episode == nil then return requested end
-  return episode.applied
+  if episode == nil or not episode.hold then return requested end
+  -- Never above the request: the hold only ever stops heating, it cannot add any.
+  local lo, hi = temp_bounds(zone)
+  return control.clamp_bounds(math.min(episode.hold_temp, requested), lo, hi)
 end
 
 -- Publishes the zone's setpoints and writes to the climate entity when the mode
@@ -404,9 +412,10 @@ local function zone_state(zone, now, dow, minute)
     current_temp = current,
     target = target,
     commanded = commanded,
-    -- `offset` is the cut currently latched, zero when no episode is running.
-    offset = episode and episode.offset or 0,
-    k = learned_k(zone),
+    -- A cut in force right now, and observe-only's "would have cut" this run.
+    holding = episode ~= nil and episode.hold == true,
+    would_hold = episode ~= nil and episode.observe_only and episode.would_cut_at ~= nil,
+    c = learned_c(zone),
     samples = learned_samples(zone),
     observe_only = observe_only(zone),
     override_temp = override_temp(zone),
@@ -554,7 +563,7 @@ ha.serve("PUT", "/api/schedule", function(req)
   return json_ok(full_state())
 end)
 
--- Everything needed to judge whether k can be trusted, including the episodes
+-- Everything needed to judge whether c can be trusted, including the episodes
 -- that taught it nothing (§9.6).
 ha.serve("GET", "/api/overshoot", function(req)
   local zone = req.query.zone
@@ -562,7 +571,7 @@ ha.serve("GET", "/api/overshoot", function(req)
   local rows = store.get(journal_key(zone))
   return json_ok({
     zone = zone,
-    k = learned_k(zone),
+    c = learned_c(zone),
     samples = learned_samples(zone),
     observe_only = observe_only(zone),
     episode = live_episode(zone),
@@ -580,7 +589,7 @@ ha.serve("POST", "/api/overshoot/reset", function(req)
   -- The in-flight episode goes too: it would close against a k that no longer
   -- exists and journal a row nobody could account for.
   store.delete(episode_key(zone))
-  store.delete(k_key(zone))
+  store.delete(c_key(zone))
   store.delete(samples_key(zone))
   store.delete(journal_key(zone))
   ha.log("warn", "overshoot " .. zone .. ": learning reset")

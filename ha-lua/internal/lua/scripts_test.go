@@ -179,252 +179,216 @@ func TestOvershootPureLib(t *testing.T) {
 
 	err := L.DoString(`
 		local o = require "overshoot"
-
-		local K = function(base, slope) return { base = base, slope = slope } end
 		local near = function(a, b) return math.abs(a - b) < 1e-9 end
+		local E = function(radiator, heating) return { radiator = radiator, heating = heating } end
 
-		-- offset: base + slope * rise, clamped into [0, MAX_OFFSET].
-		local fresh = o.k_init()
-		assert(fresh.base == 0 and fresh.slope == 0, "k_init is zero")
-		assert(o.k_init() ~= fresh, "k_init hands out a fresh table")
-		assert(o.offset(fresh, 3) == 0, "nothing learned -> no correction")
-		assert(near(o.offset(K(0, 0.4), 3), 1.2), "0.4 * 3 = 1.2")
-		assert(near(o.offset(K(0.8, 0.4), 3), 2.0), "base adds to the slope term")
-		assert(o.offset(K(0, 0.8), 10) == o.MAX_OFFSET, "clamped to MAX_OFFSET")
-		assert(o.offset(K(0, 0.4), -2) == 0, "negative rise -> no correction")
-		-- With no floor a top-up gets essentially nothing; with one it gets the
-		-- floor, which is what a hold's own heating cycle needs.
-		assert(o.offset(K(0, 0.4), 0.3) < 0.13, "slope alone is negligible on a top-up")
-		assert(near(o.offset(K(0.8, 0.4), 0.3), 0.92), "the floor is what a cycle gets")
+		-- predict: where the room ends up if the heat stops now.
+		assert(o.predict(0, 23.3, 45) == 23.3, "c=0: the room itself")
+		assert(near(o.predict(0.02, 23.3, 33.3), 23.5), "room + c * lead")
+		assert(o.predict(0.02, 23.3, 20) == 23.3, "a radiator below the room adds nothing")
+		assert(o.predict(0.02, 23.3, nil) == nil, "no radiator, no prediction")
 
-		-- open: only when the request is above the room.
-		assert(o.open(21, 21, K(0, 0.4), false, 0) == nil, "no rise -> no episode")
-		assert(o.open(21, 22, K(0, 0.4), false, 0) == nil, "falling request -> no episode")
-		local ep = o.open(21, 18, K(0, 0.4), false, 1000)
-		assert(ep.rise == 3, "rise")
-		assert(near(ep.offset, 1.2), "offset latched")
-		assert(near(ep.commanded, 19.8), "commanded")
-		assert(ep.applied == ep.commanded, "correcting -> applied is commanded")
-		assert(ep.peak == 18 and ep.peak_at == 1000, "peak seeded at the room temp")
-		assert(ep.k_used.base == 0 and ep.k_used.slope == 0.4, "coefficients recorded with the episode")
+		-- open decides nothing: the correction acts only on evidence from the run.
+		assert(o.open(23.4, 23.5, 0, false, 0) == nil, "room above the request: nothing to climb")
+		local opened = o.open(23.4, 23.3, 0.02, false, 1000, { radiator = 23.3, heating = true, outdoor = 17 })
+		assert(opened.hold == nil and opened.cutoff_at == nil, "opening a run writes nothing")
+		assert(opened.radiator_min == 23.3 and opened.heated == true and opened.outdoor_at_open == 17, "open snapshot")
 
-		-- Observe-only writes the request but records what it would have done.
-		local obs = o.open(21, 18, K(0, 0.4), true, 1000)
-		assert(obs.applied == 21, "observe-only applies the request")
-		assert(math.abs(obs.commanded - 19.8) < 1e-9, "observe-only still records the command")
+		-- Rule 2: never a cut before the radiator is SEEN warming in this run — not
+		-- even with a c that says the stored heat already suffices. A radiator still
+		-- warm from the last run is not evidence about this one.
+		local eager = o.open(23.4, 23.3, 0.2, false, 0, E(30, true))
+		assert(o.step(eager, 23.3, 60, E(29, true)) == "heating", "radiator still cooling: no cut")
+		assert(eager.radiator_min == 29 and eager.gate_at == nil, "the minimum follows it down")
+		assert(o.step(eager, 23.3, 120, E(29.8, true)) == "heating", "not yet RAD_RISE above its minimum")
+		assert(o.step(eager, 23.3, 180, E(30.0, true)) == "coasting", "seen warming: now it may cut")
+		assert(eager.gate_at == 180 and eager.cut_by == "overshoot", "cut on evidence")
 
-		-- step: climb, cut off at the applied setpoint, then coast.
-		local phase = o.step(ep, 19, 1060)
-		assert(phase == "heating" and ep.peak == 19, "still climbing")
-		assert(ep.cutoff_at == nil, "no cutoff yet")
-		phase = o.step(ep, 19.9, 1120)
-		assert(phase == "coasting" and ep.cutoff_at == 1120, "cut off at the commanded value")
-		phase = o.step(ep, 20.6, 1300)
-		assert(phase == "coasting" and ep.peak == 20.6 and ep.peak_at == 1300, "peak tracked while coasting")
-		phase = o.step(ep, 20.2, 1400)
-		assert(phase == "coasting" and ep.peak == 20.6, "peak is a running max, not the last sample")
-		-- A full step below the peak, but the peak is only 100 s old: a flicker
-		-- right after a new high must not end the coast.
-		assert(o.step(ep, 20.4, 1400) == "coasting", "fresh peak: not a turn yet")
-		phase = o.step(ep, 20.1, 1120 + o.MAX_COAST_SECONDS)
-		assert(phase == "done", "the backstop closes the episode")
+		-- Without a radiator reading there is never any evidence, so never a cut.
+		local blind = o.open(23.4, 23.3, 0.2, false, 0, { heating = true })
+		assert(o.step(blind, 23.3, 60, { heating = true }) == "heating" and blind.hold == nil, "no radiator: never cut")
 
-		-- The coast normally ends when the room TURNS: a full step below its
-		-- peak, with the peak at least PEAK_HOLD_SECONDS old. A fixed window
-		-- under-measured a radiator that was still feeding the room at 30 min.
-		local turn = o.open(21, 18, K(0, 0), false, 0)
-		o.step(turn, 21, 600)                              -- cutoff
-		o.step(turn, 21.4, 1500)                           -- peak at 1500
-		assert(o.step(turn, 21.3, 1560) == "coasting", "0.1 below is inside noise")
-		assert(o.step(turn, 21.2, 1620) == "coasting", "a full step, but the peak is 2 min old")
-		assert(o.step(turn, 21.2, 1500 + o.PEAK_HOLD_SECONDS) == "done", "turned: full step below a settled peak")
-		assert(turn.peak == 21.4 and turn.peak_at == 1500, "the peak is the turn's, not the last sample")
-		-- Exactly one step down counts, float error or not.
-		local exact = o.open(16, 15, K(0, 0), false, 0)
-		o.step(exact, 16.08, 60)                           -- cutoff, and the peak
-		assert(exact.peak == 16.08, "peak is 16.08")
-		assert(o.step(exact, 15.88, 60 + o.PEAK_HOLD_SECONDS) == "done", "16.08 -> 15.88 is a turn")
-		-- The relay closing again ends the coast even without a full step down:
-		-- a fine-grained sensor lets the ESP re-fire 0.1 below a small peak, and
-		-- that new run's peak must not be credited to this episode.
-		local rerun = o.open(21, 20.8, K(0, 0), false, 0, { heating = true })
-		o.step(rerun, 21, 60, { heating = true })          -- cutoff
-		assert(o.step(rerun, 21.05, 120, { heating = true }) == "coasting", "action still lagging: not a new run")
-		assert(o.step(rerun, 21.05, 180, { heating = false }) == "coasting", "relay released")
-		assert(o.step(rerun, 20.94, 240, { heating = true }) == "done", "relay closed again: the next run")
-		assert(rerun.peak == 21.05, "the next run's heat never reached this peak")
-		-- And a room that never turns still ends on the backstop.
-		local flat = o.open(21, 18, K(0, 0), false, 0)
-		o.step(flat, 21, 600)
-		assert(o.step(flat, 21.4, 600 + o.MAX_COAST_SECONDS - 60) == "coasting", "still coasting before the backstop")
-		assert(o.step(flat, 21.4, 600 + o.MAX_COAST_SECONDS) == "done", "backstop")
+		-- The cut comes when room + c * lead reaches the request, not before.
+		local run = o.open(23.4, 23.3, 0.02, false, 0, E(23.3, true))
+		assert(o.step(run, 23.3, 60, E(23.2, true)) == "heating", "valve still opening")
+		assert(o.step(run, 23.3, 120, E(25.0, true)) == "heating", "warming, predicted 23.336")
+		assert(run.gate_at == 120, "gate at the first reading RAD_RISE above the minimum")
+		assert(o.step(run, 23.3, 180, E(28.2, true)) == "heating", "predicted 23.398: a hair short")
+		assert(o.step(run, 23.3, 240, E(28.4, true)) == "coasting", "predicted 23.402: cut")
+		assert(run.cutoff_at == 240 and run.hold == true, "an armed cut holds the run off")
+		assert(near(run.hold_temp, 23.3 - o.HOLD_MARGIN), "the hold sits just below the room")
+		assert(near(run.lead_at_cutoff, 28.4 - 23.3), "lead recorded")
+		assert(near(run.predicted_at_cutoff, 23.3 + 0.02 * (28.4 - 23.3)), "prediction recorded")
+		assert(run.peak == 23.3 and run.peak_at == 240, "the coast's peak starts at the cutoff")
+		-- The hold lasts while the stored heat can still reach the request...
+		assert(o.step(run, 23.3, 300, E(29.0, false)) == "coasting" and run.hold, "actuator lag: still climbing")
+		assert(o.step(run, 23.5, 900, E(27.0, false)) == "coasting" and run.hold, "room rising on stored heat")
+		-- ...and goes with the coast when the room turns.
+		assert(o.step(run, 23.3, 900 + o.PEAK_HOLD_SECONDS, E(25.5, false)) == "done", "turned")
 
-		-- close: the peak landed 0.4 below the request, so both come down — one
-		-- normalised gradient step on [1, rise].
-		local k_after, outcome, reason = o.close(ep, K(0.5, 0.4))
-		assert(outcome == "learned" and reason == nil, "learned")
-		-- error = -0.4, rise 3, norm 10: base += 0.5 * -0.4 / 10, slope += 0.5 * -0.4 * 3 / 10
-		assert(near(k_after.base, 0.5 - 0.02), "base update "..tostring(k_after.base))
-		assert(near(k_after.slope, 0.4 - 0.06), "slope update "..tostring(k_after.slope))
-		-- The offset AT THE OBSERVED RISE moved by exactly GAIN * error, which is
-		-- what keeps the convergence rate of the single-coefficient version.
-		assert(near(o.offset(k_after, 3) - o.offset(K(0.5, 0.4), 3), o.GAIN * -0.4),
-			"offset at the rise moves by GAIN * error")
-		assert(o.close(o.open(21, 18, K(0, 0.4), true, 0), K(0, 0.4)) ~= nil, "observe-only still learns")
+		-- Rule 1: a cut that was too early gives the run back the moment the stored
+		-- heat can no longer carry the room to the request.
+		local early = o.open(23.4, 23.3, 0.2, false, 0, E(23.0, true))
+		o.step(early, 23.3, 60, E(24.1, true))
+		assert(early.hold == true, "cut at the gate: predicted 23.46")
+		assert(o.step(early, 23.3, 120, E(23.6, false)) == "coasting", "")
+		assert(early.hold == false and early.released_at == 120, "predicted 23.36 < 23.4: released")
+		-- The node firing again is the next run, not part of this one.
+		assert(o.step(early, 23.3, 180, E(23.7, true)) == "done", "relay closed again: the next run")
 
-		-- A cycle — the deadband as its rise — teaches base almost entirely: the
-		-- same 1° error moves slope by rise/(1+rise²) of what it moves base.
-		local cycle = o.open(21, 20.6, K(0, 0), false, 0)
-		o.step(cycle, 21, 60)
-		o.step(cycle, 22, 60 + o.MAX_COAST_SECONDS)
-		local k_cycle = o.close(cycle, K(0, 0))
-		assert(near(k_cycle.base, 0.5 * 1 / 1.16), "cycle teaches base, got "..tostring(k_cycle.base))
-		assert(near(k_cycle.slope, 0.5 * 0.4 / 1.16), "cycle barely moves slope, got "..tostring(k_cycle.slope))
+		-- After an armed cut the node may still report heating until its minimum
+		-- run time is up; that is not the next run.
+		local lag = o.open(23.4, 23.3, 0.2, false, 0, E(23.3, true))
+		o.step(lag, 23.3, 60, E(24.5, true))
+		assert(lag.cut_by == "overshoot", "cut")
+		assert(o.step(lag, 23.3, 90, E(25, true)) == "coasting", "still reported heating: not a new run")
+		assert(o.step(lag, 23.3, 150, E(25.5, false)) == "coasting", "relay opened")
+		assert(o.step(lag, 23.3, 210, E(25.4, true)) == "done", "relay closed again: the next run")
 
-		-- Both stay inside their bounds however extreme the error.
-		local hot = o.open(21, 18, K(0, 0.4), false, 0)
-		o.step(hot, 19.8, 60)
-		o.step(hot, 40, 120)
-		o.step(hot, 40, 60 + o.MAX_COAST_SECONDS + 120)
-		local k_hot = o.close(hot, K(2.4, 0.4))
-		assert(k_hot.slope == o.SLOPE_MAX, "slope clamped to SLOPE_MAX, got "..tostring(k_hot.slope))
-		assert(k_hot.base == o.MAX_OFFSET, "base clamped to MAX_OFFSET, got "..tostring(k_hot.base))
-		-- Downward they can only ever shrink toward zero and never cross it: an
-		-- episode cuts off at requested - offset, so the peak cannot land more
-		-- than the offset low and the step is bounded below by -GAIN*offset. At
-		-- worst the offset halves; here base was already zero and its share of
-		-- the step is clamped away, so it shrinks by less than that.
-		local cold = o.open(21, 18, K(0, 0.4), false, 0)
-		o.step(cold, 19.8, 60)
-		o.step(cold, 19.8, 60 + o.MAX_COAST_SECONDS)
-		local k_cold = o.close(cold, K(0, 0.4))
-		local shrunk = o.offset(k_cold, 3)
-		assert(shrunk >= 0.6 and shrunk < 1.2, "worst case halves the offset at most, got "..tostring(shrunk))
-		assert(k_cold.base == 0 and k_cold.slope > 0, "never negative")
+		-- c = 0 never cuts before the node would: the prediction is the room.
+		local zero = o.open(23.4, 23.3, 0, false, 0, E(23.3, true))
+		assert(o.step(zero, 23.3, 60, E(40, true)) == "heating", "c=0: a hot radiator alone is no reason")
+		assert(o.step(zero, 23.4, 120, E(45, true)) == "coasting" and zero.cut_by == "overshoot", "c=0 cuts at the request")
 
-		-- The optional env snapshot: recorded, never read by the math. It exists
-		-- so the journal can be tested later for the correlations one scalar
-		-- deliberately does not model.
-		local env = o.open(21, 18, K(0, 0.4), false, 1000, { outdoor = 4.5, radiator = 28 })
-		assert(env.outdoor_at_open == 4.5, "outdoor recorded at open")
-		assert(env.radiator_at_open == 28, "radiator recorded at open")
-		o.step(env, 19, 1060, { outdoor = 4.5, radiator = 52 })
-		assert(env.radiator_at_cutoff == nil, "not cut off yet")
-		assert(env.radiator_at_peak == 52, "a new peak records the radiator with it")
-		o.step(env, 19.9, 1120, { outdoor = 4.5, radiator = 61 })
-		assert(env.radiator_at_cutoff == 61, "radiator captured at the cutoff")
-		-- A sample that is not a new peak must not overwrite the peak's radiator.
-		o.step(env, 19.5, 1180, { outdoor = 4.5, radiator = 55 })
-		assert(env.radiator_at_peak == 61, "non-peak sample left the peak alone")
-		o.step(env, 20.4, 1240, { outdoor = 4.5, radiator = 49 })
-		assert(env.radiator_at_peak == 49, "a higher peak moves it")
-		local env_row = o.record(env, "z", K(0, 0.4), K(0, 0.4), "learned", nil, 2000)
-		assert(env_row.outdoor_at_open == 4.5, "journal carries the outdoor temp")
-		assert(env_row.radiator_at_cutoff == 61, "journal carries the cutoff radiator temp")
-		assert(env_row.radiator_at_peak == 49, "journal carries the peak radiator temp")
+		-- Observe-only records when it would have cut, never holds, and its cutoff is
+		-- always the node's own.
+		local watch = o.open(23.4, 23.3, 0.02, true, 0, E(23.3, true))
+		o.step(watch, 23.3, 60, E(25.0, true))
+		assert(o.step(watch, 23.3, 120, E(28.4, true)) == "heating", "observe-only keeps heating")
+		assert(watch.would_cut_at == 120 and watch.hold == nil, "would have cut; did not")
+		assert(near(watch.would_cut_lead, 28.4 - 23.3), "would-cut lead")
+		o.step(watch, 23.3, 180, E(35, true))
+		assert(watch.would_cut_at == 120, "the first would-cut is the one kept")
+		assert(o.step(watch, 23.5, 600, E(45.5, false)) == "coasting", "the node's own cutoff")
+		assert(watch.cut_by == "device" and near(watch.lead_at_cutoff, 45.5 - 23.5), "measured like the correction's")
 
-		-- The coast decay series: the cool-down is not a correlate of the
-		-- overshoot, it IS the overshoot, so the middle of the curve is kept and
-		-- not just its endpoints.
-		local decay = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
-		o.step(decay, 20, 60, { radiator = 55 })   -- still heating, nothing recorded
-		assert(decay.decay == nil, "no decay samples before the cutoff")
-		o.step(decay, 21, 120, { radiator = 60 })  -- cutoff: lead over the room is 39
-		assert(#decay.decay == 1 and decay.decay[1].t == 0, "cutoff is the first sample")
-		assert(decay.decay[1].rad == 60 and decay.decay[1].room == 21, "sample carries both")
-		o.step(decay, 21.5, 300, { radiator = 45 })
-		o.step(decay, 21.5, 600, { radiator = 32 })
-		assert(#decay.decay == 3, "coast samples appended")
-		-- Lead starts at 39 and halves at 19.5. At t=180 it is 45-21.5 = 23.5, at
-		-- t=480 it is 32-21.5 = 10.5, so it crosses partway between.
-		local half = o.half_life(decay)
-		assert(half ~= nil and half > 180 and half < 480, "half-life interpolated, got "..tostring(half))
-		local row = o.record(decay, "z", K(0, 0), K(0, 0), "learned", nil, 900)
-		assert(#row.decay == 3 and row.decay_half_life == half, "journal carries the curve")
+		-- A device that reports no relay: its cutoff is the room passing the request.
+		local mute = o.open(23.4, 23.3, 0.02, true, 0, { radiator = 23.3 })
+		assert(o.step(mute, 23.4, 60, { radiator = 30 }) == "heating", "at the request is not past it")
+		assert(o.step(mute, 23.5, 120, { radiator = 40 }) == "coasting" and mute.cut_by == "device", "past it")
 
-		-- A lead that never halves inside the coast reports nil rather than a
-		-- made-up number: "did not halve before the room turned" is itself the finding.
-		local slow = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
-		o.step(slow, 21, 60, { radiator = 60 })
-		o.step(slow, 21, 120, { radiator = 59 })
-		assert(o.half_life(slow) == nil, "no halving -> nil")
+		-- The coast's peak starts at the cutoff: a flicker during the run must not
+		-- read as the room having turned.
+		local flicker = o.open(23.4, 23.3, 0, true, 0, E(23.3, true))
+		o.step(flicker, 23.5, 60, E(30, true))
+		o.step(flicker, 23.3, 120, E(35, false))
+		assert(flicker.peak == 23.3, "peak restarted at the cutoff")
+		assert(o.step(flicker, 23.3, 120 + o.PEAK_HOLD_SECONDS + 60, E(33, false)) == "coasting", "no turn off a run-time reading")
 
-		-- A radiator already at room temperature has no lead to halve.
-		local cold_rad = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
-		o.step(cold_rad, 21, 60, { radiator = 21 })
-		o.step(cold_rad, 21, 120, { radiator = 21 })
-		assert(o.half_life(cold_rad) == nil, "no lead -> nil")
+		-- close measures c, it does not integrate an error. The first live run: the
+		-- node cut with the radiator 21.77° above the room, and the room coasted 0.4°.
+		local live = o.open(23.7, 23.5, 0, true, 0, E(23.5, true))
+		o.step(live, 23.5, 60, E(30, true))
+		o.step(live, 23.7, 810, E(45.47, false))
+		o.step(live, 24.1, 1710, E(39.42, false))
+		local c_after, outcome, reason = o.close(live, 0)
+		assert(outcome == "observed" and reason == nil, "observe-only learns")
+		assert(near(live.c_observed, (24.1 - 23.7) / (45.47 - 23.7)), "c observed = coast / lead")
+		assert(near(c_after, o.GAIN * live.c_observed), "smoothed toward it")
 
-		-- The series is bounded, so a faster tick cannot grow the journal row
-		-- without limit.
-		local many = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
-		o.step(many, 21, 1, { radiator = 60 })
-		for i = 2, o.DECAY_MAX_SAMPLES + 20 do
-			o.step(many, 21, i, { radiator = 60 - i * 0.1 })
+		-- Watching converges on the measured c. The v4.13 learner, fed the same
+		-- uncorrected runs, climbed without bound: an integrator on an open loop.
+		local c = 0
+		for i = 1, 20 do
+			local r = o.open(23.7, 23.5, c, true, 0, E(23.5, true))
+			o.step(r, 23.5, 60, E(30, true))
+			o.step(r, 23.7, 810, E(45.47, false))
+			o.step(r, 24.1, 1710, E(39.42, false))
+			c = o.close(r, c)
 		end
-		assert(#many.decay == o.DECAY_MAX_SAMPLES, "decay series capped, got "..tostring(#many.decay))
+		assert(math.abs(c - (24.1 - 23.7) / (45.47 - 23.7)) < 1e-4, "watching converges, got "..tostring(c))
 
-		-- A missing radiator reading is skipped, not recorded as zero.
-		local gap = o.open(21, 18, K(0, 0), false, 0, { radiator = 20 })
-		o.step(gap, 21, 60, { radiator = 60 })
-		o.step(gap, 21, 120, {})
-		assert(#gap.decay == 1, "a nil radiator adds no sample")
+		-- c stays inside its bounds however wild the run.
+		local wild = o.open(23.4, 23.3, 0.19, false, 0, E(23.3, true))
+		o.step(wild, 23.3, 60, E(26.5, true))
+		o.step(wild, 25.3, 600, E(26, false))
+		assert(o.close(wild, 0.19) == o.C_MAX, "clamped to C_MAX")
 
-		-- No env is the old behaviour exactly: thermostat.lua passes none and
-		-- must keep working unchanged.
-		local bare = o.open(21, 18, K(0, 0.4), false, 0)
-		assert(bare.outdoor_at_open == nil and bare.radiator_at_open == nil, "no env -> no fields")
-		o.step(bare, 19.8, 60)
-		assert(bare.cutoff_at == 60 and bare.radiator_at_cutoff == nil, "cutoff without env")
-
-		-- valid returns the reason, not a bare boolean (spec §9.2), and the
-		-- FIRST reason wins so the thing that actually broke the episode is what
-		-- a reader sees.
-		local windowed = o.open(21, 18, K(0, 0.4), false, 0)
+		-- Discards carry the reason, and the FIRST reason wins (spec §9.2).
+		local windowed = o.open(23.4, 23.3, 0.02, false, 0, E(23.3, true))
 		o.invalidate(windowed, "window_open")
 		o.invalidate(windowed, "mode_left_heat")
-		local ok, why = o.valid(windowed)
-		assert(ok == false and why == "window_open", "first reason wins, got "..tostring(why))
-		local before = K(0, 0.4)
-		local k_same, outcome2, reason2 = o.close(windowed, before)
-		assert(k_same == before and outcome2 == "discarded" and reason2 == "window_open", "discard leaves k alone")
+		local c_same, outcome2, reason2 = o.close(windowed, 0.02)
+		assert(c_same == 0.02 and outcome2 == "discarded" and reason2 == "window_open", "first reason wins, c untouched")
 
-		-- The relay is what says a run happened. An episode that never saw
-		-- hvac_action = heating — a nudge inside the deadband, the room drifting
-		-- up on its own — has no stored energy to teach from.
-		local unfired = o.open(21, 20.8, K(0, 0.4), false, 0, { heating = false })
-		o.step(unfired, 21, 60, { heating = false })
-		o.step(unfired, 21.3, 60 + o.MAX_COAST_SECONDS, { heating = false })
-		ok, why = o.valid(unfired)
-		assert(ok == false and why == "never_heated", "relay never closed, got "..tostring(why))
-		-- Seen on once is enough, and it sticks through the idle coast.
-		local fired = o.open(21, 20.8, K(0, 0.4), false, 0, { heating = true })
-		o.step(fired, 20.9, 30, { heating = true })
-		o.step(fired, 21, 60, { heating = false })
-		o.step(fired, 21.3, 60 + o.MAX_COAST_SECONDS, { heating = false })
-		assert(o.valid(fired) == true, "a run that fired is learnable")
-		assert(o.record(fired, "z", K(0, 0), K(0, 0), "learned", nil, 0).heated == true,
-			"the journal carries whether the relay was seen on")
-		-- A device that reports no hvac_action is not gated: unknown is not off.
-		local mute = o.open(21, 20.8, K(0, 0.4), false, 0, {})
-		o.step(mute, 21, 60, {})
-		o.step(mute, 21.3, 60 + o.MAX_COAST_SECONDS, {})
-		assert(o.valid(mute) == true, "no hvac_action -> not gated")
+		local unfired = o.open(23.4, 23.3, 0.2, false, 0, E(23.3, false))
+		o.step(unfired, 23.3, 60, E(27, false))
+		o.step(unfired, 23.3, 60 + o.MAX_COAST_SECONDS, E(24, false))
+		local _, _, why_unfired = o.close(unfired, 0.2)
+		assert(why_unfired == "never_heated", "relay never closed, got "..tostring(why_unfired))
 
-		-- An episode that never reaches its setpoint is abandoned rather than
-		-- left open forever learning nothing.
-		local stuck = o.open(21, 18, K(0, 0), false, 0)
-		assert(o.step(stuck, 18.5, 3600) == "heating", "still trying")
-		assert(o.step(stuck, 18.6, o.MAX_EPISODE_SECONDS) == "done", "given up")
-		ok, why = o.valid(stuck)
-		assert(ok == false and why == "never_reached", "never_reached, got "..tostring(why))
+		local no_rad = o.open(23.4, 23.3, 0.02, false, 0, {})
+		assert(o.step(no_rad, 23.5, 60, {}) == "coasting" and no_rad.cut_by == "device", "")
+		o.step(no_rad, 23.5, 60 + o.MAX_COAST_SECONDS, {})
+		local _, _, why_no_rad = o.close(no_rad, 0.02)
+		assert(why_no_rad == "no_radiator", "no radiator, got "..tostring(why_no_rad))
 
-		-- record carries both the decision and the outcome.
-		local row = o.record(ep, "childrens", K(0.5, 0.4), k_after, "learned", nil, 9999)
+		local cold = o.open(23.4, 23.3, 0, false, 0, E(23.3, true))
+		o.step(cold, 23.3, 60, E(25.0, true))
+		assert(o.step(cold, 23.5, 120, E(25.5, false)) == "coasting" and cold.cut_by == "device", "")
+		o.step(cold, 23.5, 120 + o.MAX_COAST_SECONDS, E(24, false))
+		local _, _, why_cold = o.close(cold, 0)
+		assert(why_cold == "radiator_cold", "lead 2.0 < MIN_LEAD, got "..tostring(why_cold))
+
+		local stuck = o.open(23.4, 23.3, 0, false, 0, E(23.3, true))
+		assert(o.step(stuck, 23.2, 3600, E(23.3, true)) == "heating", "still trying")
+		assert(o.step(stuck, 23.2, o.MAX_EPISODE_SECONDS, E(23.3, true)) == "done", "given up")
+		local ok_stuck, why_stuck = o.valid(stuck)
+		assert(ok_stuck == false and why_stuck == "never_reached", "never_reached, got "..tostring(why_stuck))
+
+		-- The coast ends when the room TURNS: a full step below its peak, with the
+		-- peak settled for PEAK_HOLD_SECONDS.
+		local turn = o.open(21, 20.8, 0, false, 0, E(20.8, true))
+		o.step(turn, 21.1, 600, E(45, false))
+		o.step(turn, 21.4, 1500, E(40, false))
+		assert(o.step(turn, 21.3, 1560, E(39, false)) == "coasting", "0.1 below is inside noise")
+		assert(o.step(turn, 21.2, 1620, E(38, false)) == "coasting", "a full step, but the peak is 2 min old")
+		assert(o.step(turn, 21.2, 1500 + o.PEAK_HOLD_SECONDS, E(37, false)) == "done", "turned")
+		assert(turn.peak == 21.4 and turn.peak_at == 1500, "the peak is the turn's")
+		local exact = o.open(16.1, 15.9, 0, false, 0, E(15.9, true))
+		o.step(exact, 16.08, 60, E(40, false))
+		assert(exact.peak == 16.08, "peak is 16.08")
+		assert(o.step(exact, 15.88, 60 + o.PEAK_HOLD_SECONDS, E(35, false)) == "done", "16.08 -> 15.88 is a turn")
+		local flat = o.open(21, 20.8, 0, false, 0, E(20.8, true))
+		o.step(flat, 21.1, 600, E(45, false))
+		assert(o.step(flat, 21.4, 600 + o.MAX_COAST_SECONDS - 60, E(40, false)) == "coasting", "before the backstop")
+		assert(o.step(flat, 21.4, 600 + o.MAX_COAST_SECONDS, E(40, false)) == "done", "backstop")
+
+		-- The coast decay series: the cool-down IS the overshoot, so the middle of
+		-- the curve is kept and not just its endpoints.
+		local decay = o.open(21, 20.8, 0, false, 0, E(20, true))
+		o.step(decay, 20.9, 60, E(55, true))
+		assert(decay.decay == nil, "no decay samples before the cutoff")
+		o.step(decay, 21, 120, E(60, false))
+		assert(#decay.decay == 1 and decay.decay[1].t == 0, "cutoff is the first sample")
+		assert(decay.decay[1].rad == 60 and decay.decay[1].room == 21, "sample carries both")
+		o.step(decay, 21.5, 300, E(45, false))
+		o.step(decay, 21.5, 600, E(32, false))
+		assert(#decay.decay == 3, "coast samples appended")
+		local half = o.half_life(decay)
+		assert(half ~= nil and half > 180 and half < 480, "half-life interpolated, got "..tostring(half))
+		local slow = o.open(21, 20.8, 0, false, 0, E(20, true))
+		o.step(slow, 21, 60, E(60, false))
+		o.step(slow, 21, 120, E(59, false))
+		assert(o.half_life(slow) == nil, "no halving -> nil")
+		local many = o.open(21, 20.8, 0, false, 0, E(20, true))
+		o.step(many, 21, 1, E(60, false))
+		for i = 2, o.DECAY_MAX_SAMPLES + 20 do
+			o.step(many, 21, i, E(60 - i * 0.1, false))
+		end
+		assert(#many.decay == o.DECAY_MAX_SAMPLES, "decay series capped, got "..tostring(#many.decay))
+		local gap = o.open(21, 20.8, 0, false, 0, E(20, true))
+		o.step(gap, 21, 60, E(60, false))
+		o.step(gap, 21, 120, { heating = false })
+		assert(#gap.decay == 1, "a nil radiator adds no sample")
+
+		-- record carries the decision, the evidence and the outcome.
+		local row = o.record(live, "childrens", 0, c_after, "observed", nil, 9999)
 		assert(row.zone == "childrens" and row.closed_at == 9999, "record identity")
-		assert(row.k_before.base == 0.5 and row.k_before.slope == 0.4 and row.k_after == k_after, "record k")
-		assert(math.abs(row.error - (20.6 - 21)) < 1e-9, "record error")
-		assert(row.outcome == "learned" and row.reason == nil, "record outcome")
+		assert(row.cut_by == "device" and near(row.lead_at_cutoff, 45.47 - 23.7), "record cutoff")
+		assert(row.c_before == 0 and row.c_after == c_after and near(row.c_observed, live.c_observed), "record c")
+		assert(row.heated == true and row.outcome == "observed" and row.reason == nil, "record outcome")
+		assert(near(row.error, 24.1 - 23.7) and #row.decay == 2, "record coast")
 	`)
 	if err != nil {
 		t.Fatal(err)
@@ -828,8 +792,8 @@ func TestThermostatAPI(t *testing.T) {
 		t.Fatalf("GET /api/overshoot status %d body %q", rec.Code, rec.Body.String())
 	}
 	learner := decode(rec)
-	if k, _ := learner["k"].(map[string]any); k["base"] != float64(0) || k["slope"] != float64(0) {
-		t.Errorf("k = %v, want {base 0, slope 0} (nothing learned)", learner["k"])
+	if learner["c"] != float64(0) {
+		t.Errorf("c = %v, want 0 (nothing learned)", learner["c"])
 	}
 	if learner["observe_only"] != true {
 		t.Errorf("observe_only = %v, want true — it ships watching", learner["observe_only"])
@@ -852,7 +816,7 @@ func TestThermostatAPI(t *testing.T) {
 	}
 
 	// Reset restores the untrained state, flag included.
-	if err := kv.Set(context.Background(), "overshoot_k:bedroom", map[string]any{"base": 0.5, "slope": 0.2}); err != nil {
+	if err := kv.Set(context.Background(), "overshoot_c:bedroom", 0.05); err != nil {
 		t.Fatal(err)
 	}
 	rec = doReqID(router, "thermostat", "POST", "/api/overshoot/reset", `{"zone":"bedroom"}`)
@@ -861,8 +825,8 @@ func TestThermostatAPI(t *testing.T) {
 	}
 	zones, _ = decode(rec)["zones"].(map[string]any)
 	bedroom, _ = zones["bedroom"].(map[string]any)
-	if k, _ := bedroom["k"].(map[string]any); k["base"] != float64(0) || k["slope"] != float64(0) || bedroom["samples"] != float64(0) {
-		t.Errorf("after reset k/samples = %v/%v, want zero/0", bedroom["k"], bedroom["samples"])
+	if bedroom["c"] != float64(0) || bedroom["samples"] != float64(0) {
+		t.Errorf("after reset c/samples = %v/%v, want 0/0", bedroom["c"], bedroom["samples"])
 	}
 
 	// GET / serves the self-contained UI page.
@@ -1084,9 +1048,8 @@ func TestThermostatManualHoldDetected(t *testing.T) {
 }
 
 // TestThermostatOpensOvershootEpisode: a request that rises above the room
-// temperature starts an overshoot episode (overshoot-spec.md §5). k is still
-// K_INIT here, so the latched offset is zero and the commanded setpoint equals
-// the request — the learner records the episode without changing behaviour.
+// temperature starts a run's episode (overshoot-spec.md §5), and opening it
+// decides nothing: no hold before the radiator is seen warming.
 func TestThermostatOpensOvershootEpisode(t *testing.T) {
 	reg, kv, global, tracker := startThermostat(t)
 	ctx := context.Background()
@@ -1121,14 +1084,14 @@ func TestThermostatOpensOvershootEpisode(t *testing.T) {
 		if episode["rise"] != float64(3) {
 			t.Errorf("rise = %v, want 3", episode["rise"])
 		}
-		if episode["offset"] != float64(0) {
-			t.Errorf("offset = %v, want 0 (K_INIT is zero)", episode["offset"])
+		if episode["c_used"] != float64(0) {
+			t.Errorf("c_used = %v, want 0 (nothing learned yet)", episode["c_used"])
 		}
 		if episode["observe_only"] != true {
 			t.Errorf("observe_only = %v, want true (it ships watching, §9.4)", episode["observe_only"])
 		}
-		if episode["applied"] != float64(21) {
-			t.Errorf("applied = %v, want 21 (the uncorrected request)", episode["applied"])
+		if episode["hold"] != nil {
+			t.Errorf("hold = %v at the open: a run is never cut before the radiator warms", episode["hold"])
 		}
 		return
 	}
@@ -1199,14 +1162,14 @@ func TestThermostatOpensEpisodeOnHeating(t *testing.T) {
 func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
 	stale := map[string]any{
 		"opened_at": 1000, "requested": 21.0, "current_at_open": 18.0,
-		"rise": 3.0, "k_used": map[string]any{"base": 0.0, "slope": 0.4}, "offset": 1.2, "commanded": 19.8,
+		"rise": 3.0, "c_used": 0.02,
 		"applied": 19.8, "observe_only": false, "peak": 19.9, "peak_at": 1200,
 	}
 	_, kv, _, _ := startThermostat(t, func(ctx context.Context, kv *store.Store) {
 		if err := kv.Set(ctx, "overshoot_episode:bedroom", stale); err != nil {
 			t.Fatal(err)
 		}
-		if err := kv.Set(ctx, "overshoot_k:bedroom", map[string]any{"base": 0.0, "slope": 0.4}); err != nil {
+		if err := kv.Set(ctx, "overshoot_c:bedroom", 0.02); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -1230,10 +1193,8 @@ func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
 	if row["outcome"] != "discarded" || row["reason"] != "restart" {
 		t.Errorf("outcome/reason = %v/%v, want discarded/restart", row["outcome"], row["reason"])
 	}
-	before, _ := row["k_before"].(map[string]any)
-	after, _ := row["k_after"].(map[string]any)
-	if before["slope"] != float64(0.4) || after["slope"] != float64(0.4) || after["base"] != float64(0) {
-		t.Errorf("k moved on a discarded episode: %v -> %v", row["k_before"], row["k_after"])
+	if row["c_before"] != 0.02 || row["c_after"] != 0.02 {
+		t.Errorf("c moved on a discarded episode: %v -> %v", row["c_before"], row["c_after"])
 	}
 
 	// A discard must not count as a sample; nothing was learned.

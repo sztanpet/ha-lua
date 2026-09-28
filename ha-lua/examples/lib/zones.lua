@@ -21,8 +21,8 @@ M.frost_temp = 15
 M.default_override_temp = 23
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
--- `radiator` is the sensor strapped to that zone's radiator, read only by
--- valve_watch.lua. `label` is what a notification calls the zone; it defaults to
+-- `radiator` is the sensor strapped to that zone's radiator, read by
+-- valve_watch.lua and by thermostat.lua's overshoot correction. `label` is what a notification calls the zone; it defaults to
 -- the key.
 M.zones = {
   livingroom = { climate = "climate.living_room", windows = { "binary_sensor.living_room_window" }, radiator = "sensor.living_room_radiator_temp", label = "Living room" },

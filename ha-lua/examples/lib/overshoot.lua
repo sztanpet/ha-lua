@@ -6,27 +6,34 @@
 --
 -- The problem (overshoot-spec.md): a bang-bang thermostat drives the relay full
 -- on until the room reaches setpoint, by which point the actuator still takes
--- minutes to close and the radiator body keeps heating for another quarter of an
--- hour. A small room has no mass to absorb that, so it sails past.
+-- minutes to close and the radiator body keeps heating the room for another
+-- half hour. A small room has no mass to absorb that, so it sails past.
 --
--- The fix is to stop earlier: command `requested - offset` for the whole run
--- and let the stored energy land the room on target, with
--- `offset = base + slope * rise`. Both coefficients are learned from each
--- episode's measured peak, so they track seasonal drift on their own. `base` is
--- the overshoot a run produces regardless of how far the room had to climb — a
--- relay on for ten minutes brings the radiator to full temperature whether the
--- room needed 0.3° or 3° — and it is what a hold's own heating cycles need.
--- `slope` is the part a long warmup from setback adds on top.
+-- Heat on demand, cut on evidence (spec §5). Heating always starts the moment
+-- the room is below the setpoint; nothing here ever lowers the setpoint before
+-- or at the start of a run. Once the radiator has been SEEN warming, every step
+-- predicts where the room ends up if the heat stops now, `room + c * lead`, and
+-- cuts when that reaches the request. `c` — room rise after the heat stops, per
+-- degree the radiator is above the room at that moment — is measured on every
+-- run and smoothed.
 
 local M = {}
 
--- Fraction of each episode's error folded into the coefficients: converges in
--- about four episodes, damped enough not to ring.
+-- How far the radiator must climb above its lowest reading in the run before a
+-- cut is allowed. Before that the valve may not even be open, and cutting is
+-- cancelling the run.
+M.RAD_RISE = 1.0
+-- The hold sits this far below the room at the cut, so the node stops whichever
+-- way it rounds.
+M.HOLD_MARGIN = 0.5
+-- Fraction of each run's measured c folded into the learned one.
 M.GAIN = 0.5
-M.SLOPE_MAX = 0.8
--- Absolute ceiling on one cutoff, whatever the coefficients say; bounds `base`
--- too, a floor beyond the cap being meaningless.
-M.MAX_OFFSET = 2.5
+-- At this c a radiator barely past the gate already predicts the request, so
+-- the cut comes at the gate: the shortest run the rules allow.
+M.C_MAX = 0.2
+-- A cutoff with the radiator less than this above the room teaches nothing
+-- about stored heat.
+M.MIN_LEAD = 3.0
 -- The coast ends when the room has turned, not on a timer: 0.2 below its peak
 -- (clear of 0.1° flicker), with the peak settled for PEAK_HOLD_SECONDS. The
 -- first live radiator took 28 minutes to shed half its lead, so a fixed
@@ -36,13 +43,16 @@ M.PEAK_HOLD_SECONDS = 5 * 60
 -- Backstop for a room that never turns — a sunny window, another heat source —
 -- so the episode cannot sit open all afternoon.
 M.MAX_COAST_SECONDS = 90 * 60
--- An episode that has not reached its setpoint in this long is abandoned, so a
--- room the heating cannot satisfy fails loudly instead of staying open forever.
+-- A run that has not cut off in this long is abandoned, so a room the heating
+-- cannot satisfy fails loudly instead of staying open forever.
 M.MAX_EPISODE_SECONDS = 4 * 3600
 -- Ceiling on the coast decay series. The longest coast on a 1-minute tick fills
 -- about 90 slots; the cap is what stops a faster tick from growing the journal
 -- row without bound.
 M.DECAY_MAX_SAMPLES = 100
+
+-- Float error only: a prediction computed to exactly the request must count.
+local EPSILON = 1e-6
 
 local function clamp(value, lo, hi)
   if value < lo then return lo end
@@ -62,66 +72,47 @@ local function note_heating(episode, env)
   end
 end
 
--- Zero: having learned nothing, the correction must behave exactly as the
--- uncorrected controller did. A fresh table each time, since callers keep it.
-function M.k_init()
-  return { base = 0, slope = 0 }
+-- Where the room ends up if the heat stops now, or nil with no radiator reading.
+-- A radiator at or below the room adds nothing.
+function M.predict(c, room, radiator)
+  if radiator == nil then return nil end
+  return room + c * math.max(0, radiator - room)
 end
 
--- offset returns how far below the request to stop, for the coefficients and
--- the rise being attempted. Clamped to [0, MAX_OFFSET]: a negative rise is
--- nothing to climb, not a reason to command above the request.
-function M.offset(k, rise)
-  return clamp(k.base + k.slope * rise, 0, M.MAX_OFFSET)
-end
-
--- Starts an episode, or nil when the request is not above the room (nothing to
--- climb, nothing to overshoot). `at` is epoch seconds.
+-- Starts a run, or nil when the room is already above the request (nothing to
+-- climb). Nothing is decided here: the correction only ever acts on evidence
+-- from the run itself. `at` is epoch seconds.
 --
--- The offset is computed ONCE and held for the whole episode. Recomputed per
--- tick it would climb as the room warmed and the rise shrank, converging on the
--- request without ever cutting early — the correction would silently do nothing.
--- This is the easiest thing in the design to get wrong.
---
--- `commanded` is what the correction wants written; `applied` is what the caller
--- will write, which in observe-only mode is the uncorrected request, so the
--- episode measures the uncorrected run that k needs to converge on.
---
--- `env` is an optional {outdoor =, radiator =} snapshot recorded alongside the
--- episode. Nothing here reads it — it exists so the journal can later be tested
--- for the correlations this single scalar deliberately does NOT model (a mild
--- day against a cold one, a hot radiator against a lukewarm one). Recording it
--- is free; not recording it makes the question permanently unanswerable.
-function M.open(requested, current, k, observe_only, at, env)
-  local rise = requested - current
-  if rise <= 0 then return nil end
-  local offset = M.offset(k, rise)
+-- `env` is an optional {outdoor =, radiator =, heating =} snapshot. The radiator
+-- is the evidence the cut is decided on; the outdoor temperature is recorded
+-- only, so the journal can later be tested for what one c per room does not
+-- model.
+function M.open(requested, room, c, observe_only, at, env)
+  if requested - room < 0 then return nil end
+  local radiator = env and env.radiator or nil
   local episode = {
     opened_at = at,
     requested = requested,
-    current_at_open = current,
-    rise = rise,
-    k_used = { base = k.base, slope = k.slope },
-    offset = offset,
-    commanded = requested - offset,
-    applied = observe_only and requested or requested - offset,
+    current_at_open = room,
+    rise = requested - room,
+    c_used = c,
     observe_only = observe_only and true or false,
-    peak = current,
+    peak = room,
     peak_at = at,
+    radiator_at_open = radiator,
+    radiator_min = radiator,
   }
-  if env ~= nil then
-    episode.outdoor_at_open = env.outdoor
-    episode.radiator_at_open = env.radiator
-  end
-  -- Noted at the open too: an armed cycle can cut off before the first step, and
-  -- the relay that opened it must not be forgotten by then.
+  if env ~= nil then episode.outdoor_at_open = env.outdoor end
+  -- Noted at the open too: the relay that opened the run must not be forgotten
+  -- if it has already dropped by the first step.
   note_heating(episode, env)
   return episode
 end
 
 -- Marks an episode unusable for learning, with one of "window_open",
 -- "mode_left_heat", "setpoint_changed", "restart", "never_reached" or
--- "observe_changed" ("never_heated" is derived by valid() instead).
+-- "observe_changed" (valid() derives "never_heated", "no_radiator" and
+-- "radiator_cold" itself).
 --
 -- The FIRST reason wins: the one a reader wants is what broke the episode, not
 -- what happened to it afterwards.
@@ -130,31 +121,72 @@ function M.invalidate(episode, reason)
   return episode
 end
 
--- Advances an episode by one observation and reports its phase: "heating" (still
--- climbing to the cutoff), "coasting" (cut off, watching for the room to turn)
--- or "done".
+-- The coast's peak starts fresh at the cutoff: the overshoot is what the room
+-- does after the heat stops, and a reading from during the run must not end the
+-- coast before the stored heat has landed.
+local function mark_cutoff(episode, by, room, at, radiator)
+  episode.cutoff_at = at
+  episode.cut_by = by
+  episode.room_at_cutoff = room
+  episode.radiator_at_cutoff = radiator
+  if radiator ~= nil then episode.lead_at_cutoff = radiator - room end
+  episode.peak, episode.peak_at = room, at
+  episode.radiator_at_peak = radiator
+end
+
+-- Advances an episode by one observation and reports its phase: "heating" (the
+-- run is on), "coasting" (cut off, the stored heat landing) or "done".
 --
--- `env` is the optional snapshot of M.open. The radiator temperature AT THE
--- CUTOFF is the interesting one: it is the stored energy about to be dumped into
--- the room, which is the thing that actually causes the overshoot. The one at
--- the peak says how much of it was still left when the room stopped rising.
+-- While heating, the cut is either the node's own — the relay seen opening, or
+-- for a device that reports no relay, the room past the request — or the
+-- correction's, once the radiator is warming and the prediction reaches the
+-- request. Observe-only records when it would have cut and lets the run go on,
+-- so its cutoff is always the node's own.
 --
--- `env.heating` (true/false, or nil for a device that does not report it) is
--- remembered as `heated` once seen true: an episode during which the relay
--- never closed has no stored energy to teach from.
-function M.step(episode, current, at, env)
+-- An armed cut sets `hold`: the controller writes `hold_temp` while it lasts.
+-- It is released the moment the stored heat can no longer carry the room to the
+-- request, so heating resumes as soon as the room needs it.
+function M.step(episode, room, at, env)
   local radiator = env and env.radiator or nil
   note_heating(episode, env)
-  if current > episode.peak then
-    episode.peak, episode.peak_at = current, at
+  if room > episode.peak then
+    episode.peak, episode.peak_at = room, at
     episode.radiator_at_peak = radiator
   end
+  if radiator ~= nil then
+    if episode.radiator_min == nil or radiator < episode.radiator_min then
+      episode.radiator_min = radiator
+    end
+    if episode.gate_at == nil and radiator >= episode.radiator_min + M.RAD_RISE then
+      episode.gate_at = at
+    end
+  end
+
   if episode.cutoff_at == nil then
-    if current >= episode.applied then
-      episode.cutoff_at = at
-      episode.radiator_at_cutoff = radiator
-      M.sample_decay(episode, current, at, radiator)
+    local relay_opened = env ~= nil and env.heating == false and episode.heated == true
+    local passed = (env == nil or env.heating == nil) and room > episode.requested
+    if relay_opened or passed then
+      mark_cutoff(episode, "device", room, at, radiator)
+      if relay_opened then episode.relay_opened = true end
+      M.sample_decay(episode, room, at, radiator)
       return "coasting"
+    end
+    local predicted = nil
+    if episode.gate_at ~= nil then predicted = M.predict(episode.c_used, room, radiator) end
+    if predicted ~= nil and predicted >= episode.requested - EPSILON then
+      if not episode.observe_only then
+        mark_cutoff(episode, "overshoot", room, at, radiator)
+        episode.predicted_at_cutoff = predicted
+        episode.hold = true
+        episode.hold_temp = room - M.HOLD_MARGIN
+        M.sample_decay(episode, room, at, radiator)
+        return "coasting"
+      end
+      if episode.would_cut_at == nil then
+        episode.would_cut_at = at
+        episode.would_cut_predicted = predicted
+        episode.would_cut_lead = radiator - room
+      end
     end
     if at - episode.opened_at >= M.MAX_EPISODE_SECONDS then
       M.invalidate(episode, "never_reached")
@@ -162,22 +194,30 @@ function M.step(episode, current, at, env)
     end
     return "heating"
   end
-  M.sample_decay(episode, current, at, radiator)
+
+  M.sample_decay(episode, room, at, radiator)
   -- The relay closing again, once seen open, is the next run: its peak must not
   -- be credited to this one, whatever the sensor's resolution.
-  if env and env.heating == false then episode.released = true end
-  if env and env.heating == true and episode.released then return "done" end
-  if M.coast_over(episode, current, at) then return "done" end
+  if env ~= nil and env.heating == false then episode.relay_opened = true end
+  if env ~= nil and env.heating == true and episode.relay_opened then return "done" end
+  if episode.hold then
+    local predicted = M.predict(episode.c_used, room, radiator)
+    if predicted == nil or predicted < episode.requested - EPSILON then
+      episode.hold = false
+      episode.released_at = at
+    end
+  end
+  if M.coast_over(episode, room, at) then return "done" end
   return "coasting"
 end
 
 -- Whether the coast has ended: the room turned down after its peak, or the
 -- backstop ran out. Called after the peak has been updated for this sample, so
 -- a new high is never a turn.
-function M.coast_over(episode, current, at)
+function M.coast_over(episode, room, at)
   if at - episode.cutoff_at >= M.MAX_COAST_SECONDS then return true end
   -- The tolerance is float error, not slack: 16.08 - 0.2 lands a hair below 15.88.
-  return current <= episode.peak - M.PEAK_DROP + 1e-6
+  return room <= episode.peak - M.PEAK_DROP + EPSILON
     and at - episode.peak_at >= M.PEAK_HOLD_SECONDS
 end
 
@@ -188,11 +228,6 @@ end
 -- heat that lands in the room after the relay drops is the integral of this
 -- curve. Two endpoints cannot tell an exponential from a straight line, which
 -- is why the middle is kept rather than just a start and an end.
---
--- Recorded, never acted on. The correction stays outcome-based: it measures the
--- peak it actually got. This is here to explain a coefficient, and to make a
--- plant that has CHANGED visible — a decay that suddenly shortens is air in the
--- radiator or a valve that stopped closing, which no peak measurement shows.
 function M.sample_decay(episode, room, at, radiator)
   if radiator == nil or episode.cutoff_at == nil then return end
   if episode.decay == nil then episode.decay = {} end
@@ -242,43 +277,34 @@ end
 function M.valid(episode)
   if episode.invalid ~= nil then return false, episode.invalid end
   if episode.cutoff_at == nil then return false, "never_reached" end
-  -- Only an explicit false: a device with no hvac_action leaves it nil, and
-  -- unknown is not "off".
   if episode.heated == false then return false, "never_heated" end
+  if episode.lead_at_cutoff == nil then return false, "no_radiator" end
+  if episode.lead_at_cutoff < M.MIN_LEAD then return false, "radiator_cold" end
   return true, nil
 end
 
--- Folds a finished episode into the coefficients. Returns the new k, the
--- outcome ("learned"/"observed"/"discarded") and a discard reason.
+-- Folds a finished episode into c. Returns the new c, the outcome
+-- ("learned"/"observed"/"discarded") and a discard reason.
 --
--- One normalised gradient step on the regressor [1, rise]: the error is split
--- between base and slope in proportion to how much each contributed to the
--- offset that produced it, so a cycle (rise ~0.3) teaches base almost entirely
--- and a long warmup teaches both. The offset AT THE OBSERVED RISE moves by
--- exactly GAIN * err per episode — a discrete integral controller closed across
--- days, at the same rate the single-coefficient version had. "observed" is a
--- real learned update from an uncorrected run, named apart so a reader can tell
--- which regime a sample came from.
-function M.close(episode, k)
+-- A measurement, smoothed — not an integrator on the error. Whoever cut the run,
+-- the room rose (peak - room at the cutoff) on (radiator - room at the cutoff)
+-- of stored heat, and that ratio is what the next prediction needs. So
+-- observe-only, which only ever sees the node's own cutoff, converges on the
+-- same physical number instead of drifting on an error nothing it does can
+-- change. "observed" names that regime apart for a reader.
+function M.close(episode, c)
   local ok, reason = M.valid(episode)
-  if not ok then return k, "discarded", reason end
-  local err = episode.peak - episode.requested
-  local rise = episode.rise
-  local norm = 1 + rise * rise
-  -- The lower clamps are defensive: a run cuts off at requested - offset, so
-  -- the peak cannot land more than the offset low and the update is bounded
-  -- below by -GAIN * offset. The coefficients halve toward zero, never cross.
-  local next_k = {
-    base = clamp(k.base + M.GAIN * err / norm, 0, M.MAX_OFFSET),
-    slope = clamp(k.slope + M.GAIN * err * rise / norm, 0, M.SLOPE_MAX),
-  }
-  return next_k, episode.observe_only and "observed" or "learned", nil
+  if not ok then return c, "discarded", reason end
+  local observed = (episode.peak - episode.room_at_cutoff) / episode.lead_at_cutoff
+  episode.c_observed = observed
+  local next_c = clamp(c + M.GAIN * (observed - c), 0, M.C_MAX)
+  return next_c, episode.observe_only and "observed" or "learned", nil
 end
 
 -- Flattens a closed episode into the journal row of spec §9.1. Deciding inputs
 -- and resulting action are both kept so an episode can be re-judged months later
 -- without the surrounding state.
-function M.record(episode, zone, k_before, k_after, outcome, reason, closed_at)
+function M.record(episode, zone, c_before, c_after, outcome, reason, closed_at)
   return {
     zone = zone,
     opened_at = episode.opened_at,
@@ -286,24 +312,33 @@ function M.record(episode, zone, k_before, k_after, outcome, reason, closed_at)
     requested = episode.requested,
     current_at_open = episode.current_at_open,
     rise = episode.rise,
-    k_used = episode.k_used,
-    offset = episode.offset,
-    commanded = episode.commanded,
-    applied = episode.applied,
     observe_only = episode.observe_only,
-    cutoff_at = episode.cutoff_at,
-    peak = episode.peak,
-    peak_at = episode.peak_at,
     outdoor_at_open = episode.outdoor_at_open,
     radiator_at_open = episode.radiator_at_open,
+    radiator_min = episode.radiator_min,
+    gate_at = episode.gate_at,
+    would_cut_at = episode.would_cut_at,
+    would_cut_predicted = episode.would_cut_predicted,
+    would_cut_lead = episode.would_cut_lead,
+    cutoff_at = episode.cutoff_at,
+    cut_by = episode.cut_by,
+    room_at_cutoff = episode.room_at_cutoff,
     radiator_at_cutoff = episode.radiator_at_cutoff,
+    lead_at_cutoff = episode.lead_at_cutoff,
+    predicted_at_cutoff = episode.predicted_at_cutoff,
+    hold_temp = episode.hold_temp,
+    released_at = episode.released_at,
+    peak = episode.peak,
+    peak_at = episode.peak_at,
     radiator_at_peak = episode.radiator_at_peak,
+    error = episode.peak - episode.requested,
     decay = episode.decay,
     decay_half_life = M.half_life(episode),
     heated = episode.heated,
-    error = episode.peak - episode.requested,
-    k_before = k_before,
-    k_after = k_after,
+    c_used = episode.c_used,
+    c_observed = episode.c_observed,
+    c_before = c_before,
+    c_after = c_after,
     outcome = outcome,
     reason = reason,
   }

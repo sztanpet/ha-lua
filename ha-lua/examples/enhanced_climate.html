@@ -262,8 +262,10 @@
       const summary = document.createElement("summary");
       summary.textContent = "Overshoot correction — " +
         (observing ? "observing only" : "active") +
-        (samples > 0 ? ", cuts " + coeff(overshoot.k) + " over " + samples + " episode(s)"
-          : ", nothing learned yet");
+        (samples > 0 ? ", +" + round(Number(overshoot.c) * 10, 2) +
+          "° per 10° of radiator, from " + samples + " run(s)" : ", nothing learned yet") +
+        (overshoot.holding ? " — holding a run off now"
+          : overshoot.would_hold ? " — would be holding a run off now" : "");
       details.appendChild(summary);
 
       const body = document.createElement("div");
@@ -271,8 +273,8 @@
       const state = document.createElement("span");
       state.className = observing ? "state observing" : "state";
       state.textContent = observing
-        ? "Computing and recording the correction; the heating is untouched."
-        : "Cutting warmups short by the learned offset.";
+        ? "Recording when it would stop each run; the heating is untouched."
+        : "Stopping runs early once the radiator holds enough heat to finish the job.";
       body.appendChild(state);
 
       const arm = document.createElement("button");
@@ -329,11 +331,11 @@
       const table = document.createElement("table");
       table.className = "journal";
       const head = document.createElement("tr");
-      // Outside and Rad. are recorded, not acted on: they are the columns that
-      // will eventually say whether one k per climate is enough, or whether the
-      // coefficient has to vary with the weather and the radiator.
-      for (const label of ["Opened", "Request", "Rise", "Commanded", "Peak", "Error",
-        "Outside", "Rad. cut", "Cool t½", "Learned", "Outcome"]) {
+      // Times are minutes into the run. "Warming" is when the radiator was first
+      // seen climbing — no cut is allowed before it. Outside is recorded, not
+      // acted on: it is the column that will say whether one c per room is enough.
+      for (const label of ["Opened", "Request", "Room", "Warming", "Cut", "Lead",
+        "Predicted", "Peak", "Error", "Learned ×10", "Cool t½", "Outside", "Outcome"]) {
         const cell = document.createElement("th");
         cell.textContent = label;
         head.appendChild(cell);
@@ -346,31 +348,40 @@
         const discarded = row.outcome === "discarded";
         if (discarded) tr.className = "discarded";
         const error = Number(row.error);
+        const into = (at) => (at != null ? minutes(at - row.opened_at) : null);
+        let cut = "—";
+        if (row.cut_by === "overshoot") cut = "early " + into(row.cutoff_at);
+        else if (row.cut_by === "device") {
+          cut = "itself " + into(row.cutoff_at) +
+            (row.would_cut_at != null ? " (would " + into(row.would_cut_at) + ")" : "");
+        }
         const cells = [
           clock(row.opened_at),
           temp(row.requested),
-          temp(row.rise),
-          temp(row.commanded),
+          temp(row.current_at_open),
+          into(row.gate_at) || "—",
+          cut,
+          // The radiator's lead over the room at the cutoff: the stored heat about
+          // to land, which is what the overshoot actually is.
+          temp(row.lead_at_cutoff),
+          temp(row.predicted_at_cutoff != null ? row.predicted_at_cutoff : row.would_cut_predicted),
           discarded ? "—" : temp(row.peak),
           discarded ? "—" : signed(error),
-          temp(row.outdoor_at_open),
-          // The radiator at the cutoff: the stored energy about to land in the
-          // room, which is what the overshoot actually is.
-          temp(row.radiator_at_cutoff),
+          // c per 10° of lead, what this run measured → what was learned.
+          row.c_observed != null
+            ? round(row.c_observed * 10, 2) + " → " + round(row.c_after * 10, 2) : "—",
           // How long the radiator took to give up half its lead over the room.
           // A value that suddenly shortens means the plant changed — air in the
           // radiator, a valve that stopped closing — which no peak shows.
           minutes(row.decay_half_life),
-          // What the episode concluded: the floor every run gets, plus the part
-          // per degree of rise a long warmup adds.
-          coeff(row.k_after),
+          temp(row.outdoor_at_open),
           discarded ? "discarded: " + (row.reason || "?") : row.outcome,
         ];
         cells.forEach((text, index) => {
           const cell = document.createElement("td");
           cell.textContent = text;
           // The one number the whole feature exists to shrink.
-          if (index === 5 && !discarded && error > 0.3) cell.className = "err-hot";
+          if (index === 8 && !discarded && error > 0.3) cell.className = "err-hot";
           tr.appendChild(cell);
         });
         table.appendChild(tr);
@@ -385,9 +396,6 @@
       return String(Math.round(number * factor) / factor);
     };
     const temp = (value) => (Number.isFinite(Number(value)) ? round(value, 2) + "°" : "—");
-    // {base, slope} as "0.8° + 0.15°/°": the floor, then the per-degree-of-rise part.
-    const coeff = (k) => (k && typeof k === "object"
-      ? round(k.base, 2) + "° + " + round(k.slope, 2) + "°/°" : "—");
     const minutes = (seconds) => (Number.isFinite(Number(seconds))
       ? round(Number(seconds) / 60, 1) + "m" : "—");
     const signed = (value) => (Number.isFinite(value)
