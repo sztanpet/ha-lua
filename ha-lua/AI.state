@@ -10,23 +10,15 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**The overshoot correction, ported to the controller that actually owns the
-children's room** (detail: `state/overshoot.md`). It had been built into
-`thermostat.lua`, which on the live install is an unmodified example copy
-pointing at climate entities that do not exist — every zone `k=0, samples=0,
-journal={}`, not one episode in three weeks of "gathering field data". The room
-is `climate.konyha_gyerekszoba_futes`, an `enhanced_climate.lua` climate. Ten
-commits (`b1f9219`..`e09d0ab`), card 0.3.33 -> 0.3.37, still observe-only.
-Episodes now also record the outdoor and radiator temperatures, and the
-radiator's whole post-cutoff decay curve plus its half-life, so spec §12's
-"vary k with conditions" can be decided from data. Deployed 2026-09-26, with
-`radiator_entity`/`outdoor_entity` set on the nappali and gyerekszoba climates.
-v4.12.1 then fixed the setpoint-stepper lag the port caused. v4.13.0 fixed the
-model itself: the room has no schedule and overheats on its own heating
-cycles, which the request-change trigger could never see, so an episode now
-also opens when the relay closes and the offset gained a learned floor
-(`base + slope * rise`). Card 0.3.39. Still observe-only; with every cycle an
-episode now, a day or two of data should converge `base`.
+**Overshoot correction: field data broke the cycle design** (detail:
+`state/overshoot.md`, "The first real data"). Armed on the children's room, a
+correction latched when the relay closes CANCELLED every cycle (60-second relay
+pulses every 31 min, radiator never warmed), because the ESP node is a pure
+threshold; and observe-only learning is an open-loop integrator that climbs
+without bound. Spec corrected (`d026de7`), redesign proposed and waiting on the
+user: a hold-long `base` offset, `slope` only for warmups, counterfactual
+learning in observe-only. Unreleased fixes on main: `e12fd8e`, `5ee170d`.
+Heating-season automation on the box changed to on <14 / off >17.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -176,6 +168,19 @@ here.
   poll). The read lands in the gap and sees nothing; it only shows up under a
   full-suite run and looks like flake. Poll on the condition and stash the value
   on `window` inside the same expression.
+
+- **A setpoint correction can never be applied at the moment the relay
+  closes.** The heating ESP nodes are pure thresholds (ESPHome tests switch-on
+  first; overrun ≤ −deadband makes hysteresis unreachable), so the room is AT
+  the threshold then, and lowering the setpoint cancels the run after
+  `min_heating_run_time`. Armed, that became 60-second relay pulses every 31
+  min. For cycles only a hold-long offset works: a cycle's peak is at least
+  its start plus the coast of the shortest run.
+
+- **An integral learner must not learn open-loop.** Observe-only folded the
+  uncorrected error into the coefficients; nothing was applied, so the error
+  could not respond and `base` climbed ~0.19 per cycle towards the clamp. Any
+  "watch before arming" mode must learn against a counterfactual.
 
 - **The learner's trigger is the relay, not the request.** The overshoot
   model was written for a warmup from setback and shipped with "the request

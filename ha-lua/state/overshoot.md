@@ -356,7 +356,62 @@ request. If `base` converges to something near the deadband and the room
 still overshoots, the radiator's stored heat is more than a run of any length
 can avoid and the answer is on the node (`heat_deadband`), not here.
 
+## The first real data, and what it broke (2026-09-27/28)
+One observed cycle (times in this section are UTC, the box is +02:00; Sat 20:51, deployed v4.13.0): relay-triggered, room 23.5 →
+cut 23.7 after 13½ min → peak 24.1, radiator 23.5 → 45.5 and still rising a
+minute past the cutoff (actuator lag, measured), lead half-life 27.8 min, room
+still AT its peak when the fixed 30-min coast closed. That drove `5ee170d`: the
+coast now ends on the room turning (0.2 below a peak settled for 5 min), on the
+relay closing again, or a 90-min backstop. `e12fd8e`: `record()` had never
+carried `heated`, so the journal said nil and I wrongly told the user the
+device lacks `hvac_action` — it has it (read off the recorder DB).
+
+**Then the user armed it (Sun ~18:00–22:47), and the journal showed the design
+is wrong for cycles.** From 22:47 every ~31 min: relay closes at 23.3 (request
+23.4) → episode opens with offset ~0.6 → command ~22.8 → the ESP stops after
+`min_heating_run_time` (60 s) → radiator never warms (22.4–22.9 at "cutoff",
+BELOW the room) → 30-min coast → close → command back → relay closes again.
+`base` walked 0.63 → 0.38 on stubs, then a real run bounced it back up.
+
+Why, from ESPHome 2026.9.0 source (`heating_required_()`): the switch-on test
+`current <= target - deadband` runs FIRST, and `heat_overrun: -0.2` ≤ −deadband
+makes the hysteresis branch unreachable, so the node is a pure threshold. When
+the relay closes the room is AT the threshold; any offset larger than the
+deadband puts it above the new one and cancels the run. On a threshold node a
+correction latched at relay-close can only do nothing or cancel. And no
+per-run cut can land a cycle's peak on the request anyway: peak ≥ start + the
+coast of the shortest run, so the run must START below the request.
+
+Also found: **observe-only learning diverges.** "observed" episodes fold the
+uncorrected error in, which cannot respond to the coefficients — an open-loop
+integrator. `base` climbed 0 → 0.19 → 0.33 → 0.38 → 0.63 over four observed
+cycles; it would have reached MAX_OFFSET. This bug predates the port (the
+original single-`k` design has it too).
+
+**Proposed redesign (awaiting the user):** `base` becomes a HOLD-LONG offset
+(command `requested - base` for the whole hold, so the request becomes the
+ceiling of the swing — the average drops by about `base`), learned from
+relay-triggered cycles as `base += GAIN * err`; `slope * rise` stays an
+episode-latched extra for request-change warmups only, where the room is far
+below the cutoff and a per-run cut works. Observe-only learns against the
+counterfactual `peak - offset it would have applied`, which a whole-swing shift
+makes one-for-one. Then reset learning — everything journaled so far is either
+open-loop or stubs. Told the user to set observe-only until then.
+
+Other facts from the same session: ESPHome defaults `heat_deadband` and
+`heat_overrun` to 0.5 (schema, 2026.9.0), so "ditching" them is a one-degree
+band, not a simplification; explicit 0/0 is the simple threshold (heat iff
+room ≤ target) and moves this room's threshold up 0.1 from today's. All four
+zones live in `/config/esphome/konyha.yaml` (a git repo); the fourth zone is
+already 0/0, háló is 0.05/−0.2. Heating-season automation
+(`automations.yaml` id 1782250376702) changed on the box 2026-09-28 at the
+user's request: on below 14 (was 14.5), off above 17 (unchanged).
+
 ## Pending
+- **Decision:** the redesign above. Until then the children's room must stay in
+  observe-only, and the observe-only coefficients are meaningless.
+- **Unreleased:** `e12fd8e` (journal `heated`), `5ee170d` (coast end). The
+  deployed box runs v4.13.0 scripts.
 - **Deploy.** The scripts on the box are hand-copied into
   `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so
   none of this reaches the children's room until they are re-copied. The card
@@ -366,11 +421,11 @@ can avoid and the answer is on the node (`heat_deadband`), not here.
   via `/s/enhanced_climate/api/list`. Fürdő and Háló still have neither, so
   their episodes will carry no radiator or outdoor readings.
   `sensor.kinti_atlagos_napi_homerseklet` is the house's daily-average outdoor
-  sensor (it already drives the heat/off automation at 14.5/17 °).
-- Field data: a week of `/api/overshoot?climate=climate.konyha_gyerekszoba_futes`
-  or the Ingress panel, THEN take that climate out of observe-only. With the
-  relay trigger, every cycle is an episode now, so a week is dozens of samples
-  rather than seven — `base` should be converged within a day or two.
+  sensor (it drives the heat/off automation: 14.5/17 °, changed to 14/17 on
+  2026-09-28).
+- ~~Field data, then arm.~~ WRONG ADVICE, given 2026-09-26: observe-only cannot
+  converge (open loop), and the cycle correction cannot work on this node. The
+  user followed it and armed on Sunday. See the section above.
 - The 23.7 manual hold from 18:37 pins the room until it expires (no
   schedule → 24h); the user was told.
 - Still open: the "no episodes in N days" warning. A discard is journaled with a
