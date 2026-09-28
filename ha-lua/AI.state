@@ -10,16 +10,15 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Round 5 review — enhanced climate + overshoot: PLANNED, not started**
-(detail and the step-by-step fix plan: `state/code-review.md`, "Round 5"). The
-card and the observe-only learner are fit; replayed recorder runs converge c to
-~0.02. Not fit to arm: the hold outlives a room that has turned below the
-request (rule 1), and c = 0 cuts at the setpoint on the 0/0 node. The controller
-under it swallows one-step dial taps, latches frost as a dial hold after heating
-goes off and on, lets a boost put back our own frost, and drops a schedule-less
-climate out of control 24 h after a dial change. The user chose "hold until
-replaced" for that last one. The children's room sensor reports only ≥0.2 °C
-moves. v4.14.0 is deployed; everything stays observe-only.
+**Round 5 review — enhanced climate + overshoot: code DONE, unreleased**
+(detail and hashes: `state/code-review.md`, "Round 5"). Steps A1–C3 are in,
+nine commits d6d8af9..dfeca1c, `make check` green. One-step dial taps count,
+frost no longer latches as a hold, a boost keeps the dial hold, a schedule-less
+hold lasts until replaced, the hold releases once the room turns, c = 0 no
+longer cuts at the request. Card 0.3.42. Left: D1 (the temp8 reporting change
+in Z2M, on the box, needs the user's go-ahead) and E (release v4.15.0 +
+deploy, then set the children's room once from the card). v4.14.0 is deployed;
+everything stays observe-only.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -34,7 +33,7 @@ moves. v4.14.0 is deployed; everything stays observe-only.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
 - `state/code-review.md` — review rounds 1–4 CLOSED; round 5 (enhanced climate +
-  overshoot, 2026-09-28) PLANNED with its fix plan.
+  overshoot, 2026-09-28) code DONE, release pending.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). COMPLETE.
 - `state/overshoot.md` — learned heating early-cutoff (overshoot-spec.md).
 - (sse-spec.md has no implementation and no state file.)

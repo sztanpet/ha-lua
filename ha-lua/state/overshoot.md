@@ -463,7 +463,8 @@ Same day, at the user's request or with their go-ahead:
   06:22 with the mean at ~17.2, which suggests 17 is low for this house.
 
 ## Pending
-- **Before arming: round 5's B1 and B2** (`state/code-review.md`, "Round 5").
+- DONE 2026-09-28, unreleased: **round 5's B1 and B2** (`state/code-review.md`,
+  "Round 5"; 2b1899b, 15f3ddd). Arming still waits for their release.
   First, the hold outlives a room that has turned below the request, which
   breaks rule 1: the release test extrapolates `c·lead` past the peak. Second,
   c = 0 cuts at the setpoint on the 0/0 node, because the cut test is `>=`. D1

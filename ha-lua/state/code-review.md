@@ -436,8 +436,8 @@ Scope: `cards/enhanced-climate-card.js`, `examples/enhanced_climate.lua` and
 checked against the live box. Verdict: the card and the observe-only learner are
 fit; the armed correction and the controller under it are not.
 
-STATUS: PLANNED on 2026-09-28, nothing executed. The user asked for the plan
-"for later execution".
+STATUS: code steps A1–C3 DONE 2026-09-28, `make check` green. D1 (the sensor's
+reporting, on the box) and E (release + deploy) wait for the user.
 
 How it was checked, so the next round does not redo it:
 - Box scripts byte-identical to HEAD `9a98e51`, card 0.3.40 materialized.
@@ -515,7 +515,7 @@ is declared done. Mark steps `[DONE <hash>]` as they land, like rounds 1–4. Th
 controller goes first, because those bugs bite while the correction is still
 observe-only.
 
-- **A1** `climate: take a one-step dial change as manual`. In
+- **A1** [DONE d6d8af9] `climate: take a one-step dial change as manual`. In
   `lib/control.lua` `is_manual`, `<= 0.1` becomes `< 0.075`: a write the
   device rounded lands at most 0.05 off, a dial change at least 0.1, and 0.075
   clears float error both ways. The existing assertions still hold (21.05 vs 21
@@ -524,7 +524,7 @@ observe-only.
   enhanced-climate test: schedule 23.4, device → 23.3 gives a manual hold at
   23.3 and no 23.4 written back. `thermostat.lua` shares the helper, so run its
   tests. Amend enhanced-climate-spec §7 item 2 (">0.1").
-- **A2** `climate: record only the setpoints actually written`. In
+- **A2** [DONE 53ab0e2] `climate: record only the setpoints actually written`. In
   `apply_climate`, set `written` inside the heat branch only; outside heat, seed
   it from the device's setpoint when it is unset (first configure while off),
   so the first heat event is not a dial change. The handler also re-applies at
@@ -536,8 +536,15 @@ observe-only.
   - Test: a setpoint changed while off IS a manual hold after heat returns, as
     the user did on 2026-09-27 16:11. This guards against over-fixing.
   - `thermostat.lua:291` has the same pattern. It is not live; fix it in its
-    own commit or leave it with a note.
-- **A3** `climate: keep the dial hold under a boost`. Drop
+    own commit or leave it with a note. LEFT: `apply_zone` still records
+    `written` in every mode. Its frost is written by `heating_windows.lua`, so
+    only an overshoot hold can latch there, and only when armed.
+  - Done as planned, plus: `entered_heat` also fires when `old_state` is nil.
+    The tests need a companion-publish barrier between steps, because the
+    mirror moves synchronously and the script later; without it the window
+    close was handled with the mirror already back in heat and the test
+    passed on the old code.
+- **A3** [DONE 4d86dae] `climate: keep the dial hold under a boost`. Drop
   `store.delete(manual_key(climate))` from the override handler: the boost
   already outranks the hold in `control.desired`, and when it ends the hold
   takes back over. That fixes finding 6 for every controlled climate. The
@@ -549,8 +556,11 @@ observe-only.
   - Behaviour change to note in the CHANGELOG: after a boost, a scheduled
     climate returns to a still-valid dial hold rather than the schedule.
   - With the hold alive, the card shows the held badge during a boost. Check
-    that it reads sensibly beside the countdown.
-- **A4** `climate: hold a dial change until replaced without a schedule`.
+    that it reads sensibly beside the countdown. CHECKED: the badge is in the
+    title row and the countdown in the boost row, and "held until" is true
+    (the hold comes back after the boost). No card change. A schedule-less
+    hold has no `until`, so no badge at all.
+- **A4** [DONE 20d61d2] `climate: hold a dial change until replaced without a schedule`.
   - A climate has no schedule when `schedule.resolve` yields no temperature
     (every day empty).
   - `manual_change` stores such a hold without `expires`, and `active_manual`
@@ -564,11 +574,14 @@ observe-only.
   - Tests: an unbounded hold is created; an expired `expires` still controls a
     schedule-less climate; saving a schedule bounds the hold; remove drops it.
   - Amend spec §7 item 2 and §9, and check DOCS.md for "until the next
-    transition".
+    transition". DOCS.md never states the hold's length; nothing to change.
+  - "No schedule" is `schedule.resolve(days, 0, 0) == nil`, checked in
+    `active_manual`, which then returns `{temp}` only so the companion
+    carries no stale `until`.
   - Add a Key decision to AI.state with the why: without it, a schedule-less
     room loses control 24 h after each dial change, and the window pause and
     the learner go with it.
-- **B1** `overshoot: release the hold once the room turns below the request`.
+- **B1** [DONE 2b1899b] `overshoot: release the hold once the room turns below the request`.
   - In the coast branch, also release when `room < requested - EPSILON and room
     < peak - EPSILON`; the peak restarted at the cut, so this is a visible
     fall.
@@ -585,7 +598,7 @@ observe-only.
   - Amend spec §5 (release rule), §9.1 (`released_by`) and §9.3 (log line).
   - A turned release also leaves the learner the full peak rather than a
     truncated one.
-- **B2** `overshoot: cut only when the prediction overshoots`.
+- **B2** [DONE 15f3ddd] `overshoot: cut only when the prediction overshoots`.
   - Line 176 becomes `predicted > episode.requested + EPSILON`, and the
     observe-only would-cut uses the same line. The hold keeps releasing on `<`,
     so a predicted exact landing stays held.
@@ -596,19 +609,21 @@ observe-only.
   - Controller test: c 0, relay closes at the request, radiator warms → no
     write.
   - Amend the spec §5 c = 0 paragraph.
-- **C1** `climate: count window sensors from an empty list` —
+- **C1** [DONE 94c14b2] `climate: count window sensors from an empty list` —
   `enhanced_climate.html:235` guarded with `Array.isArray`. There is no page
   test, so model one on `thermostat_ui_test.go` if it is cheap, otherwise check
-  it in headless Chromium.
-- **C2** `card: ask before resetting the overshoot learning`.
+  it in headless Chromium. A chromedp test over the enhanced fixture's router
+  was cheap: `TestEnhancedClimatePageCountsNoWindows`.
+- **C2** [DONE 4fecaa6] `card: ask before resetting the overshoot learning`.
   - Use `window.confirm` (the card already uses `window.prompt`), with
     translated en/hu text. Do the same on the Ingress page's reset.
   - Bump VERSION to 0.3.41.
   - Test with `window.confirm` stubbed false → no command, true → the reset
     command. No card test clicks reset today.
-- **C3** (optional) `card: say when there is no radiator to act on` — a
+- **C3** [DONE dfeca1c] (optional) `card: say when there is no radiator to act on` — a
   status label in place of "overshoot idle" when `radiator_entity` is unset.
-  Bump VERSION again.
+  Bump VERSION again. Card 0.3.42; holding / would-hold still take precedence
+  over the label.
 - **D1** (box, with the user's go-ahead at execution time): in the Z2M
   frontend, temp8 → Reporting → msTemperatureMeasurement, set min 10 s, max
   300 s, change 10 (0.1 °C). It costs battery. A day later, confirm in the
