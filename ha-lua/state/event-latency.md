@@ -1,131 +1,40 @@
 # State: event-to-action latency (event-latency-spec.md)
 
-Working state for the latency track. Spec: `event-latency-spec.md`.
-Global decisions live in `../AI.state`.
+Spec: `event-latency-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **COMPLETE** — M0–M5 shipped in v3.1.0 (2026-07-07).
+Status: **COMPLETE** — M0–M5 in v3.1.0 (2026-07-07); the `states` table was
+retired the same day.
 
-## History (pre-spec rounds, shipped in v3.0.1)
+## Where it landed (dev machine, `internal/e2e`)
+- event → command: mean ~150 µs, p99 ~0.35 ms; a busy KV is identical to idle.
+- Quick on→off: ~0.2–0.4 ms with `wait = false`, ~100 ms synchronous (it waits
+  for HA's result frame, which HA sends only after the Zigbee round trip).
+- The remaining gap to HA's built-in automations is the WS hop (~1–2 ms):
+  inherent to being out of process.
 
-Rounds 1–2 are recorded in `bundled-examples.md` ("mirrored_switches latency
-follow-up"): the 100 ms batch window (example now opts into
-ha.immediate_events(), window documented loudly) and SQLite
-synchronous=NORMAL (per-event fsync jitter was on the dispatch path).
+## Decisions and why
+- The memory mirror had to come before async persistence: async-only writes
+  would let `ha.get_state` race the queue.
+- Seed dedup baseline: memory when populated (reconnect), the newest history
+  row per entity on cold start (the SQLite mirror is gone).
+- Rejected: `sync.Map` (one writer dominates, RWMutex is clearer), per-event
+  writer goroutines (lose ordering and batching), memory-only seed dedup
+  (a phantom history row per entity per restart).
+- **Echo guards in mirror scripts: attribute, don't compare.** Comparing
+  against a partner's REPORTED state lags its COMMANDED state by the Zigbee
+  round trip, so fast toggles lost a command and the late echo bounced the
+  switch back. The pattern is a per-entity FIFO of expected reports
+  (`mirrored_switches.lua`, `group_switches.lua`).
 
-## Round 3 diagnosis (2026-07-07, led to this spec)
-
-- User: variance much lower after v3.0.1, but a quick on→off still shows
-  ~500 ms on the off.
-- Cause (code-confirmed, not yet field-confirmed — M1 instruments it):
-  ha.call_service is synchronous since v2.3.0 (SendCommandWaitResult blocks
-  until HA's result frame, which HA sends only after the service COMPLETES —
-  Zigbee radio round trip included). The script event loop is serialized, so
-  the off event queues behind the on handler's ack wait.
-- Persistence decoupling (spec §3) does NOT fix this — separate mechanism,
-  both are in the spec.
-
-## Milestones
-
-- M0 measurement harness — **DONE** (6c2f5f9 internal/e2e + baseline
-  commit). Fake HA WS server, real client, verbatim main.go router loop,
-  file-backed SQLite, supervisor-run mirror script. Benchmarks:
-  EventToServiceCall (+p50/p99 via ReportMetric), ...BusyKV, QuickToggle
-  (off-ns/op = the user's half second). Dev-machine baseline: mean ~0.4ms,
-  p99 ~5ms, KV noise p99 ~7-10ms, off-ns/op = 100.6ms vs the 100ms
-  simulated ack — BOTH spec diagnoses confirmed by measurement.
-  Workflow: make bench-compare after each milestone; baselines in
-  benchmarks/baseline.txt. NOTE: make bench-update re-RUNS the suite
-  (bench-update: bench); to promote an existing run, cp current.txt
-  baseline.txt.
-- M1 dispatch-delay instrumentation — **DONE** (96ed468). ha.Event.ReceivedAt
-  stamped in the WS read loop; runner logs queue-to-handler delay (debug,
-  warn ≥250ms — clear of the 100ms batch window, so a warn is always real).
-- M2 call_service { wait = false } — **DONE** (3c9ede5 client split +
-  022e224 binding/docs). SendCommandAsync: synchronous ordered write,
-  verdict on a 1-buffered channel, pending-map cleanup in its goroutine;
-  SendCommandWaitResult is a blocking wrapper. Binding: opts 4th arg;
-  wait=false sends inline (send errors raise) then awaits the verdict off
-  the goroutine; failures ride runner.asyncErrCh (never closed, like reqCh
-  — the event channel closes on stop, a late verdict must not panic) into
-  dispatchException → on_exception. Nil-dep check is per-path now (async
-  wiring alone is enough for wait=false). MEASURED: QuickToggleNoWait
-  off-ns/op 0.37ms vs QuickToggle 100.7ms (~270x). mirrored_switches
-  example + lua_api.md + DOCS.md updated.
-- M3 memory-authoritative state mirror — **DONE** (30c3e0c). Tracker holds
-  an RWMutex map, applied before dispatch; GetState/GetEntities/GetEntityIDs
-  read only memory (filepath.Match globs — same as handler patterns —
-  sorted output, malformed pattern errors). Seed keeps SQL-tx dedup against
-  the persisted mirror (restart would otherwise spam one phantom history
-  row per entity: memory is empty then, the SQLite mirror isn't).
-- M4 background batched writer — **DONE** (766681f). HandleStateChanged =
-  memory + enqueue; one writer goroutine drains → single batched tx per
-  wakeup. Queue cap 1024, full = block with warn; failed batch retried
-  once then dropped loudly (memory stays authoritative); Flush() is the
-  test barrier; shutdown drains best-effort. Seed stays synchronous.
-  MEASURED (e2e): event→command mean 407µs→148µs, p99 5.2ms→0.36ms;
-  BusyKV p99 7-10ms→0.37ms — busy and idle now identical.
-- M5 docs + release — **DONE**: lua_api.md (get_state never stale,
-  get_entities sorted/validating, get_history write-behind note), README +
-  CLAUDE.md architecture updates (7a9d049), changelog (46812ae), release
-  v3.1.0 (65813e6, tagged).
-
-## Track complete (2026-07-07, v3.1.0)
-
-All five milestones shipped. Remaining latency floor is WS hops + Go
-scheduling (~150µs mean on dev hardware).
-
-## Phase 2: states table retired (2026-07-07, 12f107b)
-
-Done on user request the same day. Key finding: spec §3.3's "write-only"
-claim missed that Seed still READ the table for reconnect/restart dedup.
-Resolution: dedup baseline = memory when populated (reconnect; more
-precise than the table), newest history row per entity on cold start
-(same info the mirror row carried). writeBatch is history-appends only;
-entity removal persists nothing; ghost deletion = the map replacement.
-Schema DROPs the table on upgraded installs. Accepted corollary
-(documented on Seed): fully-purged-history entities get one baseline
-history row per daemon restart. NOT changed: batching default (event
-loss history — see bundled-examples.md).
-
-## Post-refactor review (2026-07-07, user-requested)
-
-Full re-read of tracker/client/runner paths. Applied: Seed appends now
-ride the write-behind queue (28db80f) — writeBatch is the single SQL
-write site, insert order is total, so the cold-start MAX(id) baseline
-holds by construction. Examined and left alone: seed-swap vs concurrent
-event apply can briefly regress memory to the snapshot (tiny window,
-self-heals on the entity's next event, predates the refactor — the SQL
-upsert version had the same property; fixing needs a lock spanning
-seed + router, not worth it). Rejected alternatives: sync.Map (RWMutex
-is clearer, one writer dominates), per-event writer goroutines (loses
-ordering + batching), memory-only seed dedup (phantom history per
-restart). Benchmarks after phase 2 + review: event→command mean 150µs,
-p99 0.33ms, BusyKV identical to idle, off-ns/op 0.2ms — all holding.
-
-## Decisions so far
-
-- call_service default STAYS synchronous (wait=true); async is opt-in via a
-  4th opts arg. Rejected: separate _async function, flipping the default.
-- Memory mirror is required before async persistence — async-only writes
-  would let ha.get_state race the queue (stale reads).
-- states table kept (write-only) in phase 1; dropping it is a phase 2
-  decision after production soak.
-- Overflow: block with warn (never drop history silently). Writer failure:
-  retry once, then drop batch loudly; memory stays authoritative.
-
-## Round 4: fast-toggle command loss (2026-07-08, 70719fb)
-
-Field report post-v3.2.0: latency comparable to HA automations, but
-~4 toggles/sec loses an on or off. NOT infra — commands ordered, no
-channel drops, no rejections. The example's "partner already matches"
-guard compared against the partner's REPORTED state, which lags its
-COMMANDED state by the Zigbee round trip; a flip inside that window
-skipped its command, and the late echo bounced the pressed switch back.
-Fixed with echo attribution (per-entity FIFO of expected reports, 10s
-expiry, presses compare against commanded state). Regression tests
-drive the real example file (mirror_test.go); fast-toggle test fails
-against the old script. Lesson recorded: state-comparison echo guards
-in mirror scripts are latency bugs; attribution is the pattern.
-Remaining latency gap vs built-ins is the WS hop (~1-2ms) — inherent
-to being out-of-process; nothing further to shave without moving into
-core.
+## Worth knowing
+- The runner logs queue-to-handler delay per event at debug, warn ≥250 ms
+  (clear of the batch window, so a warn is real). At `log_level: debug` that
+  line floods the log: 12k lines in 25 min, so the 5 MiB budget rotates in
+  about an hour. At debug the log is a rolling window, not a record.
+- Untouched spike sources, if variance ever returns: WAL autocheckpoint and the
+  hourly purge DELETE, both on the write connection. Never measured as a
+  problem.
+- e2e harness: `startPipeline` asserts the script does
+  `global.set("loaded", "bench")`, and the fake HA's `injectStateChanged` sends
+  no `old_state`. A shipped example needs both addressed before it can be
+  benchmarked there.

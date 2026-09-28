@@ -522,7 +522,8 @@ is the smaller bisectable unit and it keeps the wiring commit readable.
   the room is `climate.konyha_gyerekszoba_futes`, an enhanced climate, and the
   `thermostat.lua` on the box is an unmodified example copy pointing at entities
   that do not exist. The feature therefore sat in observe-only for three weeks
-  having never opened a single episode. See `state/overshoot.md`, "Field check".
+  having never opened a single episode. See the `AI.state` key decision on
+  checking the running install.
 
   The port brought two things this spec did not anticipate. The card's target
   stepper reads the setpoint off the climate entity, so it would have shown the

@@ -2,230 +2,157 @@
 Last updated: 2026-09-28
 
 Small on purpose: where the work stopped, where the detail lives, and the
-cross-cutting decisions that must not be re-litigated. Everything that can be
-read off the code, CLAUDE.md, CHANGELOG.md or git history is deliberately NOT
-here.
+cross-cutting decisions that must not be re-litigated. Anything readable off
+the code, CLAUDE.md, CHANGELOG.md or git history is deliberately NOT here.
 
 Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
 **Round 5 review — enhanced climate + overshoot: RELEASED as v4.15.0, not
-deployed** (detail: `state/code-review.md`, "Round 5"). Steps A1–C3 shipped;
-card 0.3.42. Left: deploy (new image + restart, re-copy `enhanced_climate.lua`,
-`.html`, `lib/control.lua`, `lib/overshoot.lua`), then set the children's room
-once from the card, since its last hold lapsed 2026-09-28 18:11. D1 (the temp8
-reporting change in Z2M) needs the user's go-ahead. Everything stays
+deployed** (detail: `state/code-review.md`, "Round 5"). Card 0.3.42. Left:
+deploy (new image + restart, re-copy `enhanced_climate.lua`, `.html`,
+`lib/control.lua`, `lib/overshoot.lua`, restart again), then set the children's
+room once from the card, since its last hold lapsed 2026-09-28 18:11. D1 (the
+temp8 reporting change in Z2M) needs the user's go-ahead. Everything stays
 observe-only; arming is the user's call.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
-- `state/thermostat-ui.md` — thermostat UI + heating example scripts. COMPLETE.
-- `state/fs-plugin.md` — Lua `fs` module, rooted log_file. COMPLETE.
-- `state/bundled-examples.md` — examples tree + Materialize; battery_levels and
-  service_api live here.
-- `state/enhanced-climate.md` — REST/command transport, enhanced_climate example,
-  Lovelace card.
 - `state/event-latency.md` — async call_service, memory mirror, write-behind.
-- `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page, web shell.
+  COMPLETE.
+- `state/fs-plugin.md` — Lua `fs` module, rooted log_file. COMPLETE.
+- `state/thermostat-ui.md` — thermostat UI + heating example scripts. COMPLETE.
+- `state/bundled-examples.md` — examples tree + Materialize, and every example
+  that is not a heating controller.
+- `state/enhanced-climate.md` — REST/command transport, enhanced_climate
+  example, Lovelace card.
+- `state/overshoot.md` — learned heating early-cutoff (overshoot-spec.md).
+- `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page. COMPLETE.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
-- `state/code-review.md` — review rounds 1–4 CLOSED; round 5 (enhanced climate +
-  overshoot, 2026-09-28) released in v4.15.0, deploy and D1 pending.
-- `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). COMPLETE.
-- `state/overshoot.md` — learned heating early-cutoff (overshoot-spec.md).
+- `state/mqtt.md` — MQTT client + Lua `mqtt` module. COMPLETE.
+- `state/code-review.md` — rounds 1–4 CLOSED; round 5 released, deploy and D1
+  pending.
 - (sse-spec.md has no implementation and no state file.)
 
-Released versions and what shipped in them: `CHANGELOG.md`. Do not mirror it
-here.
-
 ## Key decisions (do not re-litigate without good reason)
-- **MQTT is an input, never a dependency.** An unconfigured or unreachable
-  broker disables the `mqtt` module and nothing else; the HA side must keep
-  working. Corollary: with no broker, `mqtt.*` RAISES rather than no-opping —
-  a script that silently does nothing is the failure mode that cost a whole
-  debugging session.
-- **A dimming ramp must be geometric, not linear.** The eye reads brightness
-  logarithmically: a fixed step is a glaring jump at level 20 and invisible at
-  200, which is what makes a hold look like a staircase. Multiply the level per
-  step instead, and pass `transition` = the step interval so the light glides
-  between steps. Do NOT "simplify" this to one long transition: devices fade
-  linearly in brightness units, so a full-range fade appears to do nothing and
-  then fall off a cliff.
-- **Zigbee2MQTT topics carry the friendly name verbatim, spaces included**
-  (`zigbee2mqtt/ikea dimmer 1/action`). It is NOT the underscored entity id.
-  Confirm a topic against the broker before writing a script around it.
-- **Lua VM stays gopher-lua.** arnodel/golua (5.4/5.5) evaluated 2026-06-13 and
-  rejected: v0.x single-maintainer, verbose CPS bindings across ~30 sites, stop
-  semantics need SetContext, 5.3+ integers would split the number type through
-  the JSON layer. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real
-  problem for script authors.
-- **Event batching stays 100 ms by default** (`runner.go` batchWindow). Unbatched
-  bursts REALLY overflowed script channels and dropped events — that is why it
-  exists. Latency-sensitive scripts opt out with `ha.immediate_events()`; do not
-  make immediate the default. Tracker apply stays BEFORE Dispatch in main.go so
-  handlers read fresh state.
-- **SQLite `synchronous=NORMAL`, not FULL.** Every state_changed commits on the
-  write handle before dispatch; FULL's fsync jitter lands straight on handler
-  latency. The mirror re-seeds from HA, history is throwaway, timers rebuild —
-  do NOT "fix durability" back to FULL.
+
+Daemon
+- **Lua VM stays gopher-lua.** arnodel/golua evaluated 2026-06-13 and rejected:
+  v0.x single-maintainer, verbose CPS bindings across ~30 sites, stop semantics
+  need SetContext, 5.3+ integers would split the number type through the JSON
+  layer. Revisit only if golua hits 1.0 AND Lua 5.1 becomes a real problem.
+- **Event batching stays 100 ms by default.** Unbatched bursts REALLY
+  overflowed script channels and dropped events. Latency-sensitive scripts opt
+  out with `ha.immediate_events()`; do not make immediate the default. Tracker
+  apply stays BEFORE Dispatch in main.go so handlers read fresh state.
+- **`call_service` stays synchronous by default.** `wait = false` sends in
+  order and routes the rejection to `on_exception` off-loop.
+- **SQLite `synchronous=NORMAL`, not FULL.** FULL's fsync jitter landed on
+  handler latency; the mirror re-seeds, history is throwaway, timers rebuild.
 - **SQLite DSN pragmas must use `_pragma=name(value)`** — modernc silently
   ignores mattn-style params. `TestOpenDBEnablesWAL` is the canary.
-- **Purge cutoff is computed in Go as RFC3339 and bound as a parameter** — never
-  `datetime('now',…)` in SQL; the format mismatch breaks the string comparison.
-- **History is write-behind and must never drop silently**: one goroutine batches
-  a 1024-cap queue into single transactions; a full queue blocks with a warn, a
-  failed batch is retried once then dropped loudly. Corollary accepted: an entity
-  whose history aged out entirely gets one baseline row per restart.
+- **Purge cutoff is computed in Go as RFC3339 and bound as a parameter** —
+  never `datetime('now',…)`; the format mismatch breaks the string compare.
+- **History is write-behind and never drops silently**: a full queue blocks
+  with a warn, a failed batch is retried once then dropped loudly. Accepted: an
+  entity whose history aged out gets one baseline row per restart.
 - **A seed never overwrites a newer mirror entry.** A `get_states` batch is a
-  snapshot of the instant HA rendered it, and the client pushes it BEFORE it
-  subscribes, so events for it are already in flight. Installing the batch
-  wholesale rolled `ha.get_state` back to a superseded state until the entity
-  next changed. `LastUpdated` decides; unorderable stamps let the batch win.
-  Do NOT "simplify" Seed back to building a map and swapping it in.
-- **`ha.every`/`ha.at` are load-time only and raise from a callback.** The `N`
-  in their id is a registration counter, so a call from a callback allocates a
-  new timer instead of re-arming: one heap entry, one row and one retained
-  callback per call. `ha.after` is the callback-safe one.
-- **`call_service` stays synchronous by default.** `wait = false` sends in order
-  and routes the rejection to `on_exception` off-loop; do not flip the default.
-- **`ha.after` persistence is best-effort** — it survives a restart only if
-  registered at load time; callback-registered timers are dropped and logged.
-  Catch-up fires a missed timer at most once, never replays every interval.
-- **Scripts register themselves in-script** (`ha.on_state_change` style). No
-  external manifest, ever.
-- **Web shell: one document, script pages in an iframe.** Never inject into or
-  rewrite a script's HTML (auto-injection and an SPA splice were both rejected).
-  Every URL the shell emits is relative — under ingress it cannot know its
-  prefix — and the 308 for a missing trailing slash writes its own Location
-  header because http.Redirect would absolutize it out of the ingress prefix.
-  Since v4.3.0 the framed page is NOT a scroller: the shell sizes the frame to
-  its document, forces `overflow:hidden` on it (Chromium never chains a scroll
-  out of a frame, so one scrollable pixel in there eats the whole gesture) and
-  scrolls `#view`. Script pages must therefore lay out as documents — no
-  `100vh`, no `position:fixed`.
-- **No hover-only affordances in any UI we ship.** `title=` tooltips, `:hover`
-  reveals and the like are unreachable on the phones and wall tablets HA is
-  actually used from — the disclosure is missing exactly where it is needed.
-  Anything hidden behind discovery must be a tap target.
-- **Debug introspection accessors never touch an `*lua.LState`** — cached fields
-  and atomics only. `logbuf` WRAPS the text handler, never replaces it.
-- **The Lovelace card is one vanilla file**: plain HTML + HA CSS theme variables,
-  never HA's undocumented styling primitives (`ha-button`, `ha-switch`, …) which
-  churn across releases. `<ha-card>`, `<ha-icon>` and the editor's entity pickers
-  are the allowed exceptions. Card assets are Materialized to /config/www/ha-lua
-  on boot, so a card fix reaches a user only after a new image AND a restart.
-- **Add-on layout**: the HA config dir is mounted at `/config` via
-  `homeassistant_config` + `path: /config` (like ESPHome) — NOT `addon_config`,
-  which hides files in a private `/addon_configs/<slug>`. Options arrive as
-  `/data/options.json` + `$SUPERVISOR_TOKEN`; run.sh passes no flags.
-- **Two rooted filesystems**: scripts root (fs module, require, LoadAll) and logs
-  root over log_dir. `ha.exceptions.log_file` takes relative paths only and
-  raises at registration on absolute/`../`/unset log_dir.
-- **Hot reload** debounces 300 ms then stats the file — present reloads, absent
-  stops; never decide from fsnotify event types (atomic saves lie). Only `.lua`
-  is watched: editing a sibling `.html` alone does NOT reload.
-- **Core REST bindings are non-raising** (`value|nil, err`) so a per-minute
-  publisher cannot spam `on_exception`. The REST base is derived from the WS URL,
-  not configured.
-- **`ha.at` timezone**: config option → `$TZ` → UTC-with-warning; `time/tzdata`
-  embedded, next_run stored UTC, and main sets `time.Local` so script
-  `time.now()` agrees with the scheduler.
-- **json/v2 everywhere**, and deterministic key order is NOT its default — every
-  marshal site that needs stable output passes `json.Deterministic(true)`.
-- **One shared http client, fixed 30 s timeout**, plus the script's lifetime
-  context. No per-callback context, no timeout config option.
-- **Tests use real SQLite (`:memory:`), never mocks**; browser coverage is
-  chromedp and skips cleanly when no browser is installed. Benchmark comparison
-  is informational — it never fails the build.
-- **Analyzers are `tool` directives in go.mod**, run as `go tool <name>`; errcheck
-  exclusions are configured in golangci-lint rather than littering the code with
-  `_ =`.
-- **No vendoring** — go.sum plus the module proxy pin everything; `go mod vendor`
-  is one command away if hermetic builds are ever needed.
-- **`make update-deps` overshoots on the linter graph — check `make lint` before
-  believing it.** `go get -u` walks golangci-lint's *transitive* deps past what
-  golangci-lint itself compiles against, and the breakage surfaces as `undefined:`
-  errors inside `$GOMODCACHE`, not in our code. As of v4.8.0 three are pinned back
-  to golangci-lint v2.13.2's own go.mod: gobwas/glob v0.2.3, alecthomas/
-  go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when golangci-lint
-  catches up; do not "fix" them forward.
-
-- **Optimism-free is for server data, not for the number in a control the user
-  is touching.** Moving a control's displayed value onto a slower-answering
-  source is a UI change, not just a data change: the enhanced-climate stepper
-  swapped `attrs.temperature` (one hop) for the companion request (HA event ->
-  daemon -> republish -> push back) and instantly felt broken, because a tap
-  wrote nothing locally and the next DOM rebuild reset the step base to the
-  stale value. Any control here needs a local echo held against the value it was
-  tapped away FROM — so a source that has not caught up loses and a genuine
-  external change still wins — plus a debounce, because a TRV answers queued
-  writes one at a time.
-
-- **A WaitVisible followed by a separate Evaluate is not a safe pair** against
-  any page that rebuilds by emptying its container (all of ours do, plus a 5s
-  poll). The read lands in the gap and sees nothing; it only shows up under a
-  full-suite run and looks like flake. Poll on the condition and stash the value
-  on `window` inside the same expression.
-
-- **The user's two rules for the overshoot correction are absolute.** Heating
-  starts the moment the room is below the setpoint — no offset may lower the
-  setpoint before a run, at its start, or between runs (a hold-long offset was
-  proposed and rejected for exactly that). A run may be cut short only once the
-  radiator has been SEEN warming in that run. Everything in §5 follows from
-  these; do not trade either away for a better-looking peak.
-
-- **A setpoint correction can never be applied at the moment the relay
-  closes.** The heating ESP nodes are pure thresholds (ESPHome tests switch-on
-  first; overrun ≤ −deadband makes hysteresis unreachable), so the room is AT
-  the threshold then, and lowering the setpoint cancels the run after
-  `min_heating_run_time`. Armed, that became 60-second relay pulses every 31
-  min. For cycles only a hold-long offset works: a cycle's peak is at least
-  its start plus the coast of the shortest run.
-
-- **An integral learner must not learn open-loop.** Observe-only folded the
-  uncorrected error into the coefficients; nothing was applied, so the error
-  could not respond and `base` climbed ~0.19 per cycle towards the clamp. Any
-  "watch before arming" mode must learn against a counterfactual.
-
-- **The learner's trigger is the relay, not the request.** The overshoot
-  model was written for a warmup from setback and shipped with "the request
-  rose above the room" as its only trigger; the children's room has no
-  schedule and overheats on hysteresis cycles, during which the request never
-  moves. Do not re-narrow it to request changes. Corollary: the offset needs a
-  floor (`base`), because a rise-proportional cut on a deadband-sized rise is
-  capped at nothing, while the radiator reaches full temperature either way.
-
-- **A learner's diagnostics must cover "it never ran", not only "it ran and
-  discarded".** The overshoot journal records every DISCARDED episode with a
-  reason, at warn, precisely so silent failure is impossible — and then failed
-  silently anyway, because an episode that never OPENS leaves no record at all.
-  Any counter-based safeguard needs a "nothing has happened in N days" arm.
-
-- **Check a feature's target against the RUNNING install, not against the
-  example tree.** The overshoot learner was specced, built and shipped over
-  five commits into `thermostat.lua` on the stated premise that the children's
-  room was a `lib/zones.lua` zone. It is not — it is an `enhanced_climate.lua`
-  climate, and the `thermostat.lua`/`zones.lua` on the box are unmodified
-  example copies aimed at entities that do not exist. Three weeks of
-  "observe-only, gathering field data" gathered nothing. One curl against
-  `:8100` would have caught it before commit 1.
-
+  snapshot pushed BEFORE the client subscribes, so events for it are already in
+  flight. `LastUpdated` decides; unorderable stamps let the batch win. Do NOT
+  "simplify" Seed back to building a map and swapping it in.
+- **`ha.every`/`ha.at` are load-time only and raise from a callback** (the `N`
+  in their id is a registration counter, so a callback call leaks a timer).
+  `ha.after` is the callback-safe one; its persistence is best-effort (survives
+  a restart only if registered at load). Catch-up fires a missed timer once.
+- **Scripts register themselves in-script.** No external manifest, ever.
+- **Debug introspection accessors never touch an `*lua.LState`** — cached
+  fields and atomics only. `logbuf` WRAPS the text handler, never replaces it.
+- **Hot reload** debounces 300 ms then stats the file — never decide from
+  fsnotify event types (atomic saves lie). Only `.lua` is watched.
 - **`scripts/lib/` is deliberately NOT watched, and `/debug/` deliberately IS
-  on the unauthenticated LAN port.** Both were raised in review round 4 and
-  declined on 2026-09-25. A lib edit needs a restart; the LAN port is
-  LAN-trust, debug page included. Do not re-raise either.
+  on the unauthenticated LAN port.** Both declined by the user 2026-09-25. A lib
+  edit needs a restart; the LAN port is LAN-trust. Do not re-raise either.
+- **Two rooted filesystems**: scripts root (fs, require, LoadAll) and logs root
+  over log_dir. `ha.exceptions.log_file` takes relative paths only and raises at
+  registration otherwise.
+- **Core REST bindings are non-raising** (`value|nil, err`) so a per-minute
+  publisher cannot spam `on_exception`. The REST base is derived from the WS URL.
+- **`ha.at` timezone**: config option → `$TZ` → UTC-with-warning; main sets
+  `time.Local` so script `time.now()` agrees with the scheduler.
+- **json/v2 everywhere; deterministic key order is NOT its default** — pass
+  `json.Deterministic(true)` wherever output must be stable.
+- **An empty Lua table JSON-encodes as `{}`, not `[]`.** Every page and card
+  reading a list from a script guards with `Array.isArray`. It has bitten three
+  times (thermostat `today`, the card's window sensors, the Climate page).
+- **One shared http client, fixed 30 s timeout**, plus the script's lifetime
+  context. No per-callback context, no timeout option.
+- **MQTT is an input, never a dependency.** An unconfigured or unreachable
+  broker disables the `mqtt` module and nothing else. With no broker `mqtt.*`
+  RAISES rather than no-opping: a silently idle script cost a whole session.
 
-- **A dial hold on a schedule-less climate lasts until replaced.** With no
-  schedule nothing takes over when a hold expires, so the room dropped out of
-  control 24 h after each dial change, window pause and overshoot learner
-  with it. The user chose this over a schedule entry, which would revert every
-  dial change at midnight. Do not give it back a fixed lifetime.
+Add-on and UI
+- **Add-on layout**: the HA config dir is mounted at `/config` via
+  `homeassistant_config` + `path: /config` — NOT `addon_config`. Options arrive
+  as `/data/options.json` + `$SUPERVISOR_TOKEN`; run.sh passes no flags.
+- **Web shell: one document, script pages in an iframe.** Never inject into or
+  rewrite a script's HTML. Every URL the shell emits is relative (ingress
+  prefix unknowable); the 308 writes its own Location. The framed page is NOT a
+  scroller (Chromium never chains a scroll out of a frame): script pages must
+  lay out as documents — no `100vh`, no `position:fixed`.
+- **No hover-only affordances in any UI we ship.** HA runs on phones and wall
+  tablets; anything hidden behind discovery must be a tap target.
+- **The Lovelace card is one vanilla file**: plain HTML + HA CSS variables,
+  never HA's undocumented primitives (`ha-button`, `ha-switch`, …).
+  `<ha-card>`, `<ha-icon>` and the editor's entity pickers are the exceptions.
+  Card assets are Materialized on boot, so a card fix needs a new image AND a
+  restart.
+
+Home automation examples
+- **A dimming ramp must be geometric, not linear**, stepped with `transition` =
+  the step interval. Do NOT replace it with one long transition: devices fade
+  linearly in brightness units, which looks like nothing then a cliff.
+- **Zigbee2MQTT topics carry the friendly name verbatim, spaces included**
+  (`zigbee2mqtt/ikea dimmer 1/action`). Confirm a topic against the broker
+  before writing a script around it.
+- **A dial hold on a schedule-less climate lasts until replaced.** With a
+  24 h hold, a room with no schedule dropped out of control after each dial
+  change, taking the window pause and the overshoot learner with it. Chosen by
+  the user over a schedule entry, which would revert dial changes at midnight.
+
+Overshoot correction (detail: `state/overshoot.md`)
+- **The user's two rules are absolute.** Heating starts the moment the room is
+  below the setpoint — no offset may lower the setpoint before, at the start
+  of, or between runs. A run may be cut short only once the radiator has been
+  SEEN warming in that run. Do not trade either for a better-looking peak.
+- **A learner's diagnostics must cover "it never ran".** The journal records
+  every discarded episode at warn, and still failed silently, because an
+  episode that never OPENS leaves no record. Counter-based safeguards need a
+  "nothing happened in N days" arm.
+- **Check a feature's target against the RUNNING install, not the example
+  tree.** The first learner shipped over five commits into `thermostat.lua`,
+  which controls nothing on the box; three weeks of "gathering field data"
+  gathered nothing. One curl against `:8100` would have caught it.
+
+Tooling
+- **Tests use real SQLite (`:memory:`), never mocks**; browser coverage is
+  chromedp and skips cleanly with no browser. Benchmark comparison never fails
+  the build.
+- **Analyzers are `tool` directives in go.mod**; errcheck exclusions live in
+  golangci-lint config, not as `_ =` in the code.
+- **No vendoring** — go.sum plus the module proxy pin everything.
+- **`make update-deps` overshoots on the linter graph — check `make lint`.**
+  `go get -u` walks golangci-lint's transitive deps past what it compiles
+  against; the breakage shows as `undefined:` inside `$GOMODCACHE`. Pinned back
+  to golangci-lint v2.13.2's go.mod: gobwas/glob v0.2.3,
+  alecthomas/go-check-sumtype v0.3.1, ghostiam/protogetter v0.3.21. Unpin when
+  golangci-lint catches up.
 
 ## Removed (do not add back without explicit user request)
-- state_stats_hourly / state_stats_daily tables, `ha.get_stats`, the `is_numeric`
-  column, and the 4-step transactional purge
-- `global.state()` persistent proxy (cache coherency across concurrent scripts)
+- state_stats_hourly / state_stats_daily tables, `ha.get_stats`, the
+  `is_numeric` column, and the 4-step transactional purge
+- `global.state()` persistent proxy (cache coherency across scripts)
 - `cmd/bench-check` (over-engineered for a home project)
 - the `states` mirror table (memory-authoritative since v3.1.0)
 - the battery example's static `IGNORE` table (replaced by the page's toggle)
@@ -233,9 +160,8 @@ here.
 ## User preferences observed
 - Pure Go only — modernc.org/sqlite and gopher-lua, no CGO.
 - Plan before writing code.
-- **ASK WHAT THE FAILURE LOOKS LIKE before theorising** about a UI bug. The
+- **Ask what the failure LOOKS like before theorising** about a UI bug. The
   v4.3.0–v4.3.2 scroll bug took three attempts because the first two were
-  inferred from symptoms; none of it ever reproduced in headless Chromium at any
-  DPR, so on device-visible bugs the device is the only verdict.
-- Keep this file lean: if the code, CLAUDE.md, CHANGELOG.md or git says it,
-  it does not belong here.
+  inferred from symptoms; it never reproduced in headless Chromium, so on
+  device-visible bugs the device is the only verdict.
+- Keep this file lean.
