@@ -452,9 +452,13 @@ Same day, at the user's request or with their go-ahead:
   hand eleven times on Sunday. 14/17 would have skipped the ON but not the
   OFF. The helper uses `mean` (sample mean), 0.1–0.4° above a time-weighted
   mean — minor. The real problem is timing: a rolling 24 h mean crosses at any
-  hour, and it switched heating off just before an 11° night. Proposed to the
-  user, not done: turn on as soon as the mean drops below 14, but only switch
-  off at a fixed daytime hour.
+  hour, and it switched heating off just before an 11° night. DONE at the
+  user's go-ahead (09:28 local): on the moment the mean drops below 14
+  (numeric_state), off only at 10:00 and only if the mean is then above 17
+  (time trigger + condition). Validated with the Supervisor's config check
+  before the reload. The mean was 18.1, so it switched everything off at 10:00
+  the same day. Note for the user: on Sunday they turned heating back on at
+  06:22 with the mean at ~17.2, which suggests 17 is low for this house.
 
 ## Pending
 - **Release + deploy**, when asked: re-copy `enhanced_climate.lua`,
@@ -463,7 +467,7 @@ Same day, at the user's request or with their go-ahead:
   restart (lib/ is not watched; the card needs the new image).
 - **Flash konyha.yaml** (user).
 - Then watch the journal's would-cut rows in observe-only before arming.
-- The heating-season automation's switch-off timing — the user's call.
+- Whether 17 is the right switch-off threshold (see the Sunday note above).
 - **Deploy.** The scripts on the box are hand-copied into
   `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so
   none of this reaches the children's room until they are re-copied. The card

@@ -18,7 +18,7 @@ with a hold released the moment the stored heat falls short. `c` is measured
 per run, so observe-only now converges. Spec `e47f2d1`, restart fix `2039a49`,
 model `1a58fb1`, card 0.3.40 `bbf839f`. NOT RELEASED. On the box: all climates
 observe-only, `konyha.yaml` zeroed but not flashed, heating-season automation
-on <14 / off >17 with a switch-off-timing proposal pending.
+on the moment the 24 h mean drops below 14, off only at 10:00 if above 17.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
