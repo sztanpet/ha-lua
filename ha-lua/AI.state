@@ -10,15 +10,15 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Overshoot correction: field data broke the cycle design** (detail:
-`state/overshoot.md`, "The first real data"). Armed on the children's room, a
-correction latched when the relay closes CANCELLED every cycle (60-second relay
-pulses every 31 min, radiator never warmed), because the ESP node is a pure
-threshold; and observe-only learning is an open-loop integrator that climbs
-without bound. Spec corrected (`d026de7`), redesign proposed and waiting on the
-user: a hold-long `base` offset, `slope` only for warmups, counterfactual
-learning in observe-only. Unreleased fixes on main: `e12fd8e`, `5ee170d`.
-Heating-season automation on the box changed to on <14 / off >17.
+**Overshoot correction redesigned to the user's rules: heat on demand, cut on
+evidence** (detail: `state/overshoot.md`, "The redesign"). Heating always
+starts the moment the room is below the setpoint; a run is cut only after the
+radiator has been seen warming, when `room + c * lead` reaches the request,
+with a hold released the moment the stored heat falls short. `c` is measured
+per run, so observe-only now converges. Spec `e47f2d1`, restart fix `2039a49`,
+model `1a58fb1`, card 0.3.40 `bbf839f`. NOT RELEASED. On the box: all climates
+observe-only, `konyha.yaml` zeroed but not flashed, heating-season automation
+on <14 / off >17 with a switch-off-timing proposal pending.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -168,6 +168,13 @@ here.
   poll). The read lands in the gap and sees nothing; it only shows up under a
   full-suite run and looks like flake. Poll on the condition and stash the value
   on `window` inside the same expression.
+
+- **The user's two rules for the overshoot correction are absolute.** Heating
+  starts the moment the room is below the setpoint — no offset may lower the
+  setpoint before a run, at its start, or between runs (a hold-long offset was
+  proposed and rejected for exactly that). A run may be cut short only once the
+  radiator has been SEEN warming in that run. Everything in §5 follows from
+  these; do not trade either away for a better-looking peak.
 
 - **A setpoint correction can never be applied at the moment the relay
   closes.** The heating ESP nodes are pure thresholds (ESPHome tests switch-on

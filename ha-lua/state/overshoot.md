@@ -407,11 +407,63 @@ already 0/0, háló is 0.05/−0.2. Heating-season automation
 (`automations.yaml` id 1782250376702) changed on the box 2026-09-28 at the
 user's request: on below 14 (was 14.5), off above 17 (unchanged).
 
+## The redesign: heat on demand, cut on evidence (2026-09-28)
+The user rejected the hold-long offset (it starts every run later) and gave
+the rules instead, verbatim: "it must start whenever the temp is below the
+setpoint ... whenever you see the radiator increasing in temp, you can start
+thinking about switching it off, but never before". Spec §5/§6 rewritten
+(`e47f2d1`), implemented in `1a58fb1`, card 0.3.40 (`bbf839f`).
+
+- A run's episode opens on relay-close (or request rising above the room for a
+  device without hvac_action) and writes NOTHING.
+- Gate: radiator ≥ its lowest reading in the run + `RAD_RISE` (1.0 °C). A
+  radiator still warm from the last run is not evidence about this one.
+- Cut when `room + c * max(0, radiator - room) >= requested`; the hold is
+  `room - HOLD_MARGIN` (0.5), clamped to the device range and never above the
+  request. Released the moment the prediction falls short (rule 1), or with
+  the coast.
+- `c` is measured per run at whichever cutoff happened (correction's or the
+  node's own relay-open) as `(coast peak - room at cut) / lead at cut`,
+  smoothed with GAIN 0.5, clamped [0, C_MAX 0.2]. Observe-only converges on it
+  (mutation-tested: the old integrate-the-error rule fails the test). The
+  first live run gives c ≈ 0.018.
+- New KV key `overshoot_c:<climate>`; the old `overshoot_k:` ({base, slope})
+  is ignored, not deleted. The coast's peak restarts at the cutoff.
+- No radiator reading → never cuts (no evidence). thermostat.lua reads the
+  radiator its zones already list for valve_watch.
+- Found while doing it: enhanced_climate.lua never abandoned a live episode at
+  load (thermostat.lua always did; the v4.11 port missed it). Fixed on its own
+  in `2039a49`, before the redesign, since a hold must not outlive a restart.
+- New discard reasons: `no_radiator`, `radiator_cold` (lead < MIN_LEAD 3 °C);
+  `rise_too_small` is gone.
+
+Same day, at the user's request or with their go-ahead:
+- Children's room switched back to observe-only at ~08:30 local (it was
+  cancelling runs); all four climates now observe-only.
+- `/config/esphome/konyha.yaml`: heat_deadband/heat_overrun 0/0 on nappali,
+  gyerekszoba, háló (fürdő already was), committed in the esphome repo as
+  `a31d8aa` authored as the user. NOT FLASHED — the user flashes from the
+  ESPHome dashboard.
+- Heating-season automation: the recorder (read with sqlite3 installed
+  ephemerally in the SSH add-on; automation runs are excluded from the
+  recorder, but climate mode changes carry a context) showed it switched ON
+  Tue Sep 22 16:56 (24 h mean 14.49) and OFF Sat Sep 26 23:51 (17.01, twice
+  in 16 s as the mean jittered across 17.00); the user then flipped zones by
+  hand eleven times on Sunday. 14/17 would have skipped the ON but not the
+  OFF. The helper uses `mean` (sample mean), 0.1–0.4° above a time-weighted
+  mean — minor. The real problem is timing: a rolling 24 h mean crosses at any
+  hour, and it switched heating off just before an 11° night. Proposed to the
+  user, not done: turn on as soon as the mean drops below 14, but only switch
+  off at a fixed daytime hour.
+
 ## Pending
-- **Decision:** the redesign above. Until then the children's room must stay in
-  observe-only, and the observe-only coefficients are meaningless.
-- **Unreleased:** `e12fd8e` (journal `heated`), `5ee170d` (coast end). The
-  deployed box runs v4.13.0 scripts.
+- **Release + deploy**, when asked: re-copy `enhanced_climate.lua`,
+  `enhanced_climate.html`, `thermostat.lua`, `thermostat.html`,
+  `lib/overshoot.lua`, `lib/zones.lua` into `/config/ha-lua/scripts/`, then
+  restart (lib/ is not watched; the card needs the new image).
+- **Flash konyha.yaml** (user).
+- Then watch the journal's would-cut rows in observe-only before arming.
+- The heating-season automation's switch-off timing — the user's call.
 - **Deploy.** The scripts on the box are hand-copied into
   `/config/ha-lua/scripts/`, and were byte-identical to the bundled examples, so
   none of this reaches the children's room until they are re-copied. The card
