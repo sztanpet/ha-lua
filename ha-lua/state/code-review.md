@@ -426,3 +426,248 @@ surface were raised and deliberately left. Released as v4.10.0 on 2026-09-25
 raise from a callback, which is a visible Lua API behaviour change — a script
 that did it kept working before, badly. Not major: the only scripts affected
 were leaking a timer per call.
+
+# Round 5 — enhanced climate + overshoot review (2026-09-28)
+
+Prompted by "review the enhanced-climate card and its functionality with
+special attention for the overshoot protection, is the code fit for purpose".
+Scope: `cards/enhanced-climate-card.js`, `examples/enhanced_climate.lua` and
+`.html`, `lib/{overshoot,control,climate,schedule,card}.lua`, both specs,
+checked against the live box. Verdict: the card and the observe-only learner are
+fit; the armed correction and the controller under it are not.
+
+STATUS: PLANNED on 2026-09-28, nothing executed. The user asked for the plan
+"for later execution".
+
+How it was checked, so the next round does not redo it:
+- Box scripts byte-identical to HEAD `9a98e51`, card 0.3.40 materialized.
+  `go test -race ./...` green; the chromedp card tests run, not skip.
+- Recorder history Sep 22–28 for the three radiator zones replayed through the
+  real `lib/overshoot.lua` from a scratch gopher-lua harness that steps it the
+  way `overshoot_step` does (1-min tick, relay close, window change). Only the
+  children's room produces runs; the other two sit above their setpoints
+  outside boosts. The approach is in the `childrens-room-instrumentation`
+  memory.
+- Every finding below was reproduced by a scratch test against the real
+  `enhanced_climate.lua` in a copy of the repo. Those tests were ephemeral; the
+  plan describes each scenario, and each regression test must fail on the
+  current code before its fix goes in.
+
+## Findings
+
+1. **The overshoot hold outlives a room that has turned below the request —
+   rule 1.** `lib/overshoot.lua:203` releases only when `room + c·lead <
+   request`, but c is calibrated at the cut: once the room has peaked there is
+   no rise left, yet `c·lead` still adds one. Scratch: cut at 23.3 (lead 9.4,
+   c 0.02), peak 23.4, back to 23.3 with the radiator at 36 → still holding
+   (predicted 23.55). The heat stays off below the setpoint until the radiator
+   is within 0.1/c of the room, the room reads 0.2 under its peak, or 90 min
+   pass. The better a cut lands, the more often this bites.
+2. **c = 0 cuts at the setpoint on the 0/0 node.** Since the 2026-09-28 flash
+   the node heats while room ≤ setpoint, so a run often starts with the reading
+   exactly at the request, where `predicted >= requested - EPSILON`
+   (`lib/overshoot.lua:176`) already holds: the first tick after the radiator
+   gains RAD_RISE writes the hold (scratch: c 0, room = request, radiator +1.1 →
+   22.9 written). The node itself stops only at room > request, so spec §5's
+   "c = 0 never cuts before the node" is false.
+3. **The room sensor is too coarse for the learner.** `sensor.temp8_temperature`
+   (HOBEIAN ZG-227Z via Z2M) reports only when it moves ≥0.2 °C; a 0.1 change
+   waits for its ~55-min heartbeat (178 of 231 reports this week were 0.2
+   steps, median gap 33 min). A coast peak under 0.2 is invisible: the replay's
+   one c_obs of 0.00 (09-26 10:10) is a cut at 23.6 followed by 55 min of
+   silence. The ESP thresholds on the same signal.
+4. **One-step dial changes are swallowed.** `lib/control.lua:26` counts
+   `|target − written| <= 0.1` as our own write while the device step is 0.1,
+   so float rounding decides: |23.3 − 23.4| = 0.0999… → "ours" → the next tick
+   writes 23.4 back. 64 of the 150 setpoints 15.0–29.9 swallow a +0.1 tap, 65 a
+   −0.1 one, 23.4 → 23.3 among them. Seen live 2026-09-27 06:23:42: the card
+   took the device 23.6 → 23.7, the request stayed 23.6, the tick wrote 23.6
+   back at 06:24:19.
+5. **Frost, or an overshoot hold, is latched as a 24 h dial hold after heating
+   goes off and on.** `enhanced_climate.lua:525` stores the request as
+   `written` in every mode, though nothing is written outside heat. Window open
+   (15 on the device) → mode off → window closed while off → mode heat: 15 ≠
+   `written` → manual hold at 15. The 10:00 switch-off during morning airing is
+   this sequence; an armed hold on the device at 10:00 goes the same way.
+6. **A boost puts our own frost or hold back.** The override handler deletes
+   the manual hold (`:766`) and snapshots the device setpoint as the way back
+   (`:759`). With frost or a hold on the device at that moment, the boost's end
+   — nothing left under it — writes 15° or 22.8° back.
+7. **A schedule-less climate drops out of control 24 h after a dial change**
+   (`:584`). The children's room has no schedule; its hold from 2026-09-27
+   18:11 expires 2026-09-28 18:11. From then `desired()` is nil: no control, no
+   window pause, no episodes, and a frost or hold on the device at that moment
+   stays for good (scratch: both reproduced). After every boost on it too — the
+   companion history shows `30 → off` until the user re-nudged.
+8. Minor: `enhanced_climate.html:235` prints "undefined window sensor(s)" when
+   the list arrives as `{}` (fürdő). "Reset learning" wipes c and the whole
+   journal on one tap, card and page. The card says "overshoot idle" on a
+   climate with no radiator sensor, where the correction can never act.
+
+## Fix plan
+
+Decided with the user 2026-09-28: a dial change on a schedule-less climate
+holds until replaced (finding 7). Not a schedule entry, which would revert every
+dial change at midnight.
+
+One commit per step, each green on `make test`; `make check` before the round
+is declared done. Mark steps `[DONE <hash>]` as they land, like rounds 1–4. The
+controller goes first, because those bugs bite while the correction is still
+observe-only.
+
+- **A1** `climate: take a one-step dial change as manual`. In
+  `lib/control.lua` `is_manual`, `<= 0.1` becomes `< 0.075`: a write the
+  device rounded lands at most 0.05 off, a dial change at least 0.1, and 0.075
+  clears float error both ways. The existing assertions still hold (21.05 vs 21
+  is ours, 21.2 is manual). Add the trap pairs to `TestControlPureLib`
+  (23.3/23.4, 22.8/22.9, 23.7/23.6, 23.5/23.4 all manual), plus an
+  enhanced-climate test: schedule 23.4, device → 23.3 gives a manual hold at
+  23.3 and no 23.4 written back. `thermostat.lua` shares the helper, so run its
+  tests. Amend enhanced-climate-spec §7 item 2 (">0.1").
+- **A2** `climate: record only the setpoints actually written`. In
+  `apply_climate`, set `written` inside the heat branch only; outside heat, seed
+  it from the device's setpoint when it is unset (first configure while off),
+  so the first heat event is not a dial change. The handler also re-applies at
+  once when a climate enters heat (`old_state.state ~= "heat"`), not up to a
+  tick later. The fixture's `pushClimate` hard-codes heat on both sides, so it
+  needs a mode-aware helper.
+  - Test: frost 15 → off → window closed → heat gives no manual hold and the
+    request is written.
+  - Test: a setpoint changed while off IS a manual hold after heat returns, as
+    the user did on 2026-09-27 16:11. This guards against over-fixing.
+  - `thermostat.lua:291` has the same pattern. It is not live; fix it in its
+    own commit or leave it with a note.
+- **A3** `climate: keep the dial hold under a boost`. Drop
+  `store.delete(manual_key(climate))` from the override handler: the boost
+  already outranks the hold in `control.desired`, and when it ends the hold
+  takes back over. That fixes finding 6 for every controlled climate. The
+  device snapshot is then only used on an uncontrolled climate, where its value
+  is the user's own.
+  - Test: hold 21, window open (frost 15), boost, window closed, boost ends →
+    21 written, not 15. Existing restore tests use uncontrolled climates and
+    must stay green.
+  - Behaviour change to note in the CHANGELOG: after a boost, a scheduled
+    climate returns to a still-valid dial hold rather than the schedule.
+  - With the hold alive, the card shows the held badge during a boost. Check
+    that it reads sensibly beside the countdown.
+- **A4** `climate: hold a dial change until replaced without a schedule`.
+  - A climate has no schedule when `schedule.resolve` yields no temperature
+    (every day empty).
+  - `manual_change` stores such a hold without `expires`, and `active_manual`
+    treats it as live. A stored `expires` is ignored while there is no
+    schedule, which also covers holds written before this change.
+  - The `schedule` command bounds any existing hold to the new schedule's next
+    transition, or unbounds it when the new schedule is empty.
+  - `remove_climate` also drops `manual:`, so an unbounded hold cannot come
+    back with a re-added climate.
+  - The card needs no change: without `until` there is no held badge.
+  - Tests: an unbounded hold is created; an expired `expires` still controls a
+    schedule-less climate; saving a schedule bounds the hold; remove drops it.
+  - Amend spec §7 item 2 and §9, and check DOCS.md for "until the next
+    transition".
+  - Add a Key decision to AI.state with the why: without it, a schedule-less
+    room loses control 24 h after each dial change, and the window pause and
+    the learner go with it.
+- **B1** `overshoot: release the hold once the room turns below the request`.
+  - In the coast branch, also release when `room < requested - EPSILON and room
+    < peak - EPSILON`; the peak restarted at the cut, so this is a visible
+    fall.
+  - Record `released_by` ("predicted" / "turned") in the episode and
+    `record()`, and log which one.
+  - A room sitting flat at its cut reading keeps the hold, because the stored
+    heat has not landed yet.
+  - Pure-lib tests: turned-below releases with `released_by` "turned";
+    flat-at-cut keeps holding.
+  - Controller test: the finding-1 scenario writes the request back when the
+    room turns.
+  - Existing tests are unaffected: `run` and `early` still pass, and the
+    Cuts-on-evidence test releases on "predicted".
+  - Amend spec §5 (release rule), §9.1 (`released_by`) and §9.3 (log line).
+  - A turned release also leaves the learner the full peak rather than a
+    truncated one.
+- **B2** `overshoot: cut only when the prediction overshoots`.
+  - Line 176 becomes `predicted > episode.requested + EPSILON`, and the
+    observe-only would-cut uses the same line. The hold keeps releasing on `<`,
+    so a predicted exact landing stays held.
+  - Fix the `EPSILON` comment and `learned_c`'s comment in
+    `enhanced_climate.lua`.
+  - Replace the pure-lib "c=0 cuts at the request" case: at room = request, no
+    cut; past the request with the relay still reported on, cut.
+  - Controller test: c 0, relay closes at the request, radiator warms → no
+    write.
+  - Amend the spec §5 c = 0 paragraph.
+- **C1** `climate: count window sensors from an empty list` —
+  `enhanced_climate.html:235` guarded with `Array.isArray`. There is no page
+  test, so model one on `thermostat_ui_test.go` if it is cheap, otherwise check
+  it in headless Chromium.
+- **C2** `card: ask before resetting the overshoot learning`.
+  - Use `window.confirm` (the card already uses `window.prompt`), with
+    translated en/hu text. Do the same on the Ingress page's reset.
+  - Bump VERSION to 0.3.41.
+  - Test with `window.confirm` stubbed false → no command, true → the reset
+    command. No card test clicks reset today.
+- **C3** (optional) `card: say when there is no radiator to act on` — a
+  status label in place of "overshoot idle" when `radiator_entity` is unset.
+  Bump VERSION again.
+- **D1** (box, with the user's go-ahead at execution time): in the Z2M
+  frontend, temp8 → Reporting → msTemperatureMeasurement, set min 10 s, max
+  300 s, change 10 (0.1 °C). It costs battery. A day later, confirm in the
+  recorder that 0.1 steps arrive within minutes. If the firmware ignores it,
+  the options are the pvxx ZigbeeTLc firmware (Z2M model `ZG-227Z-z`, which
+  has a measurement interval) or another sensor.
+- **E** Release v4.15.0 when the user asks. It is MINOR: dial-hold semantics
+  change for schedule-less climates and under boosts.
+  - Deploy: new add-on image (card), re-copy `enhanced_climate.lua`, `.html`,
+    `lib/control.lua` and `lib/overshoot.lua` into `/config/ha-lua/scripts/`,
+    then restart, because `lib/` is not watched.
+  - Then set the children's room temperature once from the card; its last hold
+    expires 2026-09-28 18:11, and until the next dial change nothing controls it.
+  - Watch observe-only runs. The replay puts c near 0.02.
+  - Arming stays the user's call.
+
+## Expect once armed (from the replay — not bugs)
+
+- Runs that start 0.1–0.2 below the request get cut 1–3 ticks after the
+  radiator starts rising. The replay puts the would-cut at 7–11 min into runs
+  the node ran for 12–22 min, with the radiator 7–14 °C above the room
+  instead of 21–26.
+- A run that starts with the reading exactly at the request is cut at the
+  first warming tick: a ~5–6 min relay pulse, usually with under 3 °C of lead,
+  so it is journaled `radiator_cold` with a warn. That is expected, not a
+  learner failure.
+- c measured at armed cuts will sit above observe-only's 0.02: the actuator
+  keeps heating ~3 min after the relay opens, whatever the lead. It climbs until
+  cuts land under MIN_LEAD, where discards stop it. That is bounded, not a
+  runaway.
+- Until D1, peaks move in 0.2 steps, and a landed cut often reads as no rise.
+- In the journal, watch `released_by`, the lowest reading before the next run
+  (no more than a sensor step under the request) and relay cycles per hour.
+
+## Deferred (with the reason)
+
+- **Put the request back when control lapses with our frost or hold on the
+  device.** After A3 and A4 the only paths left are a schedule cleared, or a
+  climate removed, while a window is open or a hold is in force. Do it if it
+  ever shows up.
+- **Stale echo guard.** A late state still carrying a setpoint we just replaced
+  would read as a dial change. The ESP published once on off→heat in the
+  recorder, so this has not been seen.
+- **Tuning, only if armed data asks:** cut on radiator updates instead of the
+  minute tick (the radiator climbs 3–4 °C/min there); a lower GAIN (per-run c
+  swings 0.00–0.04); requiring MIN_LEAD before an armed cut, if pulses and
+  discards dominate.
+
+## Checked and NOT changed (don't re-derive)
+
+- Card: the configure fire-once Set keyed `entity|hash`, the preview guard, and
+  the stepper echo plus debounce. Finding 4 is the daemon's tolerance, not the
+  card.
+- Observe-only learning converges on real runs: c 0.0205 from 8 runs, per-run
+  0.00–0.04, matching the first live 0.018. The v4.13 open-loop drift is gone.
+- MIN_LEAD discards remove the high-c samples of early cuts, so they bias c
+  down and bound the armed learner. They are a brake, not a bug.
+- Load-time abandonment, first-reason-wins, journal ring, reset and observe
+  paths, and invalidation on window, mode and setpoint changes.
+- The radiator sensor updates every 60 s at 1/64 °C, which is fine. The IKEA
+  window contacts bounce off/on within 1 s, costing one extra write pair: the
+  correct reaction to what the sensor said.

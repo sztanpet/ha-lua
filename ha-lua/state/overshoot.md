@@ -463,12 +463,17 @@ Same day, at the user's request or with their go-ahead:
   06:22 with the mean at ~17.2, which suggests 17 is low for this house.
 
 ## Pending
-- **Deploy v4.14.0** (user): update the add-on (card 0.3.40), re-copy
-  `enhanced_climate.lua` and `thermostat.lua` (the run-counter key changed),
-  and RESTART — a hot reload of the scripts does not pick up lib/ changes. The
-  user deployed the redesign's scripts by hand before this release with a hot
-  reload only; I forced a second reload at 09:40 by rewriting the two scripts
-  unchanged, so the new lib was loaded for certain.
+- **Before arming: round 5's B1 and B2** (`state/code-review.md`, "Round 5").
+  First, the hold outlives a room that has turned below the request, which
+  breaks rule 1: the release test extrapolates `c·lead` past the peak. Second,
+  c = 0 cuts at the setpoint on the 0/0 node, because the cut test is `>=`. D1
+  there is the room sensor, which reports only ≥0.2 °C moves or an hourly
+  heartbeat, so a peak under 0.2 is invisible to the learner. Round 5's A steps
+  fix the controller under the learner, and A4 matters here: a schedule-less
+  room, the children's room included, stops opening episodes 24 h after each
+  dial change.
+- DONE (verified 2026-09-28): v4.14.0 deployed. Card 0.3.40 materialized, and
+  the box's scripts and libs byte-identical to HEAD `9a98e51`.
 - DONE: konyha.yaml flashed (firmware built 08:49:30, after the edit).
 - DONE: the heating-season automation uses `sensor.kinti_3_napos_atlag`, a UI
   statistics helper the user created (average_step, 72 h; matched an
@@ -492,8 +497,10 @@ Same day, at the user's request or with their go-ahead:
 - ~~Field data, then arm.~~ WRONG ADVICE, given 2026-09-26: observe-only cannot
   converge (open loop), and the cycle correction cannot work on this node. The
   user followed it and armed on Sunday. See the section above.
-- The 23.7 manual hold from 18:37 pins the room until it expires (no
-  schedule → 24h); the user was told.
+- The children's room's last dial hold (23.4, from 2026-09-27 18:11) expires
+  2026-09-28 18:11. With no schedule, nothing controls the room after that and
+  no episodes open until the next dial change. Round 5's A4 makes such holds last
+  until replaced.
 - Still open: the "no episodes in N days" warning. A discard is journaled with a
   reason, but an episode that never OPENS leaves no trace — which is the failure
   that actually happened here.

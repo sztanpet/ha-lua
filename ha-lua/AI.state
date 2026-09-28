@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-26
+Last updated: 2026-09-28
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Everything that can be
@@ -10,15 +10,16 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v4.14.0: the overshoot correction rebuilt to the user's rules — heat on
-demand, cut on evidence** (detail: `state/overshoot.md`, "The redesign").
-Heating always starts the moment the room is below the setpoint; a run is cut
-only after the radiator has been seen warming, when `room + c * lead` reaches
-the request, with the hold released the moment the stored heat falls short.
-`c` is measured per run, so observe-only converges. All climates observe-only.
-On the box: `konyha.yaml` 0/0 flashed; the heating-season automation switches
-on below 14 and off only at 10:00 above 17, both on a 72 h time-weighted
-helper. Deploy of v4.14.0 pending on the user.
+**Round 5 review — enhanced climate + overshoot: PLANNED, not started**
+(detail and the step-by-step fix plan: `state/code-review.md`, "Round 5"). The
+card and the observe-only learner are fit; replayed recorder runs converge c to
+~0.02. Not fit to arm: the hold outlives a room that has turned below the
+request (rule 1), and c = 0 cuts at the setpoint on the 0/0 node. The controller
+under it swallows one-step dial taps, latches frost as a dial hold after heating
+goes off and on, lets a boost put back our own frost, and drops a schedule-less
+climate out of control 24 h after a dial change. The user chose "hold until
+replaced" for that last one. The children's room sensor reports only ≥0.2 °C
+moves. v4.14.0 is deployed; everything stays observe-only.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -32,7 +33,8 @@ helper. Deploy of v4.14.0 pending on the user.
 - `state/ui-shell.md` — `/s/<id>/` namespaces, tab bar, debug page, web shell.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
-- `state/code-review.md` — review rounds 1 (v2.8.9) and 2 (v3.2.2), both CLOSED.
+- `state/code-review.md` — review rounds 1–4 CLOSED; round 5 (enhanced climate +
+  overshoot, 2026-09-28) PLANNED with its fix plan.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). COMPLETE.
 - `state/overshoot.md` — learned heating early-cutoff (overshoot-spec.md).
 - (sse-spec.md has no implementation and no state file.)

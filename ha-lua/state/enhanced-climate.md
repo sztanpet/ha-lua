@@ -6,7 +6,16 @@ transport, the `enhanced_climate.lua` example, and the bundled Lovelace card
 decisions live in `../AI.state`.
 
 Status: **track COMPLETE, released v2.7.0; card iterated through v2.9.1.**
-Current card VERSION **0.3.31**.
+Current card VERSION **0.3.40**. The overshoot port's card work (0.3.34–0.3.40)
+is recorded in `state/overshoot.md`.
+
+**Round 5 review (2026-09-28): controller fixes PLANNED** — see
+`state/code-review.md`, "Round 5", steps A1–A4 and C1–C3. Four confirmed
+bugs:
+- one-step dial taps are swallowed by `is_manual`'s `<= 0.1`;
+- frost is latched as a dial hold after heating goes off and on;
+- a boost puts back our own frost or hold;
+- a schedule-less climate drops out of control 24 h after a dial change.
 
 ## Boost expiry: two bugs, one symptom (6a06f3e, 7ea6a0c)
 Field report: a timed override to 30° for 10 minutes never ended — the dial
