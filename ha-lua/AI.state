@@ -10,15 +10,15 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Overshoot correction redesigned to the user's rules: heat on demand, cut on
-evidence** (detail: `state/overshoot.md`, "The redesign"). Heating always
-starts the moment the room is below the setpoint; a run is cut only after the
-radiator has been seen warming, when `room + c * lead` reaches the request,
-with a hold released the moment the stored heat falls short. `c` is measured
-per run, so observe-only now converges. Spec `e47f2d1`, restart fix `2039a49`,
-model `1a58fb1`, card 0.3.40 `bbf839f`. NOT RELEASED. On the box: all climates
-observe-only, `konyha.yaml` zeroed but not flashed, heating-season automation
-on the moment the 24 h mean drops below 14, off only at 10:00 if above 17.
+**v4.14.0: the overshoot correction rebuilt to the user's rules — heat on
+demand, cut on evidence** (detail: `state/overshoot.md`, "The redesign").
+Heating always starts the moment the room is below the setpoint; a run is cut
+only after the radiator has been seen warming, when `room + c * lead` reaches
+the request, with the hold released the moment the stored heat falls short.
+`c` is measured per run, so observe-only converges. All climates observe-only.
+On the box: `konyha.yaml` 0/0 flashed; the heating-season automation switches
+on below 14 and off only at 10:00 above 17, both on a 72 h time-weighted
+helper. Deploy of v4.14.0 pending on the user.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

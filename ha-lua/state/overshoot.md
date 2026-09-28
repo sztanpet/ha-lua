@@ -278,7 +278,9 @@ weather compensation, which would correlate them. The journal will show it.
 ## Released
 v4.11.0 (`c0d46a8`) carries the whole port; v4.12.0 (`655335a`) adds the coast
 decay curve; v4.12.1 (`c05cd5d`) fixes the stepper lag the port introduced;
-v4.13.0 adds the relay trigger and the floor term.
+v4.13.0 adds the relay trigger and the floor term; v4.14.0 (`9a82774`) is the
+radiator-gated redesign ("heat on demand, cut on evidence"), the coast-end
+rules, the load-time abandonment fix and the fresh run counter.
 What shipped is in `CHANGELOG.md`; not repeated here.
 
 The decay work answers the user's 2026-09-26 question about measuring heat-up
@@ -461,11 +463,19 @@ Same day, at the user's request or with their go-ahead:
   06:22 with the mean at ~17.2, which suggests 17 is low for this house.
 
 ## Pending
-- **Release + deploy**, when asked: re-copy `enhanced_climate.lua`,
-  `enhanced_climate.html`, `thermostat.lua`, `thermostat.html`,
-  `lib/overshoot.lua`, `lib/zones.lua` into `/config/ha-lua/scripts/`, then
-  restart (lib/ is not watched; the card needs the new image).
-- **Flash konyha.yaml** (user).
+- **Deploy v4.14.0** (user): update the add-on (card 0.3.40), re-copy
+  `enhanced_climate.lua` and `thermostat.lua` (the run-counter key changed),
+  and RESTART — a hot reload of the scripts does not pick up lib/ changes. The
+  user deployed the redesign's scripts by hand before this release with a hot
+  reload only; I forced a second reload at 09:40 by rewriting the two scripts
+  unchanged, so the new lib was loaded for certain.
+- DONE: konyha.yaml flashed (firmware built 08:49:30, after the edit).
+- DONE: the heating-season automation uses `sensor.kinti_3_napos_atlag`, a UI
+  statistics helper the user created (average_step, 72 h; matched an
+  independent computation 16.95 vs 16.96). Paused 09:42 → ~11:45 so the 10:00
+  check would not switch off on the 24 h mean the user was replacing.
+- Open question to the user: "Fürdő fűtés reggelente" still conditions the
+  morning bathroom boost on the 24 h mean < 17.
 - Then watch the journal's would-cut rows in observe-only before arming.
 - Whether 17 is the right switch-off threshold (see the Sunday note above).
 - **Deploy.** The scripts on the box are hand-copied into
