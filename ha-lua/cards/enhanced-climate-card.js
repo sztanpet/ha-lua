@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.39";
+const VERSION = "0.3.40";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -88,15 +88,15 @@ const MESSAGES = {
     "window.open": "window open",
     "window.closed": "window closed",
     "radiator": "rad. {temp}°",
-    "overshoot.cutting": "cutting {offset}°",
-    "overshoot.would_cut": "would cut {offset}°",
+    "overshoot.holding": "stopped early",
+    "overshoot.would_hold": "would stop early",
     "overshoot.idle": "overshoot idle",
     "overshoot.title": "Overshoot correction",
     "overshoot.commanded": "Commanded {temp}° for a request of {requested}°",
-    "overshoot.learned": "cuts {base}° plus {slope}° per degree of rise, learned over {samples} episode(s)",
-    "overshoot.unlearned": "nothing learned yet, so no correction is applied",
+    "overshoot.learned": "+{per10}° per 10° of radiator after the heat stops, learned over {samples} run(s)",
+    "overshoot.unlearned": "nothing learned yet, so it stops no earlier than the thermostat would",
     "overshoot.observing": "Observing only — the heating is not being changed.",
-    "overshoot.acting": "Active — warmups are being cut short.",
+    "overshoot.acting": "Active — a run is stopped early once the radiator holds enough heat to finish it.",
     "overshoot.arm": "Apply the correction",
     "overshoot.disarm": "Observe only",
     "overshoot.reset": "Reset learning",
@@ -155,15 +155,15 @@ const MESSAGES = {
     "window.open": "ablak nyitva",
     "window.closed": "ablak zárva",
     "radiator": "rad. {temp}°",
-    "overshoot.cutting": "{offset}°-kal korábban áll le",
-    "overshoot.would_cut": "{offset}°-kal korábban állna le",
+    "overshoot.holding": "korábban leállítva",
+    "overshoot.would_hold": "korábban leállítaná",
     "overshoot.idle": "túlfutás-korrekció tétlen",
     "overshoot.title": "Túlfutás-korrekció",
     "overshoot.commanded": "{requested}° kérésre {temp}°-ot vezérel",
-    "overshoot.learned": "{base}°-kal plusz felfűtési fokonként {slope}°-kal korábban áll le, {samples} fűtésből tanulva",
-    "overshoot.unlearned": "még nincs mit tanulni, ezért nincs korrekció",
+    "overshoot.learned": "10° radiátortöbblet +{per10}° a fűtés leállása után, {samples} fűtésből tanulva",
+    "overshoot.unlearned": "még nem tanult semmit, ezért nem állít le korábban a termosztátnál",
     "overshoot.observing": "Csak megfigyel — a fűtést nem változtatja.",
-    "overshoot.acting": "Aktív — a felfűtéseket korábban állítja le.",
+    "overshoot.acting": "Aktív — leállítja a fűtést, amint a radiátorban elég hő van a befejezéshez.",
     "overshoot.arm": "Korrekció bekapcsolása",
     "overshoot.disarm": "Csak megfigyelés",
     "overshoot.reset": "Tanulás törlése",
@@ -865,14 +865,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     // the primary number; showing 19.8 where somebody set 21 reads as a bug.
     const overshoot = companionAttrs && companionAttrs.overshoot;
     if (overshoot) {
-      const offset = Number(overshoot.offset);
-      const cutting = Number.isFinite(offset) && offset > 0;
       let label = translate("overshoot.idle");
-      if (cutting) {
-        const shown = Math.round(offset * 100) / 100;
-        label = translate(overshoot.observe_only ? "overshoot.would_cut" : "overshoot.cutting",
-          { offset: shown });
-      }
+      if (overshoot.holding) label = translate("overshoot.holding");
+      else if (overshoot.would_hold) label = translate("overshoot.would_hold");
       subtitle.append(h("span", { class: "divider", "aria-hidden": "true" }));
       subtitle.append(h("button", {
         class: "overshoot", type: "button",
@@ -1097,13 +1092,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       note.append(h("div", { class: "row" },
         translate("overshoot.commanded", { temp: commanded, requested: requested })));
     }
-    // {base, slope}: the floor every run gets, plus the part per degree of rise
-    // that a long warmup adds.
-    const coeff = overshoot.k && typeof overshoot.k === "object" ? overshoot.k : {};
+    // c per 10° of radiator lead: 0.018 is unreadable, "+0.18° per 10°" is not.
     note.append(h("div", { class: "row" }, samples > 0
       ? translate("overshoot.learned", {
-        base: Math.round((Number(coeff.base) || 0) * 100) / 100,
-        slope: Math.round((Number(coeff.slope) || 0) * 100) / 100,
+        per10: Math.round((Number(overshoot.c) || 0) * 1000) / 100,
         samples: samples,
       })
       : translate("overshoot.unlearned")));

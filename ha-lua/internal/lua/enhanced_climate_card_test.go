@@ -52,7 +52,7 @@ const cardStates = `{
     "attributes": { "controlled": true, "override": { "active": false }, "override_temp": 23,
       "manual": { "active": false }, "window": { "sensors": ["binary_sensor.w1"], "open": false },
       "presets": [10, 30, 60], "min_temp": 7, "max_temp": 30, "schedule": {},
-      "commanded": 20, "overshoot": { "k": { "base": 0.8, "slope": 0.15 }, "samples": 6, "offset": 1.2, "observe_only": true } } }
+      "commanded": 20, "overshoot": { "c": 0.018, "samples": 6, "holding": false, "would_hold": true, "observe_only": true } } }
 }`
 
 func serveEnhancedCard(t *testing.T) *httptest.Server {
@@ -478,8 +478,8 @@ func TestEnhancedClimateCardOvershootDisclosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Observing, so the segment says what it WOULD do rather than claiming it did.
-	if segment != "would cut 1.2°" {
-		t.Errorf("segment = %q, want %q", segment, "would cut 1.2°")
+	if segment != "would stop early" {
+		t.Errorf("segment = %q, want %q", segment, "would stop early")
 	}
 	if noteBefore != "absent" {
 		t.Error("the overshoot panel is visible without a tap; it must be a disclosure")
@@ -495,7 +495,7 @@ func TestEnhancedClimateCardOvershootDisclosure(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Commanded 20° for a request of 21°", "cuts 0.8° plus 0.15° per degree of rise, learned over 6 episode(s)", "Observing only"} {
+	for _, want := range []string{"Commanded 20° for a request of 21°", "+0.18° per 10° of radiator after the heat stops, learned over 6 run(s)", "Observing only"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("panel missing %q; panel = %q", want, note)
 		}
@@ -612,6 +612,35 @@ func TestEnhancedClimateCardStepperEcho(t *testing.T) {
 	}
 	if echoLeft != 0 {
 		t.Errorf("%d echo entries left after the source caught up; want 0", echoLeft)
+	}
+}
+
+// TestEnhancedClimateCardOvershootHolding: an armed cut in force reads as
+// "stopped early" on the status line, while the stepper keeps showing the
+// request — the hold is the controller's business, not a new setpoint.
+func TestEnhancedClimateCardOvershootHolding(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	holding := strings.Replace(cardStates,
+		`"holding": false, "would_hold": true, "observe_only": true`,
+		`"holding": true, "would_hold": false, "observe_only": false`, 1)
+	var ok bool
+	var segment, target string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`window.__apply("en", `+holding+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".subtitle .overshoot")`, &ok),
+		chromedp.Evaluate(`window.__text(".subtitle .overshoot")`, &segment),
+		chromedp.Evaluate(`window.__val(".stepper .value")`, &target),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if segment != "stopped early" {
+		t.Errorf("segment = %q, want %q", segment, "stopped early")
+	}
+	if target != "21" {
+		t.Errorf("stepper = %q while holding, want the request 21", target)
 	}
 }
 
