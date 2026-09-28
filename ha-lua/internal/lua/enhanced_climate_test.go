@@ -1199,6 +1199,47 @@ func TestEnhancedClimatePageCountsNoWindows(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimatePageResetAsks: the page's reset wipes the same weeks of
+// runs as the card's, so it asks first too.
+func TestEnhancedClimatePageResetAsks(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	f := newEnhancedFixture(t)
+	waitRouteID(t, f.router, "enhanced_climate", "GET", "/api/list")
+	f.seedClimate("climate.lr", `{"friendly_name":"Living Room"}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
+	srv := httptest.NewServer(f.router)
+	t.Cleanup(srv.Close)
+
+	const clickReset = `(() => {
+		window.confirm = () => %v;
+		document.querySelectorAll(".learner button")[1].click();
+		return window.__resets;
+	})()`
+	var ok bool
+	var declined, accepted int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/s/enhanced_climate/"),
+		chromedp.Poll(`document.querySelectorAll(".learner button").length === 2`, &ok),
+		chromedp.Evaluate(`(() => {
+			window.__resets = 0;
+			const fetchReal = window.fetch;
+			window.fetch = (url, opts) => {
+				if (String(url).includes("overshoot/reset")) window.__resets++;
+				return fetchReal(url, opts);
+			};
+			return true;
+		})()`, &ok),
+		chromedp.Evaluate(fmt.Sprintf(clickReset, false), &declined),
+		chromedp.Evaluate(fmt.Sprintf(clickReset, true), &accepted),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if declined != 0 || accepted != 1 {
+		t.Fatalf("resets sent: %d after declining, %d after confirming; want 0 and 1", declined, accepted)
+	}
+}
+
 // TestEnhancedClimateRemovalPage drives the Ingress removal page: /api/list
 // reports the registry, GET / serves the HTML, and POST /api/remove
 // deprovisions a climate (removing its companion) while a bad body is rejected.

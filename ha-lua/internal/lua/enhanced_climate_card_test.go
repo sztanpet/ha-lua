@@ -531,6 +531,35 @@ func TestEnhancedClimateCardOvershootDisclosure(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateCardResetAsks: "Reset learning" wipes c and the whole
+// journal, weeks of runs, so a stray tap must not be enough.
+func TestEnhancedClimateCardResetAsks(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	var ok bool
+	var declined, accepted string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Evaluate(`window.__apply("en", `+cardStates+`)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".subtitle .overshoot")`, &ok),
+		chromedp.Evaluate(`(window.__shadow(".subtitle .overshoot").click(), true)`, &ok),
+		chromedp.Poll(`!!window.__shadow(".overshoot-note")`, &ok),
+		chromedp.Evaluate(`window.confirm = () => false; window.__clickAll(".overshoot-note .btn", 1)`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls)`, &declined),
+		chromedp.Evaluate(`window.confirm = () => true; window.__clickAll(".overshoot-note .btn", 1)`, &ok),
+		chromedp.Evaluate(`JSON.stringify(window.__calls)`, &accepted),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(declined, `"reset":true`) {
+		t.Errorf("a declined confirm still reset; calls = %s", declined)
+	}
+	if !strings.Contains(accepted, `"reset":true`) {
+		t.Errorf("a confirmed reset sent nothing; calls = %s", accepted)
+	}
+}
+
 // TestEnhancedClimateCardStepperEcho covers the two halves of what made setting
 // the setpoint feel laggy once the stepper started rendering the REQUEST (the
 // companion sensor) instead of the device setpoint.

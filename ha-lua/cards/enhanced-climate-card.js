@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.40";
+const VERSION = "0.3.41";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -100,6 +100,7 @@ const MESSAGES = {
     "overshoot.arm": "Apply the correction",
     "overshoot.disarm": "Observe only",
     "overshoot.reset": "Reset learning",
+    "overshoot.reset_confirm": "Forget what was learned about this room and its run journal? Learning starts again from scratch.",
     "schedule": "Schedule",
     "edit_schedule": "Edit",
     "no_schedule": "no schedule set",
@@ -167,6 +168,7 @@ const MESSAGES = {
     "overshoot.arm": "Korrekció bekapcsolása",
     "overshoot.disarm": "Csak megfigyelés",
     "overshoot.reset": "Tanulás törlése",
+    "overshoot.reset_confirm": "Törlöd, amit erről a szobáról tanult, és a fűtési naplóját? A tanulás elölről kezdődik.",
     "schedule": "Ütemezés",
     "edit_schedule": "Szerkesztés",
     "no_schedule": "nincs beállított ütemezés",
@@ -1107,7 +1109,10 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
       }, translate(observing ? "overshoot.arm" : "overshoot.disarm")),
       h("button", {
         class: "btn", type: "button", disabled: pending,
-        onclick: () => this._command("overshoot", { reset: true }),
+        // Weeks of runs go with one tap, so it asks first.
+        onclick: () => {
+          if (window.confirm(translate("overshoot.reset_confirm"))) this._command("overshoot", { reset: true });
+        },
       }, translate("overshoot.reset")),
       pending && h("span", { class: "spinner", role: "progressbar",
         "aria-label": translate("applying") })));

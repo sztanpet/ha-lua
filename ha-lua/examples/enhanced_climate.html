@@ -286,8 +286,10 @@
 
       const reset = document.createElement("button");
       reset.textContent = "Reset learning";
-      reset.onclick = () => post("overshoot/reset",
-        { climate_entity: climate.climate_entity }, reset);
+      reset.onclick = () => {
+        if (!confirm("Forget what was learned about this climate and its run journal? Learning starts again from scratch.")) return;
+        post("overshoot/reset", { climate_entity: climate.climate_entity }, reset);
+      };
       body.appendChild(reset);
       details.appendChild(body);
 
