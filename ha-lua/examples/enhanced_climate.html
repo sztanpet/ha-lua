@@ -232,7 +232,8 @@
         name.textContent = climate.name || climate.climate_entity;
         const sub = document.createElement("span");
         sub.className = "sub";
-        const windowCount = (climate.window_sensors || []).length;
+        // An empty Lua table encodes as {}, not [].
+        const windowCount = Array.isArray(climate.window_sensors) ? climate.window_sensors.length : 0;
         sub.textContent = climate.climate_entity + " · " + windowCount + " window sensor(s)";
         meta.appendChild(name);
         meta.appendChild(sub);

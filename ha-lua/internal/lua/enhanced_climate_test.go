@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chromedp/chromedp"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
@@ -1162,6 +1165,37 @@ func TestEnhancedClimateOvershootDiscardsOnWindow(t *testing.T) {
 		t.Fatalf("read samples: %v", err)
 	} else if got != nil && got != 0.0 {
 		t.Fatalf("samples = %v after a discard, want unset or 0", got)
+	}
+}
+
+// TestEnhancedClimatePageCountsNoWindows: a climate with no window sensors
+// reaches the page as {} (an empty Lua table), whose .length is undefined.
+func TestEnhancedClimatePageCountsNoWindows(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	f := newEnhancedFixture(t)
+	waitRouteID(t, f.router, "enhanced_climate", "GET", "/api/list")
+	f.seedClimate("climate.lr", `{"friendly_name":"Living Room"}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":[]}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.lr"] != nil }, "lr configured")
+	srv := httptest.NewServer(f.router)
+	t.Cleanup(srv.Close)
+
+	var ok bool
+	var got string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/s/enhanced_climate/"),
+		chromedp.Poll(`(() => {
+			const sub = document.querySelector(".climate .sub");
+			if (!sub) return false;
+			window.__sub = sub.textContent;
+			return true;
+		})()`, &ok),
+		chromedp.Evaluate(`window.__sub`, &got),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "0 window sensor(s)") {
+		t.Fatalf("sub line = %q, want 0 window sensor(s)", got)
 	}
 }
 
