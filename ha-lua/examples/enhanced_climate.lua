@@ -521,8 +521,15 @@ local function apply_climate(climate, now, dow, minute)
       elseif control.should_write("heat", false, current, commanded_temp) then
         set_temp(climate, commanded_temp)
       end
+      store.set(written_key(climate), commanded_temp)
+    elseif store.get(written_key(climate)) == nil then
+      -- Nothing is written outside heat, so `written` keeps what the device was
+      -- last told: recording the request here latched our frost or hold as a
+      -- dial change once heat came back. Unset (configured while off), the
+      -- device's own setpoint is the baseline, or heat's first event would read
+      -- as the user.
+      store.set(written_key(climate), current_target(climate))
     end
-    store.set(written_key(climate), commanded_temp)
   else
     -- Nothing is requested any more, so a live episode has no target left to be
     -- judged against.
@@ -608,7 +615,9 @@ ha.on_state_change("climate.*", function(data)
   local old_attrs = data.old_state and data.old_state.attributes or {}
   local relay_closed = new_state.attributes.hvac_action == "heating"
     and old_attrs.hvac_action ~= "heating"
-  if held or relay_closed then
+  -- Nothing is written outside heat, so the request is due the moment it returns.
+  local entered_heat = data.old_state == nil or data.old_state.state ~= "heat"
+  if held or relay_closed or entered_heat then
     apply_climate(climate_entity, now, dow, minute) -- republish at once
   end
 end)

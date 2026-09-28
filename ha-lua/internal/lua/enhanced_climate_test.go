@@ -268,9 +268,15 @@ func (f *enhancedFixture) seedClimate(entity, attrs string) {
 // attribute JSON, since a handler judging a transition needs both sides.
 func (f *enhancedFixture) pushClimate(entity, old, attrs string) {
 	f.t.Helper()
+	f.pushClimateMode(entity, "heat", old, "heat", attrs)
+}
+
+// pushClimateMode is pushClimate across an hvac mode change.
+func (f *enhancedFixture) pushClimateMode(entity, oldMode, old, newMode, attrs string) {
+	f.t.Helper()
 	payload := jsontext.Value(`{"entity_id":"` + entity + `","old_state":{"entity_id":"` + entity +
-		`","state":"heat","attributes":` + old + `},"new_state":{"entity_id":"` + entity +
-		`","state":"heat","attributes":` + attrs + `}}`)
+		`","state":"` + oldMode + `","attributes":` + old + `},"new_state":{"entity_id":"` + entity +
+		`","state":"` + newMode + `","attributes":` + attrs + `}}`)
 	if err := f.tracker.HandleStateChanged(f.ctx, payload); err != nil {
 		f.t.Fatal(err)
 	}
@@ -616,6 +622,68 @@ func TestEnhancedClimateManualOneStep(t *testing.T) {
 	}, "the tick ran")
 	if temps := f.setTemps(); len(temps) != 1 {
 		t.Fatalf("set_temperature %v: the dial step was written back over", temps)
+	}
+}
+
+// TestEnhancedClimateFrostSurvivesModeOff: nothing is written outside heat, so
+// `written` must keep the frost the device was last told. It used to record
+// the request while off, and the frost still on the device then read as a dial
+// change the moment heat came back: window open, heating off, window closed,
+// heating on gave a 24 h hold at 15.
+func TestEnhancedClimateFrostSurvivesModeOff(t *testing.T) {
+	const climateAt = `{"current_temperature":18,"temperature":%v,"min_temp":7,"max_temp":35}`
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", fmt.Sprintf(climateAt, 18))
+	f.setWindow("binary_sensor.w1", "off")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"]}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "schedule 21")
+	f.seedClimate("climate.lr", fmt.Sprintf(climateAt, 21))
+
+	f.setWindow("binary_sensor.w1", "on")
+	f.waitSetTemp(15, "window open -> frost")
+	f.pushClimate("climate.lr", fmt.Sprintf(climateAt, 21), fmt.Sprintf(climateAt, 15))
+	f.pushClimateMode("climate.lr", "heat", fmt.Sprintf(climateAt, 15), "off", fmt.Sprintf(climateAt, 15))
+	f.setWindow("binary_sensor.w1", "off")
+	// The mirror moves at once and the script later, so the close must be
+	// handled while the mirror still says off.
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		window, _ := attrs["window"].(map[string]any)
+		return window["open"] == false
+	}, "the close is handled while off")
+	f.pushClimateMode("climate.lr", "off", fmt.Sprintf(climateAt, 15), "heat", fmt.Sprintf(climateAt, 15))
+
+	f.waitSetTemp(21, "heat back: the request, not a hold at our own frost")
+	if manual := f.storeMap("manual:climate.lr"); manual != nil {
+		t.Fatalf("our frost latched as a dial hold: %+v", manual)
+	}
+}
+
+// TestEnhancedClimateDialWhileOffHolds guards the fix above against going too
+// far: a setpoint the user changes while heating is off is still theirs once
+// heat returns, as on 2026-09-27 at 16:11.
+func TestEnhancedClimateDialWhileOffHolds(t *testing.T) {
+	const climateAt = `{"current_temperature":18,"temperature":%v,"min_temp":7,"max_temp":35}`
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", fmt.Sprintf(climateAt, 18))
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("21")+`}`)
+	f.waitSetTemp(21, "schedule 21")
+
+	f.pushClimateMode("climate.lr", "heat", fmt.Sprintf(climateAt, 21), "off", fmt.Sprintf(climateAt, 21))
+	f.pushClimateMode("climate.lr", "off", fmt.Sprintf(climateAt, 21), "off", fmt.Sprintf(climateAt, 19))
+	f.tickNow("climate.lr")
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		return attrs["override_temp"] == 24.0
+	}, "the tick ran while off")
+	f.pushClimateMode("climate.lr", "off", fmt.Sprintf(climateAt, 19), "heat", fmt.Sprintf(climateAt, 19))
+
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(state string, attrs map[string]any) bool {
+		manual, _ := attrs["manual"].(map[string]any)
+		return state == "19" && manual["active"] == true
+	}, "the dial change made while off is a hold at 19")
+	if temps := f.setTemps(); temps[len(temps)-1] != 21 || len(temps) != 1 {
+		t.Fatalf("set_temperature %v: the dial change was written over", temps)
 	}
 }
 
