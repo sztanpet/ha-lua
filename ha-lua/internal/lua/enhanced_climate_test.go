@@ -1352,6 +1352,36 @@ func TestEnhancedClimateOverrideRestoresSetpoint(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateOverrideKeepsManualHold: a boost does not clear the dial
+// hold under it. Clearing it left the pre-boost snapshot as the only way back,
+// and with a window open that snapshot is our own frost: the boost's end wrote
+// 15 back to a room held at 21.
+func TestEnhancedClimateOverrideKeepsManualHold(t *testing.T) {
+	const climateAt = `{"current_temperature":18,"temperature":%v,"min_temp":7,"max_temp":35}`
+	const companion = "sensor.ha_lua_enhanced_climate_lr"
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", fmt.Sprintf(climateAt, 18))
+	f.setWindow("binary_sensor.w1", "off")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","window_sensors":["binary_sensor.w1"]}`)
+	f.pushClimate("climate.lr", fmt.Sprintf(climateAt, 18), fmt.Sprintf(climateAt, 21))
+	f.waitCompanion(companion, func(state string, _ map[string]any) bool { return state == "21" }, "dial hold at 21")
+
+	f.setWindow("binary_sensor.w1", "on")
+	f.waitSetTemp(15, "window open -> frost")
+	f.pushClimate("climate.lr", fmt.Sprintf(climateAt, 21), fmt.Sprintf(climateAt, 15))
+	f.fireCommand("override", `{"climate_entity":"climate.lr","minutes":10}`)
+	f.waitCompanion(companion, func(_ string, attrs map[string]any) bool {
+		override, _ := attrs["override"].(map[string]any)
+		return override["active"] == true
+	}, "boost under an open window")
+
+	f.setWindow("binary_sensor.w1", "off")
+	f.waitSetTemp(23, "window closed -> the boost")
+	f.pushClimate("climate.lr", fmt.Sprintf(climateAt, 15), fmt.Sprintf(climateAt, 23))
+	f.fireCommand("override", `{"climate_entity":"climate.lr","cancel":true}`)
+	f.waitSetTemp(21, "the boost ends back on the dial hold, not our frost")
+}
+
 // TestEnhancedClimateOverrideKeepsSchedule: with a schedule underneath, the
 // boost ending falls back to the schedule, and the pre-boost snapshot must be
 // dropped rather than fight it.

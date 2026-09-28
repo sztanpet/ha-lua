@@ -763,7 +763,8 @@ card.on("override", function(data)
   else
     if type(data.minutes) ~= "number" or data.minutes <= 0 or data.minutes > 1440 then return end
     -- Once per boost, before it is overwritten: extending a running boost must
-    -- not snapshot the boost temperature as the way back.
+    -- not snapshot the boost temperature as the way back. Only an uncontrolled
+    -- climate falls back on it; a controlled one has its source under the boost.
     if not active_override(climate, now) then
       local current = current_target(climate)
       if type(current) == "number" then store.set(restore_key(climate), current) end
@@ -772,7 +773,9 @@ card.on("override", function(data)
       active = true,
       ends_at = now:add(data.minutes * 60):format(time.RFC3339),
     })
-    store.delete(manual_key(climate)) -- an override outranks and clears any manual hold
+    -- The dial hold stays: the boost outranks it and it takes back over after.
+    -- Deleting it left an uncontrolled climate whose way back was the snapshot,
+    -- and with a window open that snapshot is our own frost.
     -- The tick would notice up to a minute late, which the card shows as a
     -- countdown frozen at 00:00 and a boost that refuses to finish. The tick
     -- stays as the backstop for an ha.after lost to a restart.
