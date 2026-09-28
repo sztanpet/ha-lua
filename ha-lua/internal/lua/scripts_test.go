@@ -265,10 +265,16 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(o.step(lag, 23.3, 150, E(25.5, false)) == "coasting", "relay opened")
 		assert(o.step(lag, 23.3, 210, E(25.4, true)) == "done", "relay closed again: the next run")
 
-		-- c = 0 never cuts before the node would: the prediction is the room.
+		-- c = 0 never cuts before the node would: the prediction is the room, and
+		-- the node heats while the room is AT the setpoint.
 		local zero = o.open(23.4, 23.3, 0, false, 0, E(23.3, true))
 		assert(o.step(zero, 23.3, 60, E(40, true)) == "heating", "c=0: a hot radiator alone is no reason")
-		assert(o.step(zero, 23.4, 120, E(45, true)) == "coasting" and zero.cut_by == "overshoot", "c=0 cuts at the request")
+		assert(o.step(zero, 23.4, 120, E(45, true)) == "heating", "c=0: at the request the node still heats")
+		assert(o.step(zero, 23.5, 180, E(46, true)) == "coasting" and zero.cut_by == "overshoot",
+			"c=0: past the request with the relay still reported on")
+		local landing = o.open(23.4, 23.3, 0.02, false, 0, E(23.3, true))
+		o.step(landing, 23.3, 60, E(25.0, true))
+		assert(o.step(landing, 23.3, 120, E(28.3, true)) == "heating", "predicted exactly 23.4: lands, no cut")
 
 		-- Observe-only records when it would have cut, never holds, and its cutoff is
 		-- always the node's own.

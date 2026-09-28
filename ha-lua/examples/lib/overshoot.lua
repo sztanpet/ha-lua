@@ -13,7 +13,7 @@
 -- the room is below the setpoint; nothing here ever lowers the setpoint before
 -- or at the start of a run. Once the radiator has been SEEN warming, every step
 -- predicts where the room ends up if the heat stops now, `room + c * lead`, and
--- cuts when that reaches the request. `c` — room rise after the heat stops, per
+-- cuts when that passes the request. `c` — room rise after the heat stops, per
 -- degree the radiator is above the room at that moment — is measured on every
 -- run and smoothed.
 
@@ -51,7 +51,8 @@ M.MAX_EPISODE_SECONDS = 4 * 3600
 -- row without bound.
 M.DECAY_MAX_SAMPLES = 100
 
--- Float error only: a prediction computed to exactly the request must count.
+-- Float error only: a value computed to exactly its threshold is judged equal.
+-- A prediction landing exactly on the request is a landing, not an overshoot.
 local EPSILON = 1e-6
 
 local function clamp(value, lo, hi)
@@ -139,7 +140,7 @@ end
 --
 -- While heating, the cut is either the node's own — the relay seen opening, or
 -- for a device that reports no relay, the room past the request — or the
--- correction's, once the radiator is warming and the prediction reaches the
+-- correction's, once the radiator is warming and the prediction passes the
 -- request. Observe-only records when it would have cut and lets the run go on,
 -- so its cutoff is always the node's own.
 --
@@ -174,7 +175,9 @@ function M.step(episode, room, at, env)
     end
     local predicted = nil
     if episode.gate_at ~= nil then predicted = M.predict(episode.c_used, room, radiator) end
-    if predicted ~= nil and predicted >= episode.requested - EPSILON then
+    -- Strictly past: the node heats while the room is AT the setpoint, so with
+    -- c = 0 a run starting at the request would be cut at its first warm tick.
+    if predicted ~= nil and predicted > episode.requested + EPSILON then
       if not episode.observe_only then
         mark_cutoff(episode, "overshoot", room, at, radiator)
         episode.predicted_at_cutoff = predicted

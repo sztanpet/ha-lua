@@ -165,7 +165,7 @@ While the run heats, on every tick:
 radiator_min = lowest radiator reading since the run opened
 warming      = radiator >= radiator_min + RAD_RISE        -- rule 2's gate
 predicted    = room + c * max(0, radiator - room)          -- where the room ends up if the heat stops now
-cut          = warming and predicted >= requested
+cut          = warming and predicted > requested
 ```
 
 On a cut the controller writes a **hold** setpoint, `room - HOLD_MARGIN`
@@ -189,8 +189,11 @@ offset, rise-scaling or floor term is needed. The first live run measured
 `c ≈ 0.018`: a 21.8° lead, 0.4° of coast.
 
 `c` starts at 0. With nothing learned the prediction is the room itself, so
-the earliest possible cut is the moment the room reaches the request — never
-earlier than the node would stop on its own.
+the earliest possible cut is the room passing the request — never earlier than
+the node would stop on its own. The comparison is strict for exactly this: the
+node heats while the room is AT the setpoint, so runs often start with the
+reading on the request, and `>=` cut them at the first warm tick. A predicted
+exact landing is not an overshoot; the hold likewise releases only on `<`.
 
 A run the correction does not cut still ends: the node switches off itself
 once the room passes the request (the relay is seen opening; for a device

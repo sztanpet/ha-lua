@@ -1073,6 +1073,32 @@ func TestEnhancedClimateOvershootReleasesOnTurn(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateOvershootZeroCAtRequest: the node heats while the room is
+// AT the setpoint, so a run often starts with the reading on the request. With
+// c = 0 the prediction is the room, and a ">=" cut wrote the hold at the first
+// warm tick of every such run.
+func TestEnhancedClimateOvershootZeroCAtRequest(t *testing.T) {
+	const atRequest = `{"current_temperature":23.4,"temperature":23.4,"min_temp":7,"max_temp":35,"hvac_action":%q}`
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", fmt.Sprintf(atRequest, "idle"))
+	f.setSensor("sensor.lr_rad", "23.3")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.lr_rad"}`)
+	f.setStore("overshoot_observe:climate.lr", false)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("23.4")+`}`)
+	f.pushClimate("climate.lr", fmt.Sprintf(atRequest, "idle"), fmt.Sprintf(atRequest, "heating"))
+	f.waitEpisode("climate.lr", "the relay closing at the request opens the run")
+
+	f.setSensor("sensor.lr_rad", "25")
+	f.tickNow("climate.lr")
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["gate_at"] != nil }, "seen warming")
+	// FIFO barrier: the write, if any, lands in the same handler as the gate.
+	f.fireCommand("configure", `{"climate_entity":"climate.barrier"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.barrier"] != nil }, "barrier processed")
+	if temps := f.setTemps(); len(temps) != 0 {
+		t.Fatalf("c = 0 cut at the request: set_temperature %v", temps)
+	}
+}
+
 // TestEnhancedClimateOvershootObserveOnlyNeverHolds: observe-only defaults ON
 // (spec §9.4), so the same run with the same c records when it WOULD have cut
 // and writes nothing at all.

@@ -211,7 +211,7 @@ local function observe_key(climate) return "overshoot_observe:" .. climate end
 local JOURNAL_MAX = 50
 
 -- Zero until learned: the prediction is then the room itself, so the earliest
--- cut is the moment the room reaches the request — never before the node's own.
+-- cut is the room passing the request, which is where the node stops anyway.
 local function learned_c(climate)
   local value = store.get(c_key(climate))
   if type(value) == "number" then return value end
