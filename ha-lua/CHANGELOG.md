@@ -4,6 +4,49 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.15.0 - 2026-09-28
+
+### Changed
+- **On an enhanced climate with no schedule, a change made at the dial now
+  holds until it is replaced.** It used to expire after 24 hours, and with no
+  schedule to take over the climate then dropped out of control: no setpoint,
+  no window pause, no overshoot learning, and whatever was on the device at
+  that moment — the frost setpoint of an open window included — stayed there
+  for good. Saving a schedule later ends such a hold at the schedule's next
+  change, and removing the climate drops it.
+- **A boost no longer clears a dial hold.** The boost outranks it while it
+  runs, and when it ends the hold takes back over. A scheduled climate
+  therefore returns to a still-valid dial hold after a boost, not to the
+  schedule.
+- The overshoot hold is also released as soon as the room reads below both
+  the requested temperature and the peak it reached after the cut. The learned
+  coefficient describes the rise to the peak, so once the room had turned the
+  prediction still expected heat that was not coming, and the heating stayed
+  off below the setpoint. The journal records whether a hold was released on
+  the prediction or on the room turning.
+- The overshoot correction cuts a run only when the room is predicted to end
+  up above the request, not exactly on it. A thermostat that heats while the
+  room is at its setpoint often starts a run with the reading on the request,
+  and with nothing learned yet such a run was cut the moment the radiator
+  warmed.
+- The card and the Climate page ask before "Reset learning" wipes the learned
+  coefficient and the run journal.
+- The card says when no radiator sensor is configured, instead of reading
+  "overshoot idle": without one the correction can never act.
+
+### Fixed
+- Turning the dial a single 0.1° step was often taken for the controller's own
+  write and reverted a minute later.
+- Heating switched off while a window was open, then back on after the window
+  closed, latched the frost setpoint as a 24-hour dial hold. The same happened
+  to an overshoot hold on the device when heating went off and on.
+- A boost ending with a window open, or with an overshoot hold in force, could
+  write the frost or hold setpoint back as the climate's temperature.
+- The Climate page showed "undefined window sensor(s)" for a climate with none.
+- **Copy all the enhanced-climate example files together and restart the
+  add-on:** `enhanced_climate.lua`, `enhanced_climate.html`, `lib/control.lua`
+  and `lib/overshoot.lua`. `lib/` is not hot-reloaded.
+
 ## 4.14.0 - 2026-09-28
 
 ### Changed
