@@ -10,6 +10,11 @@ the code and this document disagreed, the document was corrected: the notes
 saying so are kept deliberately, since each marks something that was got wrong
 on paper first.
 
+**Do not arm on a threshold node (2026-09-28).** Armed on the children's room,
+the cycle correction cancelled runs instead of shortening them, and
+observe-only learning turned out to be an integrator on an open loop. Both are
+written up where the claims were made (§3, §5, §9.4); the redesign is pending.
+
 **Revised 2026-09-26** after the first evening of real data: the children's
 room has no schedule. It is held at one temperature all day and overheats on
 its own heating *cycles*, which the original trigger (§5, "the request rises
@@ -56,10 +61,17 @@ decided to stop:
    10–20 minutes.
 
 A small room has little air and little mass to absorb that stored energy, so it
-lands as overshoot. **No knob on the `thermostat` platform can fix this**:
-`heat_deadband` sets the switch-*on* point below setpoint, `heat_overrun` only
-lets it coast *further* past, and neither can be negative. A switch cannot
-anticipate.
+lands as overshoot. **No knob on the `thermostat` platform can fix this.**
+ESPHome (2026.9.0, `heating_required_()`) heats while
+`current <= target - heat_deadband`, checked first, stops once
+`current >= target + heat_overrun`, and in between keeps doing what it was
+doing. `heat_overrun` *can* be negative — this section first said otherwise and
+was wrong; the children's room runs `-0.2` — but an overrun at or below
+`-heat_deadband` only makes the in-between branch unreachable: the node becomes
+a single threshold, heating exactly while the room is at or below
+`target - deadband`. It can be made to stop as soon as it is allowed to, never
+before. A switch cannot anticipate. (Omitting both keys does not simplify it
+either: both default to 0.5, a one-degree band.)
 
 The energy is real and already in the metal. The only lever is to **stop
 earlier** and let it land on target instead of above it.
@@ -162,11 +174,20 @@ warmup `slope` adds to it. A single rise-proportional `k` cannot serve both:
 capped at `K_MAX * deadband` it could never cut more than ~0.4 ° off a cycle
 that overshoots by 1.5.
 
-On a cycle the correction can command a setpoint at or below the room, which
-switches the relay straight back off. That is the intended limit case: the
-learner then measures an undershoot, `base` comes down, and it settles where a
-short run's stored heat lands the room exactly on the request. The room cycles
-in its deadband instead of above it.
+**Field data falsified the cycle half of this (2026-09-28).** On a threshold
+node (§3) the room is AT the switch-on point when the relay closes, so lowering
+the setpoint at that moment puts the room above the new threshold, and the node
+switches off as soon as `min_heating_run_time` allows. A correction applied at
+the relay-close trigger can only do nothing (offset within the deadband) or
+cancel the run. This paragraph called that "the intended limit case" and
+claimed it settles. Armed on the children's room it produced a 60-second relay
+pulse every 31 minutes into a radiator that never warmed (22.4–22.9 ° at the
+"cutoff", below the room), while the learner walked `base` down on the stubs.
+
+There is no settle point to find: a cycle's peak is at least its start plus the
+coast of the shortest possible run, so landing the peak on the request needs the
+run to START below the request. That is an offset held for the whole hold, not
+one latched when the relay closes. Redesign pending; see `state/overshoot.md`.
 
 **The offset must be latched at episode start, not recomputed per tick.** If it
 were recomputed, `command` would climb as the room warmed (`rise` shrinking
@@ -410,6 +431,15 @@ the write site, and it means the learner can be judged on a week of what it
 per zone is the deliberate act of trusting it — which is also the only honest
 way to answer "is `k` converged yet", since the journal shows the predicted
 peak against the real one either way.
+
+**Known wrong (2026-09-28): observe-only learning diverges.** An "observed"
+episode folds the UNCORRECTED error into the coefficients, but in observe-only
+nothing is applied, so that error cannot respond to them: an integrator on an
+open loop. On the children's room `base` went 0 → 0.19 → 0.33 → 0.38 → 0.63 over
+four observed cycles and would have kept climbing to `MAX_OFFSET` — the longer
+it "watched", the worse the coefficient it would have been armed with. It must
+learn against the counterfactual peak (`peak - the offset it would have
+applied`), which is only well-defined once §5's cycle design is fixed.
 
 ### 9.5 `k` is resettable without touching the database
 
