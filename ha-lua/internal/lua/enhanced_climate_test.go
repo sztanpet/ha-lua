@@ -1029,6 +1029,50 @@ func TestEnhancedClimateOvershootCutsOnEvidence(t *testing.T) {
 	f.waitEpisode("climate.lr", "the next run's episode is open")
 }
 
+// TestEnhancedClimateOvershootReleasesOnTurn: the review's scenario. Cut at
+// 23.3 with c 0.02 and a 9.4 lead, the room peaks at 23.4 and falls back to
+// 23.3 with the radiator still at 36, where the prediction says 23.55. The hold
+// used to stay, heat off below the setpoint; the fall below the request gives
+// the request back (rule 1).
+func TestEnhancedClimateOvershootReleasesOnTurn(t *testing.T) {
+	roomState := func(action string, room, temp float64) string {
+		return fmt.Sprintf(`{"current_temperature":%v,"temperature":%v,"min_temp":7,"max_temp":35,"hvac_action":%q}`,
+			room, temp, action)
+	}
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", roomState("idle", 23.3, 23.4))
+	f.setSensor("sensor.lr_rad", "23.3")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.lr_rad"}`)
+	f.setStoreNumber("overshoot_c:climate.lr", 0.02)
+	f.setStore("overshoot_observe:climate.lr", false)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("23.4")+`}`)
+	f.waitEpisode("climate.lr", "run opened")
+	f.pushClimate("climate.lr", roomState("idle", 23.3, 23.4), roomState("heating", 23.3, 23.4))
+
+	f.setSensor("sensor.lr_rad", "25")
+	f.tickNow("climate.lr")
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["gate_at"] != nil }, "seen warming")
+	f.setSensor("sensor.lr_rad", "32.7")
+	f.tickNow("climate.lr")
+	f.waitSetTemp(22.8, "cut at 23.3")
+
+	f.pushClimate("climate.lr", roomState("heating", 23.3, 23.4), roomState("idle", 23.4, 22.8))
+	f.setSensor("sensor.lr_rad", "36")
+	f.tickNow("climate.lr")
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["peak"] == 23.4 }, "peaked at 23.4")
+	if temps := f.setTemps(); temps[len(temps)-1] != 22.8 {
+		t.Fatalf("hold released while the room was still rising: %v", temps)
+	}
+
+	f.pushClimate("climate.lr", roomState("idle", 23.4, 22.8), roomState("idle", 23.3, 22.8))
+	f.tickNow("climate.lr")
+	f.waitSetTemp(23.4, "the room turned below the request")
+	ep := f.storeMap("overshoot_episode:climate.lr")
+	if ep["released_by"] != "turned" {
+		t.Fatalf("released_by = %v, want turned", ep["released_by"])
+	}
+}
+
 // TestEnhancedClimateOvershootObserveOnlyNeverHolds: observe-only defaults ON
 // (spec §9.4), so the same run with the same c records when it WOULD have cut
 // and writes nothing at all.

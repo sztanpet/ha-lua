@@ -172,9 +172,14 @@ On a cut the controller writes a **hold** setpoint, `room - HOLD_MARGIN`
 (clamped to the device's range, never above the request), which stops the node
 whichever way it rounds. The hold lasts only while the stored heat can still
 carry the room to the request: it is released — the request written back — as
-soon as `predicted < requested`, or when the coast ends. If the room is then
-below the request the node heats again at once, which is rule 1, and the next
-run is a new episode.
+soon as `predicted < requested`, as soon as the room reads below both the
+request and its coast peak (`released_by = "turned"`), or when the coast ends.
+The second is needed because `c` is calibrated on the rise to the peak: once
+the room has turned there is no rise left, yet `c * lead` still predicts one.
+The peak restarts at the cut, so a room flat at its cut reading keeps the hold
+— the stored heat has not landed yet. If the room is then below the request
+the node heats again at once, which is rule 1, and the next run is a new
+episode.
 
 `c` is **one learned number per room: how far the room rises after the heat
 stops, per degree the radiator is above it at that moment.** That is the
@@ -373,7 +378,8 @@ requested, current_at_open, radiator_at_open, outdoor_at_open
 radiator_min, gate_at                              -- when the radiator was seen warming
 would_cut_at, would_cut_predicted                  -- observe-only: when it would have cut
 cutoff_at, cut_by, room_at_cutoff, radiator_at_cutoff, lead_at_cutoff,
-predicted_at_cutoff, hold_temp, released_at        -- what it decided, and from what
+predicted_at_cutoff, hold_temp, released_at,
+released_by  "predicted" | "turned"                -- what it decided, and from what
 peak, peak_at, error, heated, decay, decay_half_life   -- what actually happened
 c_used, c_observed, c_before, c_after              -- what it concluded
 outcome  "learned" | "discarded" | "observed"
@@ -405,7 +411,7 @@ existing debug page's log viewer (`internal/web/debug.go`) with no daemon change
 | point | level | carries |
 |-------|-------|---------|
 | run open | `info` | zone, requested, room, radiator, c |
-| cut / would cut / hold released | `info` | room, radiator, lead, predicted |
+| cut / would cut / hold released | `info` | room, radiator, lead, predicted; a release says whether it was `predicted` or `turned` |
 | episode close | `info` | who cut, lead, peak, error, `c` observed and before → after |
 | **discard** | **`warn`** | the reason from §9.2 |
 

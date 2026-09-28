@@ -333,9 +333,15 @@ local function log_decisions(climate, episode, before)
       climate, episode.would_cut_lead, episode.would_cut_predicted, episode.requested))
   end
   if episode.released_at ~= nil and before.released_at == nil then
-    ha.log("info", string.format(
-      "overshoot %s: hold released, the stored heat will not reach %.1f",
-      climate, episode.requested))
+    if episode.released_by == "turned" then
+      ha.log("info", string.format(
+        "overshoot %s: hold released (turned), the room fell from its %.1f peak below %.1f",
+        climate, episode.peak, episode.requested))
+    else
+      ha.log("info", string.format(
+        "overshoot %s: hold released (predicted), the stored heat will not reach %.1f",
+        climate, episode.requested))
+    end
   end
 end
 

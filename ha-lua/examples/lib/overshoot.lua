@@ -145,7 +145,8 @@ end
 --
 -- An armed cut sets `hold`: the controller writes `hold_temp` while it lasts.
 -- It is released the moment the stored heat can no longer carry the room to the
--- request, so heating resumes as soon as the room needs it.
+-- request, or the room is seen falling below it, so heating resumes as soon as
+-- the room needs it.
 function M.step(episode, room, at, env)
   local radiator = env and env.radiator or nil
   note_heating(episode, env)
@@ -203,6 +204,14 @@ function M.step(episode, room, at, env)
   if episode.hold then
     local predicted = M.predict(episode.c_used, room, radiator)
     if predicted == nil or predicted < episode.requested - EPSILON then
+      episode.released_by = "predicted"
+    -- c was calibrated on the rise to the peak: once the room has turned there
+    -- is no rise left, yet c * lead still adds one. The peak restarted at the
+    -- cut, so this is a visible fall, and a room flat at its cut still holds.
+    elseif room < episode.requested - EPSILON and room < episode.peak - EPSILON then
+      episode.released_by = "turned"
+    end
+    if episode.released_by ~= nil then
       episode.hold = false
       episode.released_at = at
     end
@@ -328,6 +337,7 @@ function M.record(episode, zone, c_before, c_after, outcome, reason, closed_at)
     predicted_at_cutoff = episode.predicted_at_cutoff,
     hold_temp = episode.hold_temp,
     released_at = episode.released_at,
+    released_by = episode.released_by,
     peak = episode.peak,
     peak_at = episode.peak_at,
     radiator_at_peak = episode.radiator_at_peak,

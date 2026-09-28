@@ -238,8 +238,23 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(early.hold == true, "cut at the gate: predicted 23.46")
 		assert(o.step(early, 23.3, 120, E(23.6, false)) == "coasting", "")
 		assert(early.hold == false and early.released_at == 120, "predicted 23.36 < 23.4: released")
+		assert(early.released_by == "predicted", "released on the prediction")
 		-- The node firing again is the next run, not part of this one.
 		assert(o.step(early, 23.3, 180, E(23.7, true)) == "done", "relay closed again: the next run")
+
+		-- Rule 1 again: c was calibrated on the rise, so once the room has peaked
+		-- c * lead still predicts one that is not coming. A fall below the request
+		-- gives the run back whatever the prediction says.
+		local turned = o.open(23.4, 23.3, 0.02, false, 0, E(23.3, true))
+		o.step(turned, 23.3, 60, E(25.0, true))
+		assert(o.step(turned, 23.3, 120, E(32.7, true)) == "coasting" and turned.hold, "cut: predicted 23.488")
+		o.step(turned, 23.3, 180, E(35, false))
+		assert(turned.hold == true, "flat at its cut reading: the stored heat has not landed yet")
+		o.step(turned, 23.4, 600, E(36, false))
+		assert(turned.hold == true, "peaked at 23.4")
+		assert(o.step(turned, 23.3, 900, E(36, false)) == "coasting", "")
+		assert(turned.hold == false and turned.released_by == "turned", "predicted 23.55, but the room fell below the request")
+		assert(o.record(turned, "z", 0.02, 0.02, "learned", nil, 900).released_by == "turned", "journaled")
 
 		-- After an armed cut the node may still report heating until its minimum
 		-- run time is up; that is not the next run.
