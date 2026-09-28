@@ -10,10 +10,13 @@ the code and this document disagreed, the document was corrected: the notes
 saying so are kept deliberately, since each marks something that was got wrong
 on paper first.
 
-**Do not arm on a threshold node (2026-09-28).** Armed on the children's room,
-the cycle correction cancelled runs instead of shortening them, and
-observe-only learning turned out to be an integrator on an open loop. Both are
-written up where the claims were made (§3, §5, §9.4); the redesign is pending.
+**Redesigned 2026-09-28: heat on demand, cut on evidence (§5).** Armed on the
+children's room, the v4.13.0 correction cancelled runs instead of shortening
+them, and its observe-only learning was an integrator on an open loop. The
+user's rules replaced it: heating always starts the moment the room is below
+the setpoint, and a run may be cut short only once the radiator has been seen
+warming. §5 and §6 are rewritten around those rules; the superseded designs
+are kept at the end of §5.
 
 **Revised 2026-09-26** after the first evening of real data: the children's
 room has no schedule. It is held at one temperature all day and overheats on
@@ -116,8 +119,8 @@ children's room has no schedule; every run it makes is a "top-up" from the
 deadband, and it overheats on every one of them. A relay that is on for ten
 minutes brings the radiator to full temperature whether the room needed 0.3 °
 or 3 °, and the stored energy it then dumps is much the same. The overshoot has
-a floor that does not scale with the rise — so the offset has one too (§5),
-learned per episode like the slope.
+a floor that does not scale with the rise. (v4.13 answered that with a learned
+floor term; §5 now reads the stored heat off the radiator directly.)
 
 ### 4.3 A standalone script that never touches the controller
 
@@ -138,141 +141,129 @@ the controller instead, which is a small contained change.
 
 ## 5. The control model
 
-**Full power to a computed early cutoff.** The ESP is left in bang-bang, so the
-relay is hard on for the entire approach — warmup speed is unchanged from
-today. Only the number it stops at moves.
+**Heat on demand, cut on evidence.** Two rules, both the user's, both absolute:
 
-An **episode** opens on either of two triggers, checked on the controller's
-1-minute tick with no episode already running:
+1. **Heating starts the moment the room is below the setpoint.** The
+   correction never lowers the setpoint before a run, at the start of one, or
+   between runs. The node's own rule — with `heat_deadband` and `heat_overrun`
+   at 0 (§3), heat while the room is at or below the setpoint — is the whole
+   of the switch-on logic.
+2. **A run may be cut short only once the radiator has been seen warming.**
+   Until then the valve may not even be open — a thermal actuator takes minutes
+   — and there is no stored heat to land the room with. Cutting before that is
+   cancelling, which is exactly what the previous design did (see the end of
+   this section).
 
-1. the requested setpoint rises above the room temperature (a schedule
-   transition, an override, a manual hold) — the warmup from setback; or
-2. the device reports `hvac_action = heating` — the relay has closed for a run
-   inside a flat hold. The request has not moved, so trigger 1 cannot see
-   this, and it is the case the children's room actually lives in.
+An **episode** is one heating run. It opens when the device reports
+`hvac_action = heating` with none running, or, for a device without
+`hvac_action`, when the request rises above the room. Nothing is written when
+it opens.
 
-Either way, at that moment and only then, the controller latches:
+While the run heats, on every tick:
 
 ```
-rise    = requested − current                              -- how far it has to climb
-offset  = clamp(k.base + k.slope * rise, 0, MAX_OFFSET)    -- both learned (§6)
-command = requested − offset
+radiator_min = lowest radiator reading since the run opened
+warming      = radiator >= radiator_min + RAD_RISE        -- rule 2's gate
+predicted    = room + c * max(0, radiator - room)          -- where the room ends up if the heat stops now
+cut          = warming and predicted >= requested
 ```
 
-`command` is held for the whole episode. The episode closes when the room has
-turned down after its coast peak, when the relay closes again for the next run
-(so that run's peak is never credited to this one), or when the coast backstop
-runs out — or early, when the requested setpoint changes again;
-then the command returns to `requested`, so the offset never becomes the
-permanent lowering §4.2 rejects.
+On a cut the controller writes a **hold** setpoint, `room - HOLD_MARGIN`
+(clamped to the device's range, never above the request), which stops the node
+whichever way it rounds. The hold lasts only while the stored heat can still
+carry the room to the request: it is released — the request written back — as
+soon as `predicted < requested`, or when the coast ends. If the room is then
+below the request the node heats again at once, which is rule 1, and the next
+run is a new episode.
 
-`base` is the floor: the overshoot a run produces regardless of how far the
-room had to climb, because the radiator reaches full temperature either way.
-`slope` is the part that grows with a long warmup. On a cycle the rise is the
-deadband — 0.2–0.5 ° — and the correction is essentially `base`; on an 18→21
-warmup `slope` adds to it. A single rise-proportional `k` cannot serve both:
-capped at `K_MAX * deadband` it could never cut more than ~0.4 ° off a cycle
-that overshoots by 1.5.
+`c` is **one learned number per room: how far the room rises after the heat
+stops, per degree the radiator is above it at that moment.** That is the
+physics directly — the overshoot is the radiator's stored heat landing in the
+room, and the radiator's lead over the room is how much of it there is — so no
+offset, rise-scaling or floor term is needed. The first live run measured
+`c ≈ 0.018`: a 21.8° lead, 0.4° of coast.
 
-**Field data falsified the cycle half of this (2026-09-28).** On a threshold
-node (§3) the room is AT the switch-on point when the relay closes, so lowering
-the setpoint at that moment puts the room above the new threshold, and the node
-switches off as soon as `min_heating_run_time` allows. A correction applied at
-the relay-close trigger can only do nothing (offset within the deadband) or
-cancel the run. This paragraph called that "the intended limit case" and
-claimed it settles. Armed on the children's room it produced a 60-second relay
-pulse every 31 minutes into a radiator that never warmed (22.4–22.9 ° at the
-"cutoff", below the room), while the learner walked `base` down on the stubs.
+`c` starts at 0. With nothing learned the prediction is the room itself, so
+the earliest possible cut is the moment the room reaches the request — never
+earlier than the node would stop on its own.
 
-There is no settle point to find: a cycle's peak is at least its start plus the
-coast of the shortest possible run, so landing the peak on the request needs the
-run to START below the request. That is an offset held for the whole hold, not
-one latched when the relay closes. Redesign pending; see `state/overshoot.md`.
+A run the correction does not cut still ends: the node switches off itself
+once the room passes the request (the relay is seen opening; for a device
+without `hvac_action`, the room passes the request). That natural cutoff is
+measured exactly like the correction's, which is what lets observe-only learn
+(§6).
 
-**The offset must be latched at episode start, not recomputed per tick.** If it
-were recomputed, `command` would climb as the room warmed (`rise` shrinking
-toward zero) and converge on `requested` without ever cutting early — the
-correction would silently do nothing. This is the single easiest thing to get
-wrong here.
+The coast after either cutoff ends — and the episode with it — when the room
+has turned (a reading `PEAK_DROP` below a peak settled for `PEAK_HOLD`), when
+the relay closes again for the next run, or after `MAX_COAST`.
 
-With `base = 0` this collapses to the first draft's model exactly: an 18→21
-warmup with `slope = 0.4` cuts at 19.8, a 20.7→21 top-up at 20.88. Both start
-at zero (`K_INIT`), so a plant that has taught nothing is driven exactly as it
-was before the feature existed.
+**The superseded designs**, kept because each was wrong in a way worth
+remembering:
 
-This is **not** a proportional band. A P controller throttles output power as
-it approaches; this holds full power and moves the stopping point. Fast *and*
-early.
+- *v4.11–4.12: `command = requested - k * rise`, latched when the request
+  rose.* Blind to a hold's own heating cycles, which never move the request —
+  the children's room has no schedule, so it never opened an episode at all.
+- *v4.13: `base + slope * rise`, latched when the relay closed.* On a threshold
+  node (§3) the room is AT the switch-on point when the relay closes, so any
+  offset beyond the deadband cancels the run after `min_heating_run_time`.
+  Armed, that was a 60-second relay pulse every 31 minutes into a radiator that
+  never warmed (22.4–22.9° at the "cutoff", below the room). An offset held for
+  the whole hold would have worked physically — but only by starting every run
+  later, which rule 1 forbids.
 
 ### 5.1 Constants
 
 | Name | Default | Meaning |
 |------|---------|---------|
-| `K_INIT` | `{base 0, slope 0}` | Starting coefficients. Zero means the first episode behaves exactly as today — never worse than the status quo while it has learned nothing. |
-| `GAIN` | `0.5` | Fraction of the measured error folded in per episode. Converges in ~4–5 episodes, damped enough not to ring. |
-| `SLOPE_MAX` | `0.8` | Hard bound on `slope`. Sanity only; a plant needing more than this is broken elsewhere. `base` is bounded by `MAX_OFFSET`. |
-| `MAX_OFFSET` | `2.5 °C` | Absolute cap on a single cutoff, whatever the coefficients say. |
-| `PEAK_DROP` | `0.2 °C` | The coast is over once the room reads this far below its peak — one full step of a 0.2° sensor, out of reach of 0.1° noise. |
+| `RAD_RISE` | `1.0 °C` | How far the radiator must climb above its lowest reading in the run before any cut — rule 2's "seen warming". |
+| `HOLD_MARGIN` | `0.5 °C` | The hold setpoint sits this far below the room at the cut, so the node stops whatever its rounding. |
+| `GAIN` | `0.5` | Fraction of each run's measured `c` folded into the learned one. |
+| `C_MAX` | `0.2` | Sanity bound on `c`. At 0.2 a radiator barely past the gate already predicts the request, so the correction cuts at the gate: the shortest run rule 2 allows. |
+| `MIN_LEAD` | `3 °C` | A cutoff with the radiator less than this above the room teaches nothing about stored heat. |
+| `PEAK_DROP` | `0.2 °C` | The coast is over once the room reads this far below its peak, clear of 0.1° flicker. |
 | `PEAK_HOLD` | `5 min` | …and the peak is at least this old, so one flickering reading right after a new high does not end it. |
-| `MAX_COAST` | `90 min` | Backstop for a room that never turns (a sunny window, another heat source). Originally a fixed 30-minute window; the first live episode's radiator had a 28-minute half-life and was still 10° above a room still at its peak when that closed, so every peak was a lower bound. |
+| `MAX_COAST` | `90 min` | Backstop for a room that never turns (a sunny window, another heat source). |
+| `MAX_EPISODE` | `4 h` | A run that has not cut off by then is abandoned as `never_reached`. |
 
 ## 6. The learner
 
-Two numbers per zone, `k = {base, slope}`, in the script's KV store. After
-each episode:
+After each episode:
 
 ```
-peak    = max room temperature observed until the room turns down (§5.1)
-error   = peak − requested                      -- >0 too hot, <0 undershot
-norm    = 1 + rise²
-base    = clamp(base  + GAIN * error        / norm, 0, MAX_OFFSET)
-slope   = clamp(slope + GAIN * error * rise / norm, 0, SLOPE_MAX)
+cutoff     = the cutoff actually taken: the correction's, or the node's own
+c_observed = (peak - room_at_cutoff) / (radiator_at_cutoff - room_at_cutoff)
+c          = clamp(c + GAIN * (c_observed - c), 0, C_MAX)
 ```
 
-This is one normalised gradient step (NLMS) on the regressor `[1, rise]`: the
-error is split between the two coefficients in proportion to how much each
-contributed to the offset that produced it. A cycle (`rise ≈ 0.3`) teaches
-`base` almost entirely; a long warmup teaches both. The offset *at the
-observed rise* moves by exactly `GAIN * error` per episode, which is the same
-convergence rate the single-coefficient draft had — so nothing about "four or
-five episodes" changes. No matrix, no memory of past regressors.
+A measurement, smoothed — not an integral controller on the error. That
+matters twice:
 
-A discrete integral controller closed across days, either way. Because it
-corrects on **measured outcome**, it tracks seasonal drift on its own: when a
-milder month raises the plant gain and overshoot creeps back, the next few
-episodes push the coefficients up without anyone retuning anything. That is
-the direct answer to §4.1's brittleness.
+- **Observe-only learns correctly.** The v4.13 learner folded the uncorrected
+  error into its coefficients, and in observe-only that error could not respond
+  to them: an integrator on an open loop, `base` climbing ~0.19 per cycle
+  towards its clamp. `c` is a physical ratio measured at the natural cutoff; it
+  does not depend on what the correction would have done, so watching
+  converges.
+- **It converges on the cut it actually takes.** A cut earlier in the
+  radiator's climb leaves more heat still coming through the closing actuator
+  per degree of lead, so `c_observed` is larger there; folding it in moves the
+  next cut earlier still, and the fixed point is where the coast lands the room
+  on the request. Observe-only's `c`, measured at late natural cutoffs, is
+  therefore a slight UNDER-estimate for armed cuts: the first armed runs cut a
+  little late — closer to today's behaviour — and tighten from there. The error
+  is on the safe side.
 
-The first draft also refused to learn from any rise under `MIN_RISE = 0.3 °`,
-because dividing the error by a tiny rise blew the update up. The normalised
-step has no such division, and cycles ARE small rises, so that gate is gone.
-What replaces it is physical: an episode teaches nothing unless the relay was
-actually seen on during it (`never_heated` below). A 0.2 ° nudge inside the
-deadband never fires the heating, and whatever the room does afterwards is
-weather, not the plant.
+Episodes that teach nothing are discarded with a reason (§9.1): a window
+opened, the mode left heat, the request changed, observe-only was switched, the
+daemon restarted, the run never cut off within `MAX_EPISODE`
+(`never_reached`), the relay never closed (`never_heated`), there was no
+radiator reading (`no_radiator`), or the cutoff came with less than `MIN_LEAD`
+of radiator lead (`radiator_cold`).
 
-**The peak is sampled from live state on the existing 1-minute tick, not from
-`ha.get_history`.** The coast peak is a broad 20-minute hump, so 1 Hz/min
-sampling is ample. This deliberately avoids the history path: `ha.get_history`
-has no `until` parameter, so "yesterday 06:00–08:00" would mean pulling ~1500
-rows and filtering in Lua, and would need a retention override to survive the
-2-day default. Tracking a running max costs one store write per tick instead.
-
-**Episodes that are discarded** (correction applied, nothing learned):
-
-- a window opened at any point during the episode or its coast — that is
-  `heating_windows.lua`'s territory and the thermal picture is meaningless
-- the hvac mode left `heat`
-- the requested setpoint changed before the room reached it
-- the device never reported `hvac_action = heating` during the episode — the
-  relay never closed, so there was no stored energy to measure. A device that
-  reports no `hvac_action` at all is not gated (unknown is not "off")
-- the room never reached the commanded setpoint within `MAX_EPISODE` (4 h) —
-  the plant could not keep up, and nothing about overshoot can be read off it
-- observe-only was switched for the zone mid-episode — the episode latched its
-  setpoint from the old setting and cannot be judged against the new one
-- the daemon restarted mid-episode — in-flight episode state is abandoned, not
-  reconstructed. One lost sample is worth nothing; a corrupted `k` is.
+A peak that the next run truncates — the hold released, the node fired again
+before the room peaked — biases `c_observed` low. The next run then cuts later
+and lands higher, and the full peak it measures corrects it. Accepted rather
+than modelled.
 
 ## 7. Controller integration
 
@@ -310,7 +301,7 @@ the mode, the window state, and a 1-minute tick. What stays separate is
 **The requested temperature is the primary number. The commanded value is
 reachable only through a deliberate action.** Showing 19.8 where the user set
 21 reads as a bug or a failed write. But it must stay reachable: when the
-learner misbehaves — `k` pinned at `K_MAX`, room never warming — that number is
+learner misbehaves — `c` pinned at `C_MAX`, room never warming — that number is
 the only way to see why.
 
 **The disclosure is a tap target, not a `title=` tooltip.** The page runs under
@@ -326,7 +317,7 @@ The zone state payload (`thermostat.lua:270`) splits accordingly:
 |-------|--------|------|
 | `target` | `desired` | the requested setpoint |
 | `commanded` | `written` | revealed on tap |
-| `offset`, `k`, `samples` | the learner | revealed on tap, beside `commanded` |
+| `holding`, `c`, `samples` | the learner | revealed on tap, beside `commanded` |
 
 `target` currently reads `current_target(zone)` — straight off the climate
 entity — so left alone it silently becomes the *commanded* value for every
@@ -347,8 +338,8 @@ has to *add* the requested setpoint to the card and hang the disclosure off it.
 That is the honest reading of "show the requested temp", and it is more work
 than revealing a second value beside an existing one.
 
-Show `offset` and `samples` together, not a bare commanded number: "19.8°,
-−1.2° learned over 6 nights" says whether to trust it; "19.8°" says nothing.
+Show what was learned and from how much, not a bare commanded number: a hold
+at 22.9° "learned over 6 runs" says whether to trust it; "22.9°" says nothing.
 
 **Unclosable leak:** HA's native thermostat card, and the node's own display,
 read the climate entity directly and will show the commanded value with no
@@ -378,18 +369,21 @@ script's KV store:
 
 ```
 opened_at, closed_at, zone
-requested, current_at_open, rise
-k_used, offset, commanded          -- what it decided, and from what
-peak, peak_at, error, heated       -- what actually happened
-k_before, k_after                  -- what it concluded
+requested, current_at_open, radiator_at_open, outdoor_at_open
+radiator_min, gate_at                              -- when the radiator was seen warming
+would_cut_at, would_cut_predicted                  -- observe-only: when it would have cut
+cutoff_at, cut_by, room_at_cutoff, radiator_at_cutoff, lead_at_cutoff,
+predicted_at_cutoff, hold_temp, released_at        -- what it decided, and from what
+peak, peak_at, error, heated, decay, decay_half_life   -- what actually happened
+c_used, c_observed, c_before, c_after              -- what it concluded
 outcome  "learned" | "discarded" | "observed"
 reason   nil | "window_open" | "mode_left_heat" | "setpoint_changed"
-              | "never_heated" | "restart" | "never_reached"
-              | "observe_changed"
+              | "never_heated" | "no_radiator" | "radiator_cold"
+              | "restart" | "never_reached" | "observe_changed"
 ```
 
-`never_reached` is the room failing to reach even the *reduced* setpoint within
-`MAX_EPISODE` (4 h). Without it an episode that never cuts off sits open
+`never_reached` is a run that never cut off — neither the correction nor the
+node — within `MAX_EPISODE` (4 h). Without it an episode that never cuts off sits open
 forever and never learns — silent, and precisely §9.1's failure. It is also the
 one discard that says something about the plant rather than about us.
 
@@ -410,8 +404,9 @@ existing debug page's log viewer (`internal/web/debug.go`) with no daemon change
 
 | point | level | carries |
 |-------|-------|---------|
-| episode open | `info` | zone, requested, current, rise, base and slope, offset, commanded |
-| episode close | `info` | peak, error, base and slope before → after |
+| run open | `info` | zone, requested, room, radiator, c |
+| cut / would cut / hold released | `info` | room, radiator, lead, predicted |
+| episode close | `info` | who cut, lead, peak, error, `c` observed and before → after |
 | **discard** | **`warn`** | the reason from §9.2 |
 
 Discards are `warn`, deliberately, and not `debug`. A persistent discard is
@@ -421,39 +416,35 @@ once run, the diagnostic has already failed.
 
 ### 9.4 Observe-only mode, and it ships enabled
 
-A per-zone flag. The controller computes the offset, journals it and logs it,
-but writes the **uncorrected** setpoint. Everything runs and records; nothing
-touches the heating.
+A per-zone flag. The controller computes the cut, journals and logs when it
+*would* have cut, but never writes a hold. Everything runs and records;
+nothing touches the heating.
 
 **This is how the feature ships first, defaulted on.** It costs one branch at
 the write site, and it means the learner can be judged on a week of what it
 *would* have done before it is allowed near a child's bedroom. Turning it off
 per zone is the deliberate act of trusting it — which is also the only honest
-way to answer "is `k` converged yet", since the journal shows the predicted
-peak against the real one either way.
+way to answer whether the cut lands the room on the request.
 
-**Known wrong (2026-09-28): observe-only learning diverges.** An "observed"
-episode folds the UNCORRECTED error into the coefficients, but in observe-only
-nothing is applied, so that error cannot respond to them: an integrator on an
-open loop. On the children's room `base` went 0 → 0.19 → 0.33 → 0.38 → 0.63 over
-four observed cycles and would have kept climbing to `MAX_OFFSET` — the longer
-it "watched", the worse the coefficient it would have been armed with. It must
-learn against the counterfactual peak (`peak - the offset it would have
-applied`), which is only well-defined once §5's cycle design is fixed.
+Until 2026-09-28 observe-only learning diverged: it folded the uncorrected
+error into the coefficients, and nothing applied could make that error respond
+— `base` went 0 → 0.19 → 0.33 → 0.38 → 0.63 over four observed cycles on the way
+to its clamp. §6's `c` is measured at the natural cutoff instead, so watching
+converges on the same physical number the correction then uses.
 
-### 9.5 `k` is resettable without touching the database
+### 9.5 `c` is resettable without touching the database
 
-A UI action and an HTTP endpoint that zero `k` and clear the journal for one
+A UI action and an HTTP endpoint that zero `c` and clear the journal for one
 zone. When a learner goes wrong the recovery path must not be
 `sqlite3 /data/ha-lua.db`, and it must not require a daemon restart or a script
 reload.
 
 ### 9.6 Surfacing
 
-- **On the page:** `k`, the current offset and the last episodes, behind §8's
+- **On the page:** `c`, whether a hold is in force and the last episodes, behind §8's
   tap disclosure — the same action, one level deeper. Requested stays the only
   number on the default view.
-- **As JSON:** `GET /api/overshoot?zone=<zone>` returns `k`, sample count, the
+- **As JSON:** `GET /api/overshoot?zone=<zone>` returns `c`, sample count, the
   live episode and the journal, so it is curl-able and greppable without the
   UI. (The path follows `thermostat.lua`'s existing `/api/...?zone=` shape
   rather than the `/zones/<zone>/…` this section first proposed.)
