@@ -20,10 +20,11 @@ end
 -- Whether a climate target is an external change rather than our own write.
 -- `published` must be what the controller last COMMANDED, not what the user
 -- asked for: with an overshoot correction active the two differ and the
--- correction would read as a dial nudge. The 0.1° tolerance keeps 21 vs 21.0
--- from looking like a change; a never-published value counts as manual.
+-- correction would read as a dial nudge. A write the device rounded lands at
+-- most 0.05 off and a dial step is 0.1, so 0.075 splits them clear of float
+-- error (|23.3 - 23.4| is 0.0999…). A never-published value counts as manual.
 function M.is_manual(target, published)
-  if type(published) == "number" and math.abs(target - published) <= 0.1 then
+  if type(published) == "number" and math.abs(target - published) < 0.075 then
     return false
   end
   return true

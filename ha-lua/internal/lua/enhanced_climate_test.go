@@ -593,6 +593,32 @@ func TestEnhancedClimateManualHold(t *testing.T) {
 	f.waitSetTemp(19, "manual hold to the dialed 19")
 }
 
+// TestEnhancedClimateManualOneStep: a single 0.1 dial step is a dial change.
+// |23.3 - 23.4| is a hair under 0.1 in floating point, and a tolerance of
+// "<= 0.1" read it as our own write, so the next tick put 23.4 back.
+func TestEnhancedClimateManualOneStep(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", `{"current_temperature":23,"temperature":23,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.lr"}`)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("23.4")+`}`)
+	f.waitSetTemp(23.4, "schedule 23.4")
+
+	f.pushClimate("climate.lr",
+		`{"current_temperature":23,"temperature":23.4,"min_temp":7,"max_temp":35}`,
+		`{"current_temperature":23,"temperature":23.3,"min_temp":7,"max_temp":35}`)
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(state string, attrs map[string]any) bool {
+		manual, _ := attrs["manual"].(map[string]any)
+		return state == "23.3" && manual["active"] == true
+	}, "one step down is a manual hold at 23.3")
+	f.tickNow("climate.lr")
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_lr", func(_ string, attrs map[string]any) bool {
+		return attrs["override_temp"] == 24.0
+	}, "the tick ran")
+	if temps := f.setTemps(); len(temps) != 1 {
+		t.Fatalf("set_temperature %v: the dial step was written back over", temps)
+	}
+}
+
 // TestEnhancedClimateManualDetectionReadsWritten pins the manual-change detector
 // onto `written` rather than `desired` (overshoot-spec.md §7). The two are equal
 // whenever no correction is active, so they are forced apart here: with the

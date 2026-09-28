@@ -210,7 +210,8 @@ Built fresh (not a rework of `thermostat.lua`), reusing the pure
    `climate.set_temperature` only when `control.should_write(mode, window_open,
    current, target)` holds (`mode==heat`, no bound window open, value changed
    >0.05). Manual detection: `control.is_manual(target, published_desired)` — a
-   climate target differing from the published desired (>0.1) starts a manual
+   climate target differing from the published desired (≥0.075, i.e. one
+   0.1 dial step but not a device-rounded write) starts a manual
    hold until the next schedule transition. `control.clamp_bounds` against the
    climate's `min_temp`/`max_temp` so nothing pushes a setpoint HA silently
    drops (AI.state 2.3.0).
@@ -235,7 +236,7 @@ tolerances) — they are lifted into a new **pure** `lib/control.lua` (no
 
 ```lua
 control.desired(override, manual, schedule_temp)  -- priority pick, nil if none
-control.is_manual(target, published_desired)      -- |Δ| > 0.1
+control.is_manual(target, published_desired)      -- |Δ| >= 0.075
 control.should_write(mode, window_open, cur, tgt) -- gate set_temperature
 control.clamp_bounds(value, lo, hi)               -- device min/max clamp
 control.window_open(sensor_states)                -- any open / all closed

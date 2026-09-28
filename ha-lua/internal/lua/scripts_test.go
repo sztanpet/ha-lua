@@ -146,10 +146,15 @@ func TestControlPureLib(t *testing.T) {
 		t, src = c.desired(nil, nil, nil)
 		assert(t == nil and src == nil, "no source -> nil")
 
-		-- is_manual: within 0.1 of a numeric published value is our own write.
+		-- is_manual: a device-rounded write is ours, one dial step is not.
 		assert(c.is_manual(21.0, 21) == false, "21 vs 21.0 not manual")
 		assert(c.is_manual(21.05, 21) == false, "within tolerance not manual")
 		assert(c.is_manual(21.2, 21) == true, "beyond tolerance is manual")
+		-- Float error puts these one-step pairs a hair under 0.1.
+		assert(c.is_manual(23.3, 23.4) == true, "23.4 -> 23.3 is manual")
+		assert(c.is_manual(22.9, 22.8) == true, "22.8 -> 22.9 is manual")
+		assert(c.is_manual(23.6, 23.7) == true, "23.7 -> 23.6 is manual")
+		assert(c.is_manual(23.4, 23.5) == true, "23.5 -> 23.4 is manual")
 		assert(c.is_manual(21, nil) == true, "never-published is manual")
 
 		-- should_write: heat mode, no window, value changed > 0.05.
