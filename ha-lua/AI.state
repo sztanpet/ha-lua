@@ -10,15 +10,13 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Round 5 review — enhanced climate + overshoot: code DONE, unreleased**
-(detail and hashes: `state/code-review.md`, "Round 5"). Steps A1–C3 are in,
-nine commits d6d8af9..dfeca1c, `make check` green. One-step dial taps count,
-frost no longer latches as a hold, a boost keeps the dial hold, a schedule-less
-hold lasts until replaced, the hold releases once the room turns, c = 0 no
-longer cuts at the request. Card 0.3.42. Left: D1 (the temp8 reporting change
-in Z2M, on the box, needs the user's go-ahead) and E (release v4.15.0 +
-deploy, then set the children's room once from the card). v4.14.0 is deployed;
-everything stays observe-only.
+**Round 5 review — enhanced climate + overshoot: RELEASED as v4.15.0, not
+deployed** (detail: `state/code-review.md`, "Round 5"). Steps A1–C3 shipped;
+card 0.3.42. Left: deploy (new image + restart, re-copy `enhanced_climate.lua`,
+`.html`, `lib/control.lua`, `lib/overshoot.lua`), then set the children's room
+once from the card, since its last hold lapsed 2026-09-28 18:11. D1 (the temp8
+reporting change in Z2M) needs the user's go-ahead. Everything stays
+observe-only; arming is the user's call.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -33,7 +31,7 @@ everything stays observe-only.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
 - `state/code-review.md` — review rounds 1–4 CLOSED; round 5 (enhanced climate +
-  overshoot, 2026-09-28) code DONE, release pending.
+  overshoot, 2026-09-28) released in v4.15.0, deploy and D1 pending.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module (mqtt-spec.md). COMPLETE.
 - `state/overshoot.md` — learned heating early-cutoff (overshoot-spec.md).
 - (sse-spec.md has no implementation and no state file.)

@@ -436,8 +436,9 @@ Scope: `cards/enhanced-climate-card.js`, `examples/enhanced_climate.lua` and
 checked against the live box. Verdict: the card and the observe-only learner are
 fit; the armed correction and the controller under it are not.
 
-STATUS: code steps A1–C3 DONE 2026-09-28, `make check` green. D1 (the sensor's
-reporting, on the box) and E (release + deploy) wait for the user.
+STATUS: code steps A1–C3 DONE 2026-09-28 and released as v4.15.0 (tag on
+`4e7d9b2`). Deploy (E's second half) and D1 (the sensor's reporting, on the
+box) wait for the user.
 
 How it was checked, so the next round does not redo it:
 - Box scripts byte-identical to HEAD `9a98e51`, card 0.3.40 materialized.
@@ -630,7 +631,7 @@ observe-only.
   recorder that 0.1 steps arrive within minutes. If the firmware ignores it,
   the options are the pvxx ZigbeeTLc firmware (Z2M model `ZG-227Z-z`, which
   has a measurement interval) or another sensor.
-- **E** Release v4.15.0 when the user asks. It is MINOR: dial-hold semantics
+- **E** [RELEASED v4.15.0, not deployed] Release v4.15.0 when the user asks. It is MINOR: dial-hold semantics
   change for schedule-less climates and under boosts.
   - Deploy: new add-on image (card), re-copy `enhanced_climate.lua`, `.html`,
     `lib/control.lua` and `lib/overshoot.lua` into `/config/ha-lua/scripts/`,
