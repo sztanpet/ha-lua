@@ -2,7 +2,7 @@
 --
 -- Shared zone definitions for thermostat.lua, heating_windows.lua and
 -- valve_watch.lua. All scripts MUST agree on the zone keys: a key is the
--- <zone> in the published desired setpoint that hands control off between the
+-- <zone> in the published setpoint that hands control off between the
 -- thermostat and the window script. Keeping the table (and the key builder)
 -- here is what stops the scripts from drifting.
 --
@@ -30,19 +30,9 @@ M.zones = {
   kitchen    = { climate = "climate.kitchen",     windows = { "binary_sensor.kitchen_window" },     radiator = "sensor.kitchen_radiator_temp", label = "Kitchen" },
 }
 
--- The two global keys the scripts hand zone setpoints off through. Both are
--- published every tick by the controller.
---
--- `desired` is what the user asked for — the schedule/override/manual value.
--- Anything displaying intent reads this one.
---
--- `written` is what the controller actually commands the device to. Anything
--- comparing against the value on the device — the manual-change detector, the
--- window script's restore — reads this one.
-function M.desired_key(zone)
-  return "thermostat:desired:" .. zone
-end
-
+-- The global key the controller publishes each zone's setpoint through, every
+-- tick: what it commands the device to. The manual-change detector compares
+-- the device against it, and the window script restores it on close.
 function M.written_key(zone)
   return "thermostat:written:" .. zone
 end

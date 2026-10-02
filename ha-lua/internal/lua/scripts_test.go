@@ -477,9 +477,6 @@ M.zones = {
   livingroom = { climate = "climate.livingroom",    windows = { "binary_sensor.livingroom_window" } },
   childrens  = { climate = "climate.childrens_room", windows = { "binary_sensor.childrens_room_window" } },
 }
-function M.desired_key(zone)
-  return "thermostat:desired:" .. zone
-end
 function M.written_key(zone)
   return "thermostat:written:" .. zone
 end
@@ -516,18 +513,16 @@ func writeThermostatScripts(t *testing.T) string {
 
 // TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
 // (spec §4.2): on a window close, the real heating_windows.lua must restore the
-// setpoint the controller published to global:thermostat:written:<zone> — not a
-// stale saved value, and not the *requested* value. The two keys are seeded to
-// different values here so that distinction is pinned. It runs the shipped script in a real runner with
-// a captured call_service and a seeded climate entity.
+// setpoint the controller published to global:thermostat:written:<zone>, not a
+// stale saved value. It runs the shipped script in a real runner with a
+// captured call_service and a seeded climate entity.
 type windowSvcCall struct {
 	domain, service string
 	data            jsontext.Value
 }
 
 // windowHandoffHarness runs the shipped heating_windows.lua against a captured
-// call_service, with climate.bedroom heating and both setpoints published to
-// different values: 21 is what the user asked for, 20 is what is on the device.
+// call_service, with climate.bedroom heating and 20 published as its setpoint.
 type windowHandoffHarness struct {
 	t       *testing.T
 	ctx     context.Context
@@ -542,7 +537,6 @@ type windowHandoffHarness struct {
 const windowZonesLua = `local M = {}
 M.frost_temp = 15
 M.zones = { bedroom = { climate = "climate.bedroom", windows = { %s } } }
-function M.desired_key(zone) return "thermostat:desired:" .. zone end
 function M.written_key(zone) return "thermostat:written:" .. zone end
 return M
 `
@@ -613,9 +607,6 @@ func newWindowHandoffHarness(t *testing.T, windows []string, seeded map[string]s
 	if err := tracker.Seed(ctx, seed); err != nil {
 		t.Fatal(err)
 	}
-	if err := global.Set(ctx, "thermostat:desired:bedroom", 21.0); err != nil {
-		t.Fatal(err)
-	}
 	if err := global.Set(ctx, "thermostat:written:bedroom", 20.0); err != nil {
 		t.Fatal(err)
 	}
@@ -661,8 +652,8 @@ func (h *windowHandoffHarness) wroteSetpoint(temp float64) bool {
 
 // TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
 // (spec §4.2): on a window close, heating_windows.lua must restore the setpoint
-// the controller published to global:thermostat:written:<zone> — not a stale
-// saved value, and not the *requested* value.
+// the controller published to global:thermostat:written:<zone>, not a stale
+// saved value.
 func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 	h := newWindowHandoffHarness(t, nil, nil)
 
@@ -984,9 +975,7 @@ func manualTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
 
 // TestThermostatManualHoldDetected: with no override and a closed (seeded)
 // window, a climate target that differs from the published *written* setpoint
-// is recorded as a manual hold (§9), with a future expiry. The two published
-// keys are seeded apart and the dial is moved to exactly the requested value,
-// so a detector comparing against `desired` instead would see no change at all.
+// is recorded as a manual hold (§9), with a future expiry.
 func TestThermostatManualHoldDetected(t *testing.T) {
 	reg, kv, global, tracker := startThermostat(t)
 	ctx := context.Background()
@@ -995,9 +984,6 @@ func TestThermostatManualHoldDetected(t *testing.T) {
 		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":18}`)},
 		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
 	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := global.Set(ctx, "thermostat:desired:bedroom", 20.0); err != nil {
 		t.Fatal(err)
 	}
 	if err := global.Set(ctx, "thermostat:written:bedroom", 18.0); err != nil {
@@ -1047,8 +1033,6 @@ func TestThermostatOverrideSuppressesManual(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_ = global.Set(ctx, "thermostat:desired:bedroom", 18.0)
-	_ = global.Set(ctx, "thermostat:desired:childrens", 18.0)
 	_ = global.Set(ctx, "thermostat:written:bedroom", 18.0)
 	_ = global.Set(ctx, "thermostat:written:childrens", 18.0)
 

@@ -14,7 +14,7 @@ local climate = require "climate"
 local zone_defs = zones.zones
 
 -- Schedule, timed override, manual hold and override setpoint live in this
--- script's KV store; the published desired lives in `global`, shared.
+-- script's KV store; the published setpoint lives in `global`, shared.
 local function sched_key(zone) return "schedule:" .. zone end
 local function override_key(zone) return "override:" .. zone end
 local function manual_key(zone) return "manual:" .. zone end
@@ -121,7 +121,6 @@ end
 local function apply_zone(zone, now, dow, minute)
   local desired_temp = desired(zone, now, dow, minute)
   if desired_temp == nil then return end
-  global.set(zones.desired_key(zone), desired_temp)
   global.set(zones.written_key(zone), desired_temp)
   if control.should_write(mode(zone), any_window_open(zone), current_target(zone), desired_temp) then
     set_temp(zone, desired_temp)
@@ -406,7 +405,6 @@ do
   for zone in pairs(zone_defs) do
     local desired_temp = desired(zone, now, dow, minute)
     if desired_temp ~= nil then
-      global.set(zones.desired_key(zone), desired_temp)
       global.set(zones.written_key(zone), desired_temp)
     end
   end
