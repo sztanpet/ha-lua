@@ -997,27 +997,6 @@ ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
 
--- v4.13's {base, slope} coefficients and run count, and the journal fields only
--- its model wrote. Idempotent; drop it once the install has loaded it.
-local V413_FIELDS = { "k_before", "k_after", "k_used", "offset", "applied", "commanded" }
-
-local function forget_v413(climate)
-  store.delete("overshoot_k:" .. climate)
-  store.delete("overshoot_samples:" .. climate)
-  local rows = store.get(journal_key(climate))
-  if type(rows) ~= "table" then return end
-  local stripped = false
-  for _, row in ipairs(rows) do
-    for _, field in ipairs(V413_FIELDS) do
-      if row[field] ~= nil then
-        row[field] = nil
-        stripped = true
-      end
-    end
-  end
-  if stripped then store.set(journal_key(climate), rows) end
-end
-
 -- Re-publish at load, before the first tick: an HA restart drops REST-set states,
 -- so this is what makes the companions reappear.
 do
@@ -1029,7 +1008,6 @@ do
     -- its timing is broken, and one lost sample costs less than a corrupted
     -- coefficient (spec §6). Journaled, so the gap is visible.
     abandon_episode(climate, now, "restart")
-    forget_v413(climate)
   end
   ha.log("info", "enhanced_climate loaded, resuming " .. count .. " climate(s)")
 end
