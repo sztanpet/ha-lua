@@ -224,8 +224,8 @@ local function close_episode(zone, episode, at)
     store.set(c_key(zone), c_after)
     store.set(samples_key(zone), learned_samples(zone) + 1)
     ha.log("info", string.format(
-      "overshoot %s: %s cut_by=%s lead=%.1f peak=%.2f requested=%.1f error=%+.2f c %.3f -> %.3f (observed %.3f)",
-      zone, outcome, episode.cut_by, episode.lead_at_cutoff, episode.peak, episode.requested,
+      "overshoot %s: %s cut_by=%s lead=%.1f peak_lead=%.1f peak=%.2f requested=%.1f error=%+.2f c %.3f -> %.3f (observed %.3f)",
+      zone, outcome, episode.cut_by, episode.lead_at_cutoff or 0, episode.lead_max, episode.peak, episode.requested,
       episode.peak - episode.requested, c_before, c_after, episode.c_observed))
   end
   journal(zone, overshoot.record(episode, zone, c_before, c_after, outcome, reason, at))

@@ -364,9 +364,11 @@
           temp(row.current_at_open),
           into(row.gate_at) || "—",
           cut,
-          // The radiator's lead over the room at the cutoff: the stored heat about
-          // to land, which is what the overshoot actually is.
-          temp(row.lead_at_cutoff),
+          // The radiator's lead over the room at the cutoff → the most the coast
+          // saw. An early cut on a climbing radiator lands far more than the first.
+          row.lead_max != null && row.lead_max - row.lead_at_cutoff >= 0.5
+            ? temp(row.lead_at_cutoff) + " → " + temp(row.lead_max)
+            : temp(row.lead_at_cutoff),
           temp(row.predicted_at_cutoff != null ? row.predicted_at_cutoff : row.would_cut_predicted),
           discarded ? "—" : temp(row.peak),
           discarded ? "—" : signed(error),

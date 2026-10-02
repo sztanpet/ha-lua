@@ -312,6 +312,27 @@ func TestOvershootPureLib(t *testing.T) {
 		assert(near(live.c_observed, (24.1 - 23.7) / (45.47 - 23.7)), "c observed = coast / lead")
 		assert(near(c_after, o.GAIN * live.c_observed), "smoothed toward it")
 
+		-- An armed cut at the gate: the surface sensor catches up with the water after
+		-- the relay drops, from a 3.8° lead to 19.6°. c is measured on the heat that
+		-- landed, not the lead at the cut (live, 2026-10-02 02:14 CEST).
+		local gated = o.open(23, 23, 0.0086, false, 0, E(22.8, true))
+		o.step(gated, 23, 300, E(26.8, true))
+		assert(gated.cut_by == "overshoot" and near(gated.lead_at_cutoff, 3.8), "cut at the gate")
+		o.step(gated, 23, 600, E(42.6, false))
+		o.step(gated, 23.6, 1800, E(32.6, false))
+		assert(near(gated.lead_max, 42.6 - 23), "the coast's peak lead")
+		o.close(gated, 0.0086)
+		assert(near(gated.c_observed, 0.6 / (42.6 - 23)), "c on the peak lead, got "..tostring(gated.c_observed))
+		assert(near(o.record(gated, "z", 0, 0, "learned", nil, 1800).lead_max, 42.6 - 23), "journaled")
+
+		-- A cut lead under MIN_LEAD is not a cold radiator once the coast warms it.
+		local warmed = o.open(23, 23, 0.0086, false, 0, E(21.6, true))
+		o.step(warmed, 23, 300, E(23.9, true))
+		o.step(warmed, 23, 600, E(29.2, false))
+		o.step(warmed, 23.2, 1500, E(26.9, false))
+		local _, outcome_warmed = o.close(warmed, 0.0086)
+		assert(outcome_warmed == "learned", "peak lead 6.2 >= MIN_LEAD, got "..tostring(outcome_warmed))
+
 		-- Watching converges on the measured c. The v4.13 learner, fed the same
 		-- uncorrected runs, climbed without bound: an integrator on an open loop.
 		local c = 0

@@ -31,7 +31,7 @@ M.GAIN = 0.5
 -- At this c a radiator barely past the gate already predicts the request, so
 -- the cut comes at the gate: the shortest run the rules allow.
 M.C_MAX = 0.2
--- A cutoff with the radiator less than this above the room teaches nothing
+-- A coast whose radiator never got this far above the room teaches nothing
 -- about stored heat.
 M.MIN_LEAD = 3.0
 -- The coast ends when the room has turned, not on a timer: 0.2 below its peak
@@ -130,7 +130,10 @@ local function mark_cutoff(episode, by, room, at, radiator)
   episode.cut_by = by
   episode.room_at_cutoff = room
   episode.radiator_at_cutoff = radiator
-  if radiator ~= nil then episode.lead_at_cutoff = radiator - room end
+  if radiator ~= nil then
+    episode.lead_at_cutoff = radiator - room
+    episode.lead_max = episode.lead_at_cutoff
+  end
   episode.peak, episode.peak_at = room, at
   episode.radiator_at_peak = radiator
 end
@@ -204,6 +207,11 @@ function M.step(episode, room, at, env)
   -- be credited to this one, whatever the sensor's resolution.
   if env ~= nil and env.heating == false then episode.relay_opened = true end
   if env ~= nil and env.heating == true and episode.relay_opened then return "done" end
+  -- The surface sensor lags the water: a cut on a climbing radiator has already
+  -- delivered far more heat than its lead at the cut shows.
+  if radiator ~= nil and (episode.lead_max == nil or radiator - room > episode.lead_max) then
+    episode.lead_max = radiator - room
+  end
   if episode.hold then
     local predicted = M.predict(episode.c_used, room, radiator)
     if predicted == nil or predicted < episode.requested - EPSILON then
@@ -290,8 +298,8 @@ function M.valid(episode)
   if episode.invalid ~= nil then return false, episode.invalid end
   if episode.cutoff_at == nil then return false, "never_reached" end
   if episode.heated == false then return false, "never_heated" end
-  if episode.lead_at_cutoff == nil then return false, "no_radiator" end
-  if episode.lead_at_cutoff < M.MIN_LEAD then return false, "radiator_cold" end
+  if episode.lead_max == nil then return false, "no_radiator" end
+  if episode.lead_max < M.MIN_LEAD then return false, "radiator_cold" end
   return true, nil
 end
 
@@ -299,15 +307,15 @@ end
 -- ("learned"/"observed"/"discarded") and a discard reason.
 --
 -- A measurement, smoothed — not an integrator on the error. Whoever cut the run,
--- the room rose (peak - room at the cutoff) on (radiator - room at the cutoff)
--- of stored heat, and that ratio is what the next prediction needs. So
+-- the room rose (peak - room at the cutoff) on the most radiator lead the coast
+-- saw, and that ratio is what the next prediction needs. So
 -- observe-only, which only ever sees the node's own cutoff, converges on the
 -- same physical number instead of drifting on an error nothing it does can
 -- change. "observed" names that regime apart for a reader.
 function M.close(episode, c)
   local ok, reason = M.valid(episode)
   if not ok then return c, "discarded", reason end
-  local observed = (episode.peak - episode.room_at_cutoff) / episode.lead_at_cutoff
+  local observed = (episode.peak - episode.room_at_cutoff) / episode.lead_max
   episode.c_observed = observed
   local next_c = clamp(c + M.GAIN * (observed - c), 0, M.C_MAX)
   return next_c, episode.observe_only and "observed" or "learned", nil
@@ -337,6 +345,7 @@ function M.record(episode, zone, c_before, c_after, outcome, reason, closed_at)
     room_at_cutoff = episode.room_at_cutoff,
     radiator_at_cutoff = episode.radiator_at_cutoff,
     lead_at_cutoff = episode.lead_at_cutoff,
+    lead_max = episode.lead_max,
     predicted_at_cutoff = episode.predicted_at_cutoff,
     hold_temp = episode.hold_temp,
     released_at = episode.released_at,

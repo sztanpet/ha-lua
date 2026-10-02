@@ -58,8 +58,9 @@ decided to stop:
 
 1. `platform: thermostat` is a switch, not a proportional band. It drives the
    relay **full on** until the room reaches setpoint.
-2. The thermal actuator takes 2–4 minutes to *close* once the relay drops. Hot
-   water keeps flowing for all of it.
+2. The thermal actuator takes ~5 minutes to *close* once the relay drops. One
+   boiler pump serves every zone and stops the moment the last one drops, so
+   hot water keeps flowing only while another zone is still heating.
 3. The radiator body is then still at 50–70 °C and keeps radiating for another
    10–20 minutes.
 
@@ -182,11 +183,21 @@ the node heats again at once, which is rule 1, and the next run is a new
 episode.
 
 `c` is **one learned number per room: how far the room rises after the heat
-stops, per degree the radiator is above it at that moment.** That is the
-physics directly — the overshoot is the radiator's stored heat landing in the
-room, and the radiator's lead over the room is how much of it there is — so no
-offset, rise-scaling or floor term is needed. The first live run measured
-`c ≈ 0.018`: a 21.8° lead, 0.4° of coast.
+stops, per degree of the most the radiator leads it during the coast.** That
+is the physics directly — the overshoot is the radiator's stored heat landing
+in the room, and the radiator's lead over the room is how much of it there is
+— so no offset, rise-scaling or floor term is needed. The first live run
+measured `c ≈ 0.018`: a 21.8° lead, 0.4° of coast.
+
+The peak lead, not the lead at the cut (corrected after the first armed
+night, v4.15.0). The radiator sensor sits on the outside of the radiator and
+lags the water in it, so on a climbing radiator the lead at the cut understates
+the heat already delivered. One gate cut at a 3.8° lead, with the pump stopping
+at once, saw the radiator reach 19.6° six minutes later; measured on the cut
+lead it read `c = 0.16` and moved `c` tenfold in one run, measured on the peak
+lead it read 0.03 — what the node's own late cuts measure. The prediction
+still multiplies `c` by the lead *now*, so on a climbing radiator it under-
+predicts and the cut comes later: the safe side.
 
 `c` starts at 0. With nothing learned the prediction is the room itself, so
 the earliest possible cut is the room passing the request — never earlier than
@@ -227,7 +238,7 @@ remembering:
 | `HOLD_MARGIN` | `0.5 °C` | The hold setpoint sits this far below the room at the cut, so the node stops whatever its rounding. |
 | `GAIN` | `0.5` | Fraction of each run's measured `c` folded into the learned one. |
 | `C_MAX` | `0.2` | Sanity bound on `c`. At 0.2 a radiator barely past the gate already predicts the request, so the correction cuts at the gate: the shortest run rule 2 allows. |
-| `MIN_LEAD` | `3 °C` | A cutoff with the radiator less than this above the room teaches nothing about stored heat. |
+| `MIN_LEAD` | `3 °C` | A coast whose radiator never led the room by this much teaches nothing about stored heat. |
 | `PEAK_DROP` | `0.2 °C` | The coast is over once the room reads this far below its peak, clear of 0.1° flicker. |
 | `PEAK_HOLD` | `5 min` | …and the peak is at least this old, so one flickering reading right after a new high does not end it. |
 | `MAX_COAST` | `90 min` | Backstop for a room that never turns (a sunny window, another heat source). |
@@ -239,7 +250,8 @@ After each episode:
 
 ```
 cutoff     = the cutoff actually taken: the correction's, or the node's own
-c_observed = (peak - room_at_cutoff) / (radiator_at_cutoff - room_at_cutoff)
+lead_max   = max(radiator - room) from the cutoff to the end of the coast
+c_observed = (peak - room_at_cutoff) / lead_max
 c          = clamp(c + GAIN * (c_observed - c), 0, C_MAX)
 ```
 
@@ -252,21 +264,21 @@ matters twice:
   towards its clamp. `c` is a physical ratio measured at the natural cutoff; it
   does not depend on what the correction would have done, so watching
   converges.
-- **It converges on the cut it actually takes.** A cut earlier in the
-  radiator's climb leaves more heat still coming through the closing actuator
-  per degree of lead, so `c_observed` is larger there; folding it in moves the
-  next cut earlier still, and the fixed point is where the coast lands the room
-  on the request. Observe-only's `c`, measured at late natural cutoffs, is
-  therefore a slight UNDER-estimate for armed cuts: the first armed runs cut a
-  little late — closer to today's behaviour — and tighten from there. The error
-  is on the safe side.
+- **It measures the same number whoever cut.** An earlier draft divided by the
+  lead at the cut and argued the resulting drift — larger `c_observed` on
+  earlier cuts, each moving the next cut earlier — converged. Armed, it did not
+  converge so much as jump: a surface sensor on a climbing radiator reads far
+  below the water inside it, so `c` read five times the node's value. Dividing
+  by the coast's peak lead counts that heat, and what flows through the
+  closing valve while another zone keeps the pump running, so a gate cut and
+  a natural cutoff measure the same `c`.
 
 Episodes that teach nothing are discarded with a reason (§9.1): a window
 opened, the mode left heat, the request changed, observe-only was switched, the
 daemon restarted, the run never cut off within `MAX_EPISODE`
 (`never_reached`), the relay never closed (`never_heated`), there was no
-radiator reading (`no_radiator`), or the cutoff came with less than `MIN_LEAD`
-of radiator lead (`radiator_cold`).
+radiator reading (`no_radiator`), or the radiator never led the room by
+`MIN_LEAD` during the coast (`radiator_cold`).
 
 A peak that the next run truncates — the hold released, the node fired again
 before the room peaked — biases `c_observed` low. The next run then cuts later
@@ -381,6 +393,7 @@ requested, current_at_open, radiator_at_open, outdoor_at_open
 radiator_min, gate_at                              -- when the radiator was seen warming
 would_cut_at, would_cut_predicted                  -- observe-only: when it would have cut
 cutoff_at, cut_by, room_at_cutoff, radiator_at_cutoff, lead_at_cutoff,
+lead_max                                           -- the coast's peak lead, c's denominator
 predicted_at_cutoff, hold_temp, released_at,
 released_by  "predicted" | "turned"                -- what it decided, and from what
 peak, peak_at, error, heated, decay, decay_half_life   -- what actually happened
@@ -415,7 +428,7 @@ existing debug page's log viewer (`internal/web/debug.go`) with no daemon change
 |-------|-------|---------|
 | run open | `info` | zone, requested, room, radiator, c |
 | cut / would cut / hold released | `info` | room, radiator, lead, predicted; a release says whether it was `predicted` or `turned` |
-| episode close | `info` | who cut, lead, peak, error, `c` observed and before → after |
+| episode close | `info` | who cut, lead at the cut and peak lead, peak, error, `c` observed and before → after |
 | **discard** | **`warn`** | the reason from §9.2 |
 
 Discards are `warn`, deliberately, and not `debug`. A persistent discard is
