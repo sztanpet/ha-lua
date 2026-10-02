@@ -97,7 +97,18 @@ observe-only. Peak-lead `c` (`5ea6be9`) is committed, not released.
 
 ## Open
 - The "no episodes in N days" warning: offered repeatedly, never asked for.
-- Tuning only if armed data asks: cut on radiator updates rather than the
-  minute tick, a lower GAIN, requiring MIN_LEAD before an armed cut.
+- **The dose is detection time.** On a gate cut hot water flows ~90 s before
+  the relay drops; the radiator node's 60 s averaged report (30–90 s late)
+  plus the 1-min tick were most of it. Fixed on the node side: esphome repo
+  `5ba4fc9` (`.radiator.yaml`, all three radiator nodes) sends a raw reading
+  every 60 s and at once on a 0.3° move. NOT FLASHED yet (the user flashes
+  from the ESPHome dashboard). Next: cut on radiator updates rather than the
+  minute tick (offered, not asked for yet).
+- Faster actuator: Oventrop Aktor M (M30×1.5, ~3 s, 3-wire, power on brown
+  CLOSES, so brown goes on the relay's NC contact). Helps the 4-min opening
+  lag and overlap mornings; not a night alone, where the pump stopping
+  already ends the flow. The user's call; not bought.
+- Tuning only if armed data asks: a lower GAIN, requiring MIN_LEAD before an
+  armed cut.
 - At `log_level: debug` the log is a one-hour rolling window; the journal
   (SQLite) is the record.
