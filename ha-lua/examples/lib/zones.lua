@@ -22,8 +22,8 @@ M.default_override_temp = 23
 
 -- One entry per zone. `windows` is a list so a zone can have several sensors.
 -- `radiator` is the sensor strapped to that zone's radiator, read by
--- valve_watch.lua and by thermostat.lua's overshoot correction. `label` is what a notification calls the zone; it defaults to
--- the key.
+-- valve_watch.lua. `label` is what a notification calls the zone; it defaults
+-- to the key.
 M.zones = {
   livingroom = { climate = "climate.living_room", windows = { "binary_sensor.living_room_window" }, radiator = "sensor.living_room_radiator_temp", label = "Living room" },
   bedroom    = { climate = "climate.bedroom",     windows = { "binary_sensor.sonoff_door_1_contact" }, radiator = "sensor.bedroom_radiator_temp", label = "Bedroom" },
@@ -36,12 +36,9 @@ M.zones = {
 -- `desired` is what the user asked for — the schedule/override/manual value.
 -- Anything displaying intent reads this one.
 --
--- `written` is what the controller actually commands the device to, which may
--- be lower than `desired` while the overshoot correction is cutting a warmup
--- early (see overshoot-spec.md §7). Anything comparing against the value on
--- the device — the manual-change detector, the window script's restore — must
--- read this one, or it will read our own correction as the user turning the
--- dial. The two are equal whenever no correction is active.
+-- `written` is what the controller actually commands the device to. Anything
+-- comparing against the value on the device — the manual-change detector, the
+-- window script's restore — reads this one.
 function M.desired_key(zone)
   return "thermostat:desired:" .. zone
 end

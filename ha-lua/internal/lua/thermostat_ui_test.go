@@ -580,10 +580,8 @@ func TestThermostatUIRevealsCommandedSetpoint(t *testing.T) {
 	if afterSecondClick != 0 {
 		t.Errorf("second tap did not hide the disclosure: %d panels", afterSecondClick)
 	}
-	// The seeded bedroom sits at a commanded 18 with nothing learned yet, and
-	// the panel must say both — a bare commanded number says nothing about
-	// whether to trust it.
-	for _, want := range []string{"Commanded", "18.0", "nothing learned yet", "watching only"} {
+	// The seeded bedroom sits at a commanded 18.
+	for _, want := range []string{"Requested", "Commanded", "18.0"} {
 		if !strings.Contains(panelText, want) {
 			t.Errorf("disclosure text is missing %q:\n%s", want, panelText)
 		}

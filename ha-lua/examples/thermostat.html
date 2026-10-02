@@ -81,20 +81,9 @@
   .setpoint[aria-expanded="true"] { color:var(--accent); border-bottom-style:solid; }
   .disclosure { margin:-4px 0 12px; padding:10px 12px; font-size:.85rem;
           border:1px solid var(--line); border-radius:10px; background:var(--surface); }
-  .disclosure dl { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:0 0 8px; }
+  .disclosure dl { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; margin:0; }
   .disclosure dt { color:var(--muted); }
   .disclosure dd { margin:0; font-variant-numeric:tabular-nums; }
-  .disclosure .acts { display:flex; flex-wrap:wrap; gap:8px; }
-  .disclosure .acts button { padding:8px 12px; font-size:.85rem; border:1px solid var(--line);
-          border-radius:8px; background:var(--card); color:var(--ink); cursor:pointer; }
-  .disclosure h4 { margin:12px 0 4px; font-size:.8rem; color:var(--muted);
-          text-transform:uppercase; letter-spacing:.04em; }
-  .episodes { margin:0; padding:0; list-style:none;
-          font-variant-numeric:tabular-nums; }
-  .episodes li { display:flex; flex-wrap:wrap; gap:2px 8px; padding:3px 0;
-          border-top:1px solid var(--line); }
-  .episodes .when { color:var(--muted); }
-  .episodes .why { color:var(--muted); font-style:italic; }
   .today { display:flex; flex-wrap:wrap; gap:6px 10px; font-size:.9rem;
            color:var(--muted); margin-bottom:8px; }
   .today .step.now { color:var(--accent); font-weight:700; cursor:help; }
@@ -178,34 +167,6 @@ const MESSAGES = {
     "reveal_setpoint": "Show what is actually being commanded",
     "requested": "Requested",
     "commanded": "Commanded",
-    "commanded_hold": "{temp}° — held off, the radiator's heat will carry the room",
-    "commanded_same": "{temp}° — no correction",
-    "learning": "Learning",
-    "learning_from": "+{c}° per 10° of radiator after a cut, from {n} runs",
-    "learning_none": "nothing learned yet",
-    "mode_label": "Mode",
-    "mode_watching": "watching only — the correction is not applied",
-    "mode_correcting": "correcting",
-    "start_correcting": "Apply the correction",
-    "stop_correcting": "Only watch",
-    "reset_learning": "Forget what it learned",
-    "reset_confirm": "Reset this zone's learned correction to zero?",
-    "recent_episodes": "Recent episodes",
-    "no_episodes": "none recorded yet",
-    "episode_line": "{requested}° asked, {cut}, peaked {peak}° ({error}°)",
-    "cut.overshoot": "cut early at {room}°", "cut.device": "stopped by itself at {room}°",
-    "cut.none": "never stopped",
-    "outcome.learned": "learned", "outcome.observed": "observed",
-    "outcome.discarded": "discarded",
-    "reason.window_open": "a window opened",
-    "reason.mode_left_heat": "left heat mode",
-    "reason.setpoint_changed": "the setpoint changed",
-    "reason.never_heated": "the heating never switched on",
-    "reason.no_radiator": "no radiator reading",
-    "reason.radiator_cold": "the radiator was still cold",
-    "reason.restart": "the daemon restarted",
-    "reason.never_reached": "the run never stopped",
-    "reason.observe_changed": "the mode was switched",
   },
   hu: {
     "title": "Fűtés",
@@ -239,34 +200,6 @@ const MESSAGES = {
     "reveal_setpoint": "Mutasd, mi van ténylegesen kiadva",
     "requested": "Kért",
     "commanded": "Kiadott",
-    "commanded_hold": "{temp}° — lekapcsolva, a radiátor hője viszi tovább",
-    "commanded_same": "{temp}° — nincs korrekció",
-    "learning": "Tanulás",
-    "learning_from": "10° radiátortöbblet +{c}° lekapcsolás után, {n} fűtésből",
-    "learning_none": "még nem tanult semmit",
-    "mode_label": "Mód",
-    "mode_watching": "csak figyel — a korrekció nincs alkalmazva",
-    "mode_correcting": "korrigál",
-    "start_correcting": "Korrekció bekapcsolása",
-    "stop_correcting": "Csak figyeljen",
-    "reset_learning": "Tanultak elfelejtése",
-    "reset_confirm": "Nullázzuk a zóna megtanult korrekcióját?",
-    "recent_episodes": "Legutóbbi ciklusok",
-    "no_episodes": "még nincs rögzítve",
-    "episode_line": "{requested}° kérve, {cut}, csúcs {peak}° ({error}°)",
-    "cut.overshoot": "korán lekapcsolva {room}°-nál", "cut.device": "magától leállt {room}°-nál",
-    "cut.none": "nem állt le",
-    "outcome.learned": "tanult", "outcome.observed": "megfigyelt",
-    "outcome.discarded": "eldobva",
-    "reason.window_open": "ablak nyílt ki",
-    "reason.mode_left_heat": "kilépett a fűtés módból",
-    "reason.setpoint_changed": "változott a célhőmérséklet",
-    "reason.never_heated": "nem kapcsolt be a fűtés",
-    "reason.no_radiator": "nincs radiátor-adat",
-    "reason.radiator_cold": "a radiátor még hideg volt",
-    "reason.restart": "újraindult a szolgáltatás",
-    "reason.never_reached": "a fűtés sosem állt le",
-    "reason.observe_changed": "átkapcsolt a mód",
   },
 };
 
@@ -323,12 +256,9 @@ const DAY_GROUPS = [
 ];
 const editing = new Set();  // zones with an open schedule editor (suppresses polling)
 const busy = new Set();      // zones mid-transition: open fetch in flight or close animating
-// Zones whose setpoint disclosure is open, and the last journal fetched for
-// each. Kept outside the DOM so a poll can rebuild the cards without closing a
-// panel the user opened; the live numbers come from /api/state, only the
-// episode list needs the cache.
+// Zones whose setpoint disclosure is open. Kept outside the DOM so a poll can
+// rebuild the cards without closing a panel the user opened.
 const revealed = new Set();
-const journals = new Map();
 let lastState = null;
 let rendered = null;
 
@@ -435,10 +365,6 @@ function fmtTime(hhmm) {
   return timeFmt.format(new Date(2000, 0, 1, Number(parts[0]) || 0, Number(parts[1]) || 0));
 }
 
-const stampFmt = new Intl.DateTimeFormat(undefined,
-  { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const fmtStamp = (epochSeconds) => stampFmt.format(new Date(epochSeconds * 1000));
-
 // Card drag-to-reorder. One drag at a time, tracked in `drag`. The grip's
 // pointerdown starts it; move/up are listened for on the document so the drag
 // keeps tracking even if the pointer slips off the card, and we also try to
@@ -533,90 +459,20 @@ function render(state) {
   });
 }
 
-// The journal is fetched rather than carried on /api/state: 50 episodes per
-// zone would bloat a payload polled every 5 seconds for something almost nobody
-// has open.
-async function refreshJournal(zone) {
-  try {
-    const resp = await fetch("./api/overshoot?zone=" + encodeURIComponent(zone));
-    journals.set(zone, resp.ok ? ((await resp.json()).journal || []) : []);
-  } catch (err) { journals.set(zone, []); }
-}
-
-async function toggleReveal(zone) {
-  if (revealed.has(zone)) {
-    revealed.delete(zone);
-  } else {
-    await refreshJournal(zone);
-    revealed.add(zone);
-  }
+function toggleReveal(zone) {
+  if (revealed.has(zone)) revealed.delete(zone);
+  else revealed.add(zone);
   render(lastState);
 }
 
-// One journal row. Discards say what broke them — a learner that quietly drops
-// every episode looks exactly like one that has converged, so the reason is the
-// most useful thing on the line.
-function episodeRow(row) {
-  const signed = (value) => (value >= 0 ? "+" : "") + value.toFixed(1);
-  const outcome = t("outcome." + row.outcome, null, row.outcome);
-  // Rows from before the radiator-gated cutoff carry no cut_by; they read as
-  // "never stopped" rather than breaking the list.
-  const cut = row.cut_by
-    ? t("cut." + row.cut_by, { room: Number(row.room_at_cutoff).toFixed(1) })
-    : t("cut.none");
-  return h("li", null,
-    h("span", { class: "when" }, fmtStamp(row.closed_at)),
-    h("span", null, t("episode_line", {
-      requested: row.requested.toFixed(1), cut,
-      peak: row.peak.toFixed(1), error: signed(row.error),
-    })),
-    h("span", { class: "why" },
-      row.reason ? outcome + ": " + t("reason." + row.reason, null, row.reason) : outcome));
-}
-
-// The disclosure behind the setpoint: what is actually commanded, whether a cut
-// is holding the run off, what was learned and from how many runs, and the way
-// out if it has gone wrong. Reachable by one deliberate tap and no other way.
+// The disclosure behind the setpoint: what the device actually carries.
+// Reachable by one deliberate tap and no other way.
 function disclosure(zone, status) {
-  const watching = status.observe_only !== false;
-  const commanded = (status.commanded != null) ? status.commanded.toFixed(1) : "—";
-  const rows = journals.get(zone) || [];
-  const samples = Number(status.samples) || 0;
-  // c per 10° of radiator lead: 0.018 is unreadable, "+0.18° per 10°" is not.
-  const c = ((Number(status.c) || 0) * 10).toFixed(2);
-
-  // Both actions change the journal — switching the mode ends the running
-  // episode, and a reset wipes the lot — so refetch before re-rendering rather
-  // than leaving a stale list on screen.
-  const runAction = async (path, payload) => {
-    const newState = await send(path, "POST", payload);
-    if (!newState) return null;
-    await refreshJournal(zone);
-    return applyState(newState);
-  };
-
+  const commanded = (status.commanded != null) ? status.commanded.toFixed(1) + "°" : "—";
   return h("div", { class: "disclosure" },
     h("dl", null,
       h("dt", null, t("requested")), h("dd", null, status.target.toFixed(1) + "°"),
-      h("dt", null, t("commanded")),
-      h("dd", null, status.holding
-        ? t("commanded_hold", { temp: commanded })
-        : t("commanded_same", { temp: commanded })),
-      h("dt", null, t("learning")),
-      h("dd", null, samples > 0 ? t("learning_from", { c, n: samples })
-                                : t("learning_none")),
-      h("dt", null, t("mode_label")),
-      h("dd", null, watching ? t("mode_watching") : t("mode_correcting"))),
-    h("div", { class: "acts" },
-      h("button", { onclick: () => runAction("api/overshoot/observe", { zone, observe_only: !watching }) },
-        watching ? t("start_correcting") : t("stop_correcting")),
-      h("button", { onclick: () => {
-          if (confirm(t("reset_confirm"))) runAction("api/overshoot/reset", { zone });
-        } }, t("reset_learning"))),
-    h("h4", null, t("recent_episodes")),
-    rows.length
-      ? h("ul", { class: "episodes" }, ...rows.slice().reverse().map(episodeRow))
-      : h("div", { class: "muted" }, t("no_episodes")));
+      h("dt", null, t("commanded")), h("dd", null, commanded)));
 }
 
 function zoneCard(zone, status) {
@@ -627,9 +483,8 @@ function zoneCard(zone, status) {
     html: ICON_GRIP });
   grip.onpointerdown = (ev) => startDrag(ev, zone);
   // The requested setpoint is the number on the card; the commanded one is
-  // behind a tap. Showing a corrected setpoint where the user set 21 reads as a
-  // failed write, but it has to stay reachable — when the learner misbehaves it
-  // is the only way to see why.
+  // behind a tap. The window script's frost value where the user set 21 reads
+  // as a failed write, but it has to stay reachable.
   let setpoint = null;
   if (status.mode === "heat" && status.target != null) {
     setpoint = h("button", { class: "setpoint", title: t("reveal_setpoint"),

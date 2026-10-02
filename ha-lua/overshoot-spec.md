@@ -2,10 +2,12 @@
 
 > **Working state:** [`state/overshoot.md`](state/overshoot.md) — implementation progress and decisions.
 
-Status: **built for both controllers**, shipping in observe-only mode (§9.4).
-§11's five commits landed in `thermostat.lua`; §12's port to
+Status: **in `enhanced_climate.lua` only**, shipping in observe-only mode
+(§9.4). §11's five commits first landed in `thermostat.lua`; §12 ported it to
 `enhanced_climate.lua` — which is where the children's room actually lives, and
-was wrongly assumed not to be — is done too. See `state/overshoot.md`. Where
+was wrongly assumed not to be — and the `thermostat.lua` copy was then removed
+(v4.16.0): it ran nowhere, and every change had to be made twice. Sections
+naming `thermostat.lua` describe that history. See `state/overshoot.md`. Where
 the code and this document disagreed, the document was corrected: the notes
 saying so are kept deliberately, since each marks something that was got wrong
 on paper first.

@@ -506,7 +506,7 @@ func writeThermostatScripts(t *testing.T) string {
 		t.Fatal(err)
 	}
 	writeTestZones(t, libDir)
-	for _, lib := range []string{"schedule.lua", "control.lua", "climate.lua", "overshoot.lua"} {
+	for _, lib := range []string{"schedule.lua", "control.lua", "climate.lua"} {
 		copyRepoFile(t, filepath.Join(repoScriptsDir, "lib", lib), filepath.Join(libDir, lib))
 	}
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "thermostat.lua"), filepath.Join(dir, "thermostat.lua"))
@@ -517,10 +517,8 @@ func writeThermostatScripts(t *testing.T) string {
 // TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
 // (spec §4.2): on a window close, the real heating_windows.lua must restore the
 // setpoint the controller published to global:thermostat:written:<zone> — not a
-// stale saved value, and not the *requested* value, which may sit above the
-// commanded one while an overshoot correction is cutting a warmup short
-// (overshoot-spec.md §7). The two keys are seeded to different values here so
-// that distinction is pinned. It runs the shipped script in a real runner with
+// stale saved value, and not the *requested* value. The two keys are seeded to
+// different values here so that distinction is pinned. It runs the shipped script in a real runner with
 // a captured call_service and a seeded climate entity.
 type windowSvcCall struct {
 	domain, service string
@@ -664,9 +662,7 @@ func (h *windowHandoffHarness) wroteSetpoint(temp float64) bool {
 // TestWindowHandoffRestoresCommandedSetpoint exercises the two-script contract
 // (spec §4.2): on a window close, heating_windows.lua must restore the setpoint
 // the controller published to global:thermostat:written:<zone> — not a stale
-// saved value, and not the *requested* value, which may sit above the commanded
-// one while an overshoot correction is cutting a warmup short (overshoot-spec.md
-// §7).
+// saved value, and not the *requested* value.
 func TestWindowHandoffRestoresCommandedSetpoint(t *testing.T) {
 	h := newWindowHandoffHarness(t, nil, nil)
 
@@ -777,7 +773,7 @@ func TestThermostatAPI(t *testing.T) {
 	if rem, _ := override["remaining_s"].(float64); rem <= 0 || rem > 30*60 {
 		t.Errorf("remaining_s = %v, want 0<rem<=1800", override["remaining_s"])
 	}
-	// The split (overshoot-spec.md §8): the override makes the request 21 while
+	// The split: the override makes the request 21 while
 	// call_service is a no-op capture, so the entity's setpoint stays 18. This
 	// is the only place the two halves are forced apart — `target` must be what
 	// was asked for, `commanded` what is on the device.
@@ -830,50 +826,6 @@ func TestThermostatAPI(t *testing.T) {
 	rec = doReqID(router, "thermostat", "PUT", "/api/schedule", `{"zone":"bedroom","days":{"0":[{"time":"06:00","temp":22}]}}`)
 	if rec.Code != 200 {
 		t.Fatalf("schedule temp within range: status = %d body %q", rec.Code, rec.Body.String())
-	}
-
-	// The learner's own endpoints (§9.5, §9.6): its state is curl-able, and a
-	// zone that has gone wrong is recoverable without touching the database.
-	rec = doReqID(router, "thermostat", "GET", "/api/overshoot?zone=bedroom", "")
-	if rec.Code != 200 {
-		t.Fatalf("GET /api/overshoot status %d body %q", rec.Code, rec.Body.String())
-	}
-	learner := decode(rec)
-	if learner["c"] != float64(0) {
-		t.Errorf("c = %v, want 0 (nothing learned)", learner["c"])
-	}
-	if learner["observe_only"] != true {
-		t.Errorf("observe_only = %v, want true — it ships watching", learner["observe_only"])
-	}
-	if rec := doReqID(router, "thermostat", "GET", "/api/overshoot?zone=nope", ""); rec.Code != 400 {
-		t.Errorf("unknown zone: status = %d, want 400", rec.Code)
-	}
-
-	rec = doReqID(router, "thermostat", "POST", "/api/overshoot/observe", `{"zone":"bedroom","observe_only":false}`)
-	if rec.Code != 200 {
-		t.Fatalf("POST /api/overshoot/observe status %d body %q", rec.Code, rec.Body.String())
-	}
-	zones, _ = decode(rec)["zones"].(map[string]any)
-	bedroom, _ = zones["bedroom"].(map[string]any)
-	if bedroom["observe_only"] != false {
-		t.Errorf("observe_only = %v after opting in, want false", bedroom["observe_only"])
-	}
-	if rec := doReqID(router, "thermostat", "POST", "/api/overshoot/observe", `{"zone":"bedroom","observe_only":"no"}`); rec.Code != 400 {
-		t.Errorf("non-boolean observe_only: status = %d, want 400", rec.Code)
-	}
-
-	// Reset restores the untrained state, flag included.
-	if err := kv.Set(context.Background(), "overshoot_c:bedroom", 0.05); err != nil {
-		t.Fatal(err)
-	}
-	rec = doReqID(router, "thermostat", "POST", "/api/overshoot/reset", `{"zone":"bedroom"}`)
-	if rec.Code != 200 {
-		t.Fatalf("POST /api/overshoot/reset status %d body %q", rec.Code, rec.Body.String())
-	}
-	zones, _ = decode(rec)["zones"].(map[string]any)
-	bedroom, _ = zones["bedroom"].(map[string]any)
-	if bedroom["c"] != float64(0) || bedroom["samples"] != float64(0) {
-		t.Errorf("after reset c/samples = %v/%v, want 0/0", bedroom["c"], bedroom["samples"])
 	}
 
 	// GET / serves the self-contained UI page.
@@ -1016,27 +968,6 @@ func climateChange(entity string, oldT, newT float64) ha.Event {
 			`"new_state":{"state":"heat","attributes":{"temperature":%v}}}`, entity, oldT, newT))}
 }
 
-// climateChangeInRoom is climateChange plus the room temperature, which the
-// overshoot learner needs: the tracker replaces an entity's attributes
-// wholesale, so an event that omits current_temperature erases it.
-func climateChangeInRoom(entity string, oldT, newT, room float64) ha.Event {
-	return ha.Event{Type: "state_changed", Data: jsontext.Value(fmt.Sprintf(
-		`{"entity_id":%q,"old_state":{"state":"heat","attributes":{"temperature":%v,"current_temperature":%v}},`+
-			`"new_state":{"state":"heat","attributes":{"temperature":%v,"current_temperature":%v}}}`,
-		entity, oldT, room, newT, room))}
-}
-
-// relayClosed is the device reporting its relay switching on inside a hold:
-// the setpoint and the room are unchanged, only hvac_action moves. Unlike the
-// dispatch-only helpers above it carries entity_id inside new_state, because
-// the tracker keys the mirror on that and this event is applied to it too.
-func relayClosed(entity string, target, room float64) ha.Event {
-	return ha.Event{Type: "state_changed", Data: jsontext.Value(fmt.Sprintf(
-		`{"entity_id":%[1]q,"old_state":{"entity_id":%[1]q,"state":"heat","attributes":{"temperature":%[2]v,"current_temperature":%[3]v,"hvac_action":"idle"}},`+
-			`"new_state":{"entity_id":%[1]q,"state":"heat","attributes":{"temperature":%[2]v,"current_temperature":%[3]v,"hvac_action":"heating"}}}`,
-		entity, target, room))}
-}
-
 func manualTemp(t *testing.T, kv *store.Store, zone string) (float64, bool) {
 	t.Helper()
 	v, err := kv.Get(context.Background(), "manual:"+zone)
@@ -1092,164 +1023,6 @@ func TestThermostatManualHoldDetected(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("manual hold was never recorded")
-}
-
-// TestThermostatOpensOvershootEpisode: a request that rises above the room
-// temperature starts a run's episode (overshoot-spec.md §5), and opening it
-// decides nothing: no hold before the radiator is seen warming.
-func TestThermostatOpensOvershootEpisode(t *testing.T) {
-	reg, kv, global, tracker := startThermostat(t)
-	ctx := context.Background()
-
-	if err := tracker.Seed(ctx, []ha.StateData{
-		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":18,"current_temperature":18}`)},
-		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	_ = global.Set(ctx, "thermostat:desired:bedroom", 18.0)
-	_ = global.Set(ctx, "thermostat:written:bedroom", 18.0)
-
-	// The dial moving to 21 becomes a manual hold, which re-applies the zone —
-	// the request changes from 18 to 21 with the room at 18, so an episode opens.
-	reg.Dispatch(climateChangeInRoom("climate.bedroom", 18, 21, 18))
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		v, err := kv.Get(ctx, "overshoot_episode:bedroom")
-		if err != nil {
-			t.Fatal(err)
-		}
-		episode, ok := v.(map[string]any)
-		if !ok {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		if episode["requested"] != float64(21) {
-			t.Errorf("requested = %v, want 21", episode["requested"])
-		}
-		if episode["rise"] != float64(3) {
-			t.Errorf("rise = %v, want 3", episode["rise"])
-		}
-		if episode["c_used"] != float64(0) {
-			t.Errorf("c_used = %v, want 0 (nothing learned yet)", episode["c_used"])
-		}
-		if episode["observe_only"] != true {
-			t.Errorf("observe_only = %v, want true (it ships watching, §9.4)", episode["observe_only"])
-		}
-		if episode["hold"] != nil {
-			t.Errorf("hold = %v at the open: a run is never cut before the radiator warms", episode["hold"])
-		}
-		return
-	}
-	t.Fatal("no overshoot episode was opened")
-}
-
-// TestThermostatOpensEpisodeOnHeating: the second trigger of spec §5. A hold
-// whose request never moves still opens an episode when the relay closes —
-// the hold is seeded, desired and written agree with the dial so nothing reads
-// as manual, and the only thing that changes is hvac_action.
-func TestThermostatOpensEpisodeOnHeating(t *testing.T) {
-	reg, kv, global, tracker := startThermostat(t, func(ctx context.Context, kv *store.Store) {
-		if err := kv.Set(ctx, "manual:bedroom", map[string]any{
-			"temp": 21.0, "expires": time.Now().Add(6 * time.Hour).Format(time.RFC3339),
-		}); err != nil {
-			t.Fatal(err)
-		}
-	})
-	ctx := context.Background()
-
-	if err := tracker.Seed(ctx, []ha.StateData{
-		{EntityID: "climate.bedroom", State: "heat", Attributes: jsontext.Value(`{"temperature":21,"current_temperature":20.6,"hvac_action":"idle"}`)},
-		{EntityID: "binary_sensor.bedroom_window", State: "off", Attributes: jsontext.Value("{}")},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	_ = global.Set(ctx, "thermostat:desired:bedroom", 21.0)
-	_ = global.Set(ctx, "thermostat:written:bedroom", 21.0)
-
-	// Applied to the mirror BEFORE the dispatch, as main.go orders it: the
-	// trigger reads hvac_action off the mirror, not off the event.
-	ev := relayClosed("climate.bedroom", 21, 20.6)
-	if err := tracker.HandleStateChanged(ctx, ev.Data); err != nil {
-		t.Fatal(err)
-	}
-	reg.Dispatch(ev)
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		v, err := kv.Get(ctx, "overshoot_episode:bedroom")
-		if err != nil {
-			t.Fatal(err)
-		}
-		episode, ok := v.(map[string]any)
-		if !ok {
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		if episode["requested"] != float64(21) {
-			t.Errorf("requested = %v, want 21", episode["requested"])
-		}
-		if rise, _ := episode["rise"].(float64); rise < 0.39 || rise > 0.41 {
-			t.Errorf("rise = %v, want 0.4 (the deadband)", episode["rise"])
-		}
-		if episode["heated"] != true {
-			t.Errorf("heated = %v, want true from the open", episode["heated"])
-		}
-		return
-	}
-	t.Fatal("the relay closing opened no episode")
-}
-
-// TestThermostatAbandonsEpisodeOnRestart: an episode still in flight when the
-// daemon stopped is discarded at load, not resumed — its timing is broken and a
-// corrupted k costs more than a lost sample (§6). It must leave a journal row
-// with the reason, because an episode that vanishes silently is exactly the
-// failure §9.1 is about.
-func TestThermostatAbandonsEpisodeOnRestart(t *testing.T) {
-	stale := map[string]any{
-		"opened_at": 1000, "requested": 21.0, "current_at_open": 18.0,
-		"rise": 3.0, "c_used": 0.02,
-		"applied": 19.8, "observe_only": false, "peak": 19.9, "peak_at": 1200,
-	}
-	_, kv, _, _ := startThermostat(t, func(ctx context.Context, kv *store.Store) {
-		if err := kv.Set(ctx, "overshoot_episode:bedroom", stale); err != nil {
-			t.Fatal(err)
-		}
-		if err := kv.Set(ctx, "overshoot_c:bedroom", 0.02); err != nil {
-			t.Fatal(err)
-		}
-	})
-	ctx := context.Background()
-
-	if v, err := kv.Get(ctx, "overshoot_episode:bedroom"); err != nil {
-		t.Fatal(err)
-	} else if v != nil {
-		t.Errorf("stale episode survived the load: %v", v)
-	}
-
-	v, err := kv.Get(ctx, "overshoot_journal:bedroom")
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, _ := v.([]any)
-	if len(rows) != 1 {
-		t.Fatalf("journal has %d rows, want 1: %v", len(rows), v)
-	}
-	row, _ := rows[0].(map[string]any)
-	if row["outcome"] != "discarded" || row["reason"] != "restart" {
-		t.Errorf("outcome/reason = %v/%v, want discarded/restart", row["outcome"], row["reason"])
-	}
-	if row["c_before"] != 0.02 || row["c_after"] != 0.02 {
-		t.Errorf("c moved on a discarded episode: %v -> %v", row["c_before"], row["c_after"])
-	}
-
-	// A discard must not count as a sample; nothing was learned.
-	if v, err := kv.Get(ctx, "overshoot_c_samples:bedroom"); err != nil {
-		t.Fatal(err)
-	} else if v != nil {
-		t.Errorf("samples = %v, want unset after a discard", v)
-	}
 }
 
 // TestThermostatOverrideSuppressesManual: an active override makes the
