@@ -6,7 +6,7 @@ and the Lovelace card (`cards/enhanced-climate-card.js`). Spec:
 own file, `overshoot.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE and live** — it is the controller that actually runs the
-user's heating. Card VERSION **0.3.42** (v4.15.0).
+user's heating. Card VERSION **0.3.43** (v4.16.0).
 
 ## How it reaches a user
 - The card is embedded and Materialized to

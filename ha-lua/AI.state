@@ -9,13 +9,13 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Overshoot: cut on detection, not the clock** — peak-lead `c` (`5ea6be9`,
-copied to the box by the user, live), radiator nodes reporting at once (esphome
-`5ba4fc9`, not flashed), runs stepped per radiator reading (`2d483c6`, not on
-the box). Detail: `state/overshoot.md`, "First armed night". The children's room is armed since 2026-10-01: every cut lands at the
-gate, the minimum dose alone overshoots +0.6, and the cut-lead `c` had jumped
-tenfold: the radiator sensor is on the surface and lags the water, so the cut
-lead understated the heat already in. D1 still needs the user's go-ahead.
+**v4.16.0 released, scripts deployed: overshoot cuts on detection, not the
+clock** (detail: `state/overshoot.md`, "First armed night"). Peak-lead `c`,
+runs stepped per radiator reading, the `thermostat.lua` copy and v4.13
+leftovers removed. Left: the user flashes the three radiator nodes (esphome
+`5ba4fc9`), pulls the v4.16.0 image for card 0.3.43, then a few armed nights
+decide keep / simplify / remove. `forget_v413` can go in the next release. D1
+still needs the user's go-ahead.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

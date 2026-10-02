@@ -3,11 +3,12 @@
 Spec: `overshoot-spec.md` (§5 is the current model). Global decisions — the
 user's two absolute rules among them — live in `../AI.state`.
 
-Status: **in `enhanced_climate.lua`, v4.15.0 deployed. The children's room is
-ARMED** (by the user from the card, evening of 2026-10-01); the other three are
-observe-only. Peak-lead `c` (`5ea6be9`) is unreleased but LIVE: the user
-copied its three files to the box on 2026-10-02 ~19:20 CEST (scripts reloaded
-19:46). The per-reading step (`2d483c6`) is committed, not on the box yet.
+Status: **in `enhanced_climate.lua` only (the `thermostat.lua` copy was
+removed in v4.16.0). v4.16.0 released; its scripts are deployed** (2026-10-02
+20:22 CEST; the image, which carries card 0.3.43, is not pulled yet). The
+children's room is ARMED (by the user, evening of 2026-10-01); the other three
+are observe-only. The user reset its `c` and journal at 19:46, so learning
+restarts from 0 under the peak-lead measurement.
 
 ## The plant (children's room)
 - `climate.konyha_gyerekszoba_futes`, no schedule. ESPHome
@@ -78,7 +79,9 @@ copied its three files to the box on 2026-10-02 ~19:20 CEST (scripts reloaded
   `c = c0 + c1·(T_out − T_ref)` by recursive least squares instead. The radiator
   lead is the first-order term; outdoor is second-order unless the boiler runs
   weather compensation.
-- The old `overshoot_k:` keys ({base, slope}, v4.13) are ignored, not deleted.
+- v4.13's `overshoot_k:`/`overshoot_samples:` keys and its journal-only fields
+  are deleted at load by `forget_v413` in `enhanced_climate.lua`. Drop that
+  block once the box has loaded it (v4.16.0).
 
 ## Expect once armed (from the replay — not bugs)
 - Runs starting 0.1–0.2 below the request are cut 1–3 ticks after the radiator
