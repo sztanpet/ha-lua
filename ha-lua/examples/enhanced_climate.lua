@@ -215,10 +215,7 @@ end
 -- discards log at warn.
 -- ---------------------------------------------------------------------------
 
--- A new key rather than the old overshoot_k: that one held v4.13's {base,
--- slope}, which means something else entirely.
 local function c_key(climate) return "overshoot_c:" .. climate end
--- Counts runs of the model c belongs to; the old key counted v4.13's runs.
 local function samples_key(climate) return "overshoot_c_samples:" .. climate end
 local function episode_key(climate) return "overshoot_episode:" .. climate end
 local function journal_key(climate) return "overshoot_journal:" .. climate end
@@ -642,9 +639,8 @@ ha.on_state_change("climate.*", function(data)
   -- setpoint, and that write would read as a dial change against the target
   -- this very event carries.
   local held = manual_change(climate_entity, new_state, now, dow, minute)
-  -- The relay closing opens a cycle's episode (overshoot-spec.md §5). The tick
-  -- would see it up to a minute later, but the offset is latched at the open
-  -- and the cut can only be as early as that.
+  -- The relay closing opens a cycle's episode (overshoot-spec.md §5) at once,
+  -- not up to a minute later on the tick.
   local old_attrs = data.old_state and data.old_state.attributes or {}
   local relay_closed = new_state.attributes.hvac_action == "heating"
     and old_attrs.hvac_action ~= "heating"
@@ -1001,6 +997,27 @@ ha.serve("GET", "/", function()
   return 200, PAGE, { ["Content-Type"] = "text/html; charset=utf-8" }
 end)
 
+-- v4.13's {base, slope} coefficients and run count, and the journal fields only
+-- its model wrote. Idempotent; drop it once the install has loaded it.
+local V413_FIELDS = { "k_before", "k_after", "k_used", "offset", "applied", "commanded" }
+
+local function forget_v413(climate)
+  store.delete("overshoot_k:" .. climate)
+  store.delete("overshoot_samples:" .. climate)
+  local rows = store.get(journal_key(climate))
+  if type(rows) ~= "table" then return end
+  local stripped = false
+  for _, row in ipairs(rows) do
+    for _, field in ipairs(V413_FIELDS) do
+      if row[field] ~= nil then
+        row[field] = nil
+        stripped = true
+      end
+    end
+  end
+  if stripped then store.set(journal_key(climate), rows) end
+end
+
 -- Re-publish at load, before the first tick: an HA restart drops REST-set states,
 -- so this is what makes the companions reappear.
 do
@@ -1012,6 +1029,7 @@ do
     -- its timing is broken, and one lost sample costs less than a corrupted
     -- coefficient (spec §6). Journaled, so the gap is visible.
     abandon_episode(climate, now, "restart")
+    forget_v413(climate)
   end
   ha.log("info", "enhanced_climate loaded, resuming " .. count .. " climate(s)")
 end

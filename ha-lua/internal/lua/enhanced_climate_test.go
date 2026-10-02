@@ -512,6 +512,60 @@ func TestEnhancedClimateAbandonsEpisodeOnRestart(t *testing.T) {
 	}
 }
 
+// TestEnhancedClimateForgetsV413: v4.13's coefficient keys go at load, and its
+// journal rows lose the fields only that model wrote while keeping the run.
+func TestEnhancedClimateForgetsV413(t *testing.T) {
+	f := newEnhancedFixture(t, func(ctx context.Context, kv *store.Store, global *store.GlobalStore) {
+		if err := global.Set(ctx, "enhanced_climate:registry", map[string]any{
+			"climate.lr": map[string]any{
+				"climate_entity": "climate.lr", "window_sensors": []any{}, "presets": []any{},
+				"radiator_entity": "", "outdoor_entity": "",
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for key, value := range map[string]any{
+			"overshoot_k:climate.lr":       map[string]any{"base": 0.19, "slope": 0.04},
+			"overshoot_samples:climate.lr": 3,
+			"overshoot_journal:climate.lr": []any{map[string]any{
+				"peak": 24.1, "outcome": "observed", "k_before": map[string]any{"base": 0},
+				"k_after": map[string]any{"base": 0.19}, "k_used": map[string]any{"base": 0},
+				"offset": 0.2, "applied": 23.7, "commanded": 23.5,
+			}},
+		} {
+			if err := kv.Set(ctx, key, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		rows := f.overshootJournal("climate.lr")
+		if len(rows) == 1 && rows[0]["k_before"] == nil {
+			row := rows[0]
+			for _, field := range []string{"k_after", "k_used", "offset", "applied", "commanded"} {
+				if row[field] != nil {
+					t.Errorf("%s = %v survived the load", field, row[field])
+				}
+			}
+			if row["peak"] != 24.1 || row["outcome"] != "observed" {
+				t.Errorf("the run itself was lost: %+v", row)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("v4.13 fields never stripped: %+v", rows)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, key := range []string{"overshoot_k:climate.lr", "overshoot_samples:climate.lr"} {
+		if v, err := f.kv.Get(f.ctx, key); err != nil || v != nil {
+			t.Errorf("%s = %v (err %v), want deleted", key, v, err)
+		}
+	}
+}
+
 // TestEnhancedClimateConfigure drives the configure/remove command handlers:
 // configure creates a registry entry, a changed config updates it, and remove
 // deletes it.

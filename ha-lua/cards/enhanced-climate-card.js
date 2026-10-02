@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.42";
+const VERSION = "0.3.43";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -855,7 +855,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
         translate(windowInfo.open ? "window.open" : "window.closed")));
     }
     // The REQUEST, as against the setpoint on the device. While the overshoot
-    // correction cuts a warmup short the device carries `requested - offset`, so
+    // correction holds a run off the device carries the hold, so
     // attrs.temperature is not what the user asked for: it is what we commanded.
     // The companion's state is the request, and it is only absent while nothing
     // controls this climate — when the device setpoint IS the request.
@@ -1078,8 +1078,8 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   // decided, what it learned it from, and the two writes that recover from a bad
   // coefficient (§9.4, §9.5) without a restart or sqlite3.
   //
-  // The offset is never shown alone. "1.2° low" says nothing about whether to
-  // trust it; "1.2° low, learned over 6 episodes" says everything.
+  // The learned c is never shown alone: a coefficient says nothing about whether
+  // to trust it without the number of runs it was learned from.
   _renderOvershoot(translate, overshoot, companionAttrs, attrs, requested) {
     const pending = !!this._pending;
     const observing = overshoot.observe_only !== false;
