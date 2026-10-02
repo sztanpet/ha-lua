@@ -79,9 +79,9 @@ restarts from 0 under the peak-lead measurement.
   `c = c0 + c1·(T_out − T_ref)` by recursive least squares instead. The radiator
   lead is the first-order term; outdoor is second-order unless the boiler runs
   weather compensation.
-- v4.13's `overshoot_k:`/`overshoot_samples:` keys and its journal-only fields
-  are deleted at load by `forget_v413` in `enhanced_climate.lua`. Drop that
-  block once the box has loaded it (v4.16.0).
+- v4.13's keys and journal-only fields were deleted once by v4.16.0's
+  `forget_v413` (ran on the box 2026-10-02, then removed). An install that
+  skips v4.16.0 keeps them; they are never read.
 
 ## Expect once armed (from the replay — not bugs)
 - Runs starting 0.1–0.2 below the request are cut 1–3 ticks after the radiator

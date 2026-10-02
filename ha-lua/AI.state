@@ -14,7 +14,7 @@ clock** (detail: `state/overshoot.md`, "First armed night"). Peak-lead `c`,
 runs stepped per radiator reading, the `thermostat.lua` copy and v4.13
 leftovers removed. Left: the user flashes the three radiator nodes (esphome
 `5ba4fc9`), pulls the v4.16.0 image for card 0.3.43, then a few armed nights
-decide keep / simplify / remove. `forget_v413` can go in the next release. D1
+decide keep / simplify / remove. D1
 still needs the user's go-ahead.
 
 ## State files (per spec)
