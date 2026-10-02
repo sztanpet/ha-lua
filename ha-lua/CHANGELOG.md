@@ -4,6 +4,36 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.16.0 - 2026-10-02
+
+### Changed
+- **The overshoot coefficient is measured on the most the radiator led the
+  room after the cut, not on its lead at the cut.** A radiator sensor strapped
+  to the outside of the radiator lags the water inside it, so an early cut on
+  a climbing radiator saw a few degrees of lead that became twenty within
+  minutes. Measured on the first, one run read five times what every natural
+  cutoff measured and moved the learned value tenfold. The radiator_cold
+  discard uses the same peak lead. The journal records it as `lead_max`, and
+  the Climate page's Lead column shows "at the cut → peak" when they differ.
+- **An enhanced climate's run is checked on every reading of its radiator
+  sensor**, not only on the minute tick, while it heats. The overshoot is the
+  hot water that flows before the relay drops, so the cut now goes out on the
+  reading that warrants it. After the cut the tick alone follows the coast.
+- **BREAKING (bundled `thermostat.lua` example only):** the overshoot
+  correction is removed from it, with its three `/api/overshoot` endpoints and
+  the page's learning panel. It lives in `enhanced_climate.lua`, and every
+  change had to be made twice. The page's setpoint disclosure still shows
+  what is on the device. The example now publishes one global key per zone,
+  `thermostat:written:<zone>`; `thermostat:desired:<zone>` is no longer
+  written, and nothing read it.
+
+### Removed
+- The v4.13 overshoot model's leftovers: its `overshoot_k` and
+  `overshoot_samples` keys are deleted when `enhanced_climate.lua` loads, and
+  its journal rows lose the `offset`, `applied`, `commanded` and `k_*` fields
+  only that model wrote. The rows themselves, peaks and decay curves
+  included, are kept.
+
 ## 4.15.0 - 2026-09-28
 
 ### Changed
