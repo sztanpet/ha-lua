@@ -50,9 +50,25 @@ local function load_registry()
   return reg
 end
 
+-- Radiator sensor -> climate, so the sensor.* handler drops every other
+-- sensor's traffic without a store read.
+local radiator_climates = {}
+
+local function index_radiators(reg)
+  radiator_climates = {}
+  for climate, cfg in pairs(reg) do
+    if type(cfg.radiator_entity) == "string" and cfg.radiator_entity ~= "" then
+      radiator_climates[cfg.radiator_entity] = climate
+    end
+  end
+end
+
 local function save_registry(reg)
   global.set(REGISTRY_KEY, reg)
+  index_radiators(reg)
 end
+
+index_radiators(load_registry())
 
 local function is_registered(climate_entity)
   return type(climate_entity) == "string" and load_registry()[climate_entity] ~= nil
@@ -637,6 +653,18 @@ ha.on_state_change("climate.*", function(data)
   if held or relay_closed or entered_heat then
     apply_climate(climate_entity, now, dow, minute) -- republish at once
   end
+end)
+
+-- The cut waits on the radiator being seen warming, and the relay staying on
+-- past that keeps hot water flowing in: step the run on each reading, not up to
+-- a minute later. Before the cut only: after it the tick is soon enough, and
+-- per-reading steps would overrun the coast's decay series cap.
+ha.on_state_change("sensor.*", function(data)
+  local climate = radiator_climates[data.entity_id]
+  if climate == nil then return end
+  local episode = live_episode(climate)
+  if episode == nil or episode.cutoff_at ~= nil then return end
+  apply_climate(climate, now_parts())
 end)
 
 -- A bound window opening or closing re-applies its climate within seconds rather

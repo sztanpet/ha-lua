@@ -309,6 +309,16 @@ func (f *enhancedFixture) setSensor(entity, value string) {
 	}
 }
 
+// pushSensor is setSensor plus the state-change event, as a sensor reporting
+// on its own arrives.
+func (f *enhancedFixture) pushSensor(entity, value string) {
+	f.t.Helper()
+	f.setSensor(entity, value)
+	payload := jsontext.Value(`{"entity_id":"` + entity + `","new_state":{"entity_id":"` + entity +
+		`","state":"` + value + `","attributes":{}}}`)
+	f.reg.Dispatch(ha.Event{Type: "state_changed", Data: payload})
+}
+
 // allDaySchedule builds a schedule JSON where every weekday has a single
 // 00:00 transition to temp, so schedule.resolve returns temp at any time.
 func allDaySchedule(temp string) string {
@@ -1030,6 +1040,40 @@ func TestEnhancedClimateOvershootCutsOnEvidence(t *testing.T) {
 		t.Fatalf("c %v -> %v, want 0.2 -> 0.1", last["c_before"], last["c_after"])
 	}
 	f.waitEpisode("climate.lr", "the next run's episode is open")
+}
+
+// TestEnhancedClimateOvershootCutsOnRadiatorReading: the cut lands on the
+// radiator reading that warrants it, not on the next minute tick, and readings
+// after the cut leave the coast to the tick.
+func TestEnhancedClimateOvershootCutsOnRadiatorReading(t *testing.T) {
+	f := newEnhancedFixture(t)
+	f.seedClimate("climate.lr", runState("idle", 23.4))
+	f.setSensor("sensor.lr_rad", "29")
+	f.fireCommand("configure", `{"climate_entity":"climate.lr","radiator_entity":"sensor.lr_rad"}`)
+	f.setStoreNumber("overshoot_c:climate.lr", 0.2)
+	f.setStore("overshoot_observe:climate.lr", false)
+	f.fireCommand("schedule", `{"climate_entity":"climate.lr","schedule":`+allDaySchedule("23.4")+`}`)
+	f.waitEpisode("climate.lr", "the request rising above the room opens the run")
+	f.pushClimate("climate.lr", runState("idle", 23.4), runState("heating", 23.4))
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["heated"] == true }, "relay seen on")
+
+	f.pushSensor("sensor.other", "30.5") // not a radiator: ignored
+	f.pushSensor("sensor.lr_rad", "28.5")
+	f.waitEpisodeWhere("climate.lr", func(ep map[string]any) bool { return ep["radiator_min"] == 28.5 }, "stepped on the reading")
+	if temps := f.setTemps(); len(temps) != 0 {
+		t.Fatalf("set_temperature %v before the radiator warmed", temps)
+	}
+
+	f.pushSensor("sensor.lr_rad", "29.5")
+	f.waitSetTemp(22.8, "the hold, on the reading that shows the radiator warming")
+
+	f.pushSensor("sensor.lr_rad", "33")
+	f.fireCommand("configure", `{"climate_entity":"climate.barrier"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.barrier"] != nil }, "barrier processed")
+	ep := f.waitEpisode("climate.lr", "still coasting")
+	if decay, _ := ep["decay"].([]any); len(decay) != 1 {
+		t.Fatalf("decay has %d samples, want only the cut's: a reading after the cut stepped the coast", len(decay))
+	}
 }
 
 // TestEnhancedClimateOvershootReleasesOnTurn: the review's scenario. Cut at

@@ -160,7 +160,8 @@ An **episode** is one heating run. It opens when the device reports
 `hvac_action`, when the request rises above the room. Nothing is written when
 it opens.
 
-While the run heats, on every tick:
+While the run heats, on every tick and, in `enhanced_climate.lua`, on every
+reading of the zone's radiator sensor:
 
 ```
 radiator_min = lowest radiator reading since the run opened
@@ -168,6 +169,14 @@ warming      = radiator >= radiator_min + RAD_RISE        -- rule 2's gate
 predicted    = room + c * max(0, radiator - room)          -- where the room ends up if the heat stops now
 cut          = warming and predicted > requested
 ```
+
+Stepping on the reading, not only the tick (added after the first armed
+night): with the pump stopping as the relay drops, the overshoot is the hot
+water that flows between the valve opening and the cut, about 90 s on a gate
+cut, and a minute tick on top of a once-a-minute sensor report was most of it.
+The radiator nodes now report at once on a 0.3° move. After the cut the tick
+alone steps the coast, so a fast-reporting sensor cannot overrun
+`DECAY_MAX_SAMPLES`.
 
 On a cut the controller writes a **hold** setpoint, `room - HOLD_MARGIN`
 (clamped to the device's range, never above the request), which stops the node
