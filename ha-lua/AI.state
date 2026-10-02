@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-09-28
+Last updated: 2026-10-02
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Anything readable off
@@ -9,13 +9,12 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Round 5 review — enhanced climate + overshoot: RELEASED as v4.15.0, not
-deployed** (detail: `state/code-review.md`, "Round 5"). Card 0.3.42. Left:
-deploy (new image + restart, re-copy `enhanced_climate.lua`, `.html`,
-`lib/control.lua`, `lib/overshoot.lua`, restart again), then set the children's
-room once from the card, since its last hold lapsed 2026-09-28 18:11. D1 (the
-temp8 reporting change in Z2M) needs the user's go-ahead. Everything stays
-observe-only; arming is the user's call.
+**Overshoot: `c` measured on the coast's peak radiator lead** (`5ea6be9`,
+committed, not released or deployed; detail: `state/overshoot.md`, "First armed
+night"). The children's room is armed since 2026-10-01: every cut lands at the
+gate, the minimum dose alone overshoots +0.6, and the cut-lead `c` had jumped
+tenfold: the radiator sensor is on the surface and lags the water, so the cut
+lead understated the heat already in. D1 still needs the user's go-ahead.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -32,8 +31,7 @@ observe-only; arming is the user's call.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module. COMPLETE.
-- `state/code-review.md` — rounds 1–4 CLOSED; round 5 released, deploy and D1
-  pending.
+- `state/code-review.md` — rounds 1–5 CLOSED (v4.15.0 deployed); D1 pending.
 - (sse-spec.md has no implementation and no state file.)
 
 ## Key decisions (do not re-litigate without good reason)

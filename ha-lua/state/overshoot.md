@@ -3,10 +3,9 @@
 Spec: `overshoot-spec.md` (§5 is the current model). Global decisions — the
 user's two absolute rules among them — live in `../AI.state`.
 
-Status: **in `enhanced_climate.lua`, observe-only on all four climates.** The
-current model ("heat on demand, cut on evidence", learned `c`) shipped in
-v4.14.0; round 5's fixes (B1 turned-release, B2 strict cut) are in v4.15.0,
-not yet deployed. Arming is the user's call.
+Status: **in `enhanced_climate.lua`, v4.15.0 deployed. The children's room is
+ARMED** (by the user from the card, evening of 2026-10-01); the other three are
+observe-only. Peak-lead `c` (`5ea6be9`) is committed, not released.
 
 ## The plant (children's room)
 - `climate.konyha_gyerekszoba_futes`, no schedule. ESPHome
@@ -20,10 +19,31 @@ not yet deployed. Arming is the user's call.
 - Sensors and lags: the `childrens-room-instrumentation` memory. The room
   sensor reports only ≥0.2 °C moves, so journal peaks move in 0.2 steps until
   D1 (`code-review.md`, round 5) lands.
-- `radiator_entity`/`outdoor_entity` are set on nappali and gyerekszoba only;
-  fürdő and háló episodes carry neither and so never cut.
+- `radiator_entity` is set on nappali, gyerekszoba and háló; fürdő has none and
+  so never cuts. Nappali/háló/fürdő have learned nothing: every run is a 30°
+  request changed before it closed (`setpoint_changed`).
+- **One central boiler and circulation pump** (user, 2026-10-02): the pump runs
+  while any zone demands heat and stops at once when the last drops; the wax
+  valve then takes ~5 min to close. No pump overrun. The radiator sensor is
+  strapped to the radiator's surface, not in the water: at 10-02 02:14 CEST,
+  every other zone off/idle, it climbed 26.8 → 43° in the 6 min after the
+  relay opened. That is the sensor catching up with water already delivered,
+  so by the time rule 2's gate sees +1° the radiator is largely full.
+- Journal stamps are epoch; the box is CEST, the dev machine UTC.
 - Replaying the recorder through the real lib puts c near 0.02 (first live run
   0.018).
+
+## First armed night (2026-10-01/02)
+- Every armed cut landed at the gate, ~5 min in: runs start with the room ON
+  the request (deadband 0), so any positive `c × lead` passes it.
+- The minimum dose (relay to the gate + actuator close lag) is the whole
+  overshoot: a gate cut still peaked +0.6, like the node's own 11–12 min runs.
+  No `c` shrinks that under rule 2; only runs starting well below the request
+  can gain. The user declined to revisit the deadband.
+- `c` on the cut lead read 0.16 and jumped 0.009 → 0.084 in one run. Now
+  divided by the coast's peak lead (`5ea6be9`): armed cuts read 0.03–0.04,
+  observe-only 0.025. The live `c` stays 0.084 until runs pull it down (GAIN
+  halves the error each) or the user resets it.
 
 ## Decisions not to re-litigate
 - **The ESP keeps `platform: thermostat`.** PID + `slow_pwm` was the textbook
@@ -62,10 +82,7 @@ not yet deployed. Arming is the user's call.
 - Runs starting 0.1–0.2 below the request are cut 1–3 ticks after the radiator
   starts rising, 7–11 min into runs the node ran for 12–22 min.
 - A run starting with the reading exactly on the request is a ~5–6 min relay
-  pulse, journaled `radiator_cold` with a warn. Expected.
-- c measured at armed cuts sits above observe-only's 0.02 (the actuator keeps
-  heating ~3 min after the relay opens). It climbs until cuts land under
-  MIN_LEAD, where discards stop it: bounded, not a runaway.
+  pulse. Expected; since the peak-lead fix it is learned, not `radiator_cold`.
 - Watch `released_by`, the lowest reading before the next run (no more than a
   sensor step under the request) and relay cycles per hour.
 
