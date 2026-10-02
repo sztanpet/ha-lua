@@ -9,9 +9,10 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Overshoot: `c` measured on the coast's peak radiator lead** (`5ea6be9`,
-committed, not released or deployed; detail: `state/overshoot.md`, "First armed
-night"). The children's room is armed since 2026-10-01: every cut lands at the
+**Overshoot: cut on detection, not the clock** — peak-lead `c` (`5ea6be9`,
+copied to the box by the user, live), radiator nodes reporting at once (esphome
+`5ba4fc9`, not flashed), runs stepped per radiator reading (`2d483c6`, not on
+the box). Detail: `state/overshoot.md`, "First armed night". The children's room is armed since 2026-10-01: every cut lands at the
 gate, the minimum dose alone overshoots +0.6, and the cut-lead `c` had jumped
 tenfold: the radiator sensor is on the surface and lags the water, so the cut
 lead understated the heat already in. D1 still needs the user's go-ahead.

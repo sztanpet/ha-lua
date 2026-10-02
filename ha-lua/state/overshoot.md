@@ -5,7 +5,9 @@ user's two absolute rules among them — live in `../AI.state`.
 
 Status: **in `enhanced_climate.lua`, v4.15.0 deployed. The children's room is
 ARMED** (by the user from the card, evening of 2026-10-01); the other three are
-observe-only. Peak-lead `c` (`5ea6be9`) is committed, not released.
+observe-only. Peak-lead `c` (`5ea6be9`) is unreleased but LIVE: the user
+copied its three files to the box on 2026-10-02 ~19:20 CEST (scripts reloaded
+19:46). The per-reading step (`2d483c6`) is committed, not on the box yet.
 
 ## The plant (children's room)
 - `climate.konyha_gyerekszoba_futes`, no schedule. ESPHome
@@ -102,12 +104,14 @@ observe-only. Peak-lead `c` (`5ea6be9`) is committed, not released.
   plus the 1-min tick were most of it. Fixed on the node side: esphome repo
   `5ba4fc9` (`.radiator.yaml`, all three radiator nodes) sends a raw reading
   every 60 s and at once on a 0.3° move. NOT FLASHED yet (the user flashes
-  from the ESPHome dashboard). Next: cut on radiator updates rather than the
-  minute tick (offered, not asked for yet).
+  from the ESPHome dashboard). Controller side: `2d483c6` steps a heating run
+  on each reading of its radiator (`sensor.*` handler + in-memory radiator →
+  climate map); after the cut the tick alone steps the coast.
 - Faster actuator: Oventrop Aktor M (M30×1.5, ~3 s, 3-wire, power on brown
   CLOSES, so brown goes on the relay's NC contact). Helps the 4-min opening
   lag and overlap mornings; not a night alone, where the pump stopping
-  already ends the flow. The user's call; not bought.
+  already ends the flow. The user's call; not bought. Siemens SSB81 (the one
+  the user found) is no faster: 24 V, 3-position, ~150 s, at 10× the price.
 - Tuning only if armed data asks: a lower GAIN, requiring MIN_LEAD before an
   armed cut.
 - At `log_level: debug` the log is a one-hour rolling window; the journal
