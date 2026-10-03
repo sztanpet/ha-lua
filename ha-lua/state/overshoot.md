@@ -48,6 +48,19 @@ restarts from 0 under the peak-lead measurement.
   observe-only 0.025. The live `c` stays 0.084 until runs pull it down (GAIN
   halves the error each) or the user resets it.
 
+## First night on detection (2026-10-02/03)
+- Children's node flashed 10-02 20:24 CEST (reports every 5–15 s while the
+  radiator moves); per-reading stepping deployed 20:31. Nappali reports on
+  movement too; háló had no run to show it.
+- 23:08 (c = 0 after the reset): the node cut at its own threshold, peak +0.7,
+  learned 0.026. 02:43 and 06:37: cut 4m13s in, in the same second as the
+  gate reading (06:42:07), peaks +0.2 and +0.1, holds of 22.5 lasted ~4 h.
+  08:25 started at 22.9 and waited for c·lead (cut at lead 5.0), +0.1. The
+  08:25 and 08:52 runs were discarded correctly (window, heating off at 10:00).
+- `c` = 0.021 from 3 samples (0.026, 0.033, 0.020). Errors now sit at the
+  room sensor's 0.2 step; the rest of a cut's 4 min is the wax valve opening.
+  No code change needed.
+
 ## Decisions not to re-litigate
 - **The ESP keeps `platform: thermostat`.** PID + `slow_pwm` was the textbook
   answer and was rejected: it costs warmup speed by construction, fixed gains
