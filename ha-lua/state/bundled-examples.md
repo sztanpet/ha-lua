@@ -104,8 +104,10 @@ constraints, each learned from a field report:
 ## heating_season.lua (2026-10-10, `019a44c`, deployed 10:52 CEST)
 - Replaces the HA automation "Climate: Toggle Heating via Daily Outdoor
   Average" (`automations.yaml` id 1782250376702). The user asked for it in
-  Lua, NOT in HA. **That automation must be disabled in HA by the user**;
-  until it is, it still switches all four zones off at 10:00 above 17.
+  Lua, NOT in HA. Removed from `automations.yaml` on 2026-10-10 at the
+  user's request (core/check ok; backup `automations.yaml.bak-heating-season`
+  on the box). Takes effect on the next automation reload or HA restart; the
+  SSH add-on cannot reload (401), so the user does it.
 - Why: from 10-08 the 3-day mean sat at 17.3–18.7 with cold nights, so the
   automation switched heating off every 10:00 and the user turned it back on
   by hand every evening.

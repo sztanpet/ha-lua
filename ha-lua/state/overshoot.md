@@ -106,8 +106,8 @@ restarts from 0 under the peak-lead measurement.
 
 ## House automations (on the box, changed at the user's request)
 - Heating season: moved to `heating_season.lua` on 2026-10-10 (detail in
-  `bundled-examples.md`); the HA automation (id 1782250376702) is to be
-  disabled by the user. Mean is `sensor.kinti_3_napos_atlag` (a 72 h
+  `bundled-examples.md`); the HA automation (id 1782250376702) is removed
+  from `automations.yaml`. Mean is `sensor.kinti_3_napos_atlag` (a 72 h
   average_step statistics helper). A rolling 24 h mean had switched heating off just before
   an 11° night. Whether 17 is right is open (the user turned heating back on at
   a mean of ~17.2).
