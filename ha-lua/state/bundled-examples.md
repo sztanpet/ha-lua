@@ -106,8 +106,9 @@ constraints, each learned from a field report:
   Average" (`automations.yaml` id 1782250376702). The user asked for it in
   Lua, NOT in HA. Removed from `automations.yaml` on 2026-10-10 at the
   user's request (core/check ok; backup `automations.yaml.bak-heating-season`
-  on the box). Takes effect on the next automation reload or HA restart; the
-  SSH add-on cannot reload (401), so the user does it.
+  on the box). The user reloaded automations the same day (the SSH add-on
+  cannot: 401). Proof it is gone: the zones stay in heat past 10:00 on
+  10-11 with the mean above 17.
 - Why: from 10-08 the 3-day mean sat at 17.3–18.7 with cold nights, so the
   automation switched heating off every 10:00 and the user turned it back on
   by hand every evening.

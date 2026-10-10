@@ -12,8 +12,8 @@ and only that one.
 **Heating season moved into Lua** (detail: `state/bundled-examples.md`,
 "heating_season.lua"). `examples/heating_season.lua` switches heating off at
 most once per season instead of every warm 10:00; deployed 2026-10-10. The HA
-automation it replaces is removed from `automations.yaml`; it is gone once HA
-reloads automations. The overshoot
+automation it replaces is removed and HA reloaded; check the zones are still in
+heat after 10:00 on 10-11. The overshoot
 track's open items (pull v4.16.0, D1) are unchanged in `state/overshoot.md`.
 
 ## State files (per spec)
