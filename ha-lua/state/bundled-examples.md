@@ -12,7 +12,8 @@ Status: **COMPLETE** (2.2.0); examples keep growing on top.
   appears even with HA down), never loaded. A runnable second script source
   was designed and rejected as needless complexity.
 - Some examples carry the author's REAL entity ids on purpose
-  (mirrored_switches, ikea_dimmer, nappali_switches, group_switches).
+  (mirrored_switches, ikea_dimmer, nappali_switches, group_switches,
+  heating_season).
 - **Entity ids are ASKED, never derived.** The author's ZBMINIR2 relays are
   `switch.zbminir2_*` in some places and `light.zbminir2_*` in others (a domain
   override on top of Z2M discovery); a guessed prefix ships a script that
@@ -99,3 +100,24 @@ constraints, each learned from a field report:
 - Watch for: a relay in Z2M's following mode with a maintained lever may snap
   back after our command and read as a press. Detached mode fixes it; else a
   revert guard.
+
+## heating_season.lua (2026-10-10, `019a44c`, deployed 10:52 CEST)
+- Replaces the HA automation "Climate: Toggle Heating via Daily Outdoor
+  Average" (`automations.yaml` id 1782250376702). The user asked for it in
+  Lua, NOT in HA. **That automation must be disabled in HA by the user**;
+  until it is, it still switches all four zones off at 10:00 above 17.
+- Why: from 10-08 the 3-day mean sat at 17.3–18.7 with cold nights, so the
+  automation switched heating off every 10:00 and the user turned it back on
+  by hand every evening.
+- Rule (user's choice): at most ONE switch-off per season. The first reading
+  below 14 sends heat and arms it (`store` key `off_armed`); the next 10:00
+  above 17 spends it. A hand-set mode then stands until below 14 again.
+  Re-sending heat on each later dip below 14 was dropped on purpose, so a
+  winter manual "off" is not overridden.
+- Declined by the user: anti-short-cycle guards (minimum run / minimum off,
+  in ha-lua or on the ESP). Boiler runs are 2–2½ min since the overshoot cut
+  moved to detection; the user does not want that limited.
+- Known gap: the scheduler catches up a missed 10:00 at load, so a daemon
+  down at 10:00 on the armed day switches off whenever it comes back, even in
+  the evening. Accepted as rare (one armed morning a year).
+- Started unarmed at a mean of 18.7: nothing happens until it drops below 14.

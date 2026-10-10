@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-10-02
+Last updated: 2026-10-10
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Anything readable off
@@ -9,12 +9,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Overshoot cuts on detection, verified on the box** (detail:
-`state/overshoot.md`, "First night on detection"). The children's node is
-flashed: cuts land in the same second as the gate reading, ~4 min into a run,
-and peaks are +0.1–0.2 (the room sensor's step). Nothing to change. Left: pull
-the v4.16.0 image for card 0.3.43; `231ad7b` and its state commit ride with the
-next release. D1 still needs the user's go-ahead.
+**Heating season moved into Lua** (detail: `state/bundled-examples.md`,
+"heating_season.lua"). `examples/heating_season.lua` switches heating off at
+most once per season instead of every warm 10:00; deployed 2026-10-10. The HA
+automation it replaces must still be disabled by the user. The overshoot
+track's open items (pull v4.16.0, D1) are unchanged in `state/overshoot.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

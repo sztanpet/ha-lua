@@ -105,9 +105,10 @@ restarts from 0 under the peak-lead measurement.
   sensor step under the request) and relay cycles per hour.
 
 ## House automations (on the box, changed at the user's request)
-- Heating season (`automations.yaml` id 1782250376702): on below 14, off at
-  10:00 only if `sensor.kinti_3_napos_atlag` (a 72 h average_step statistics
-  helper) is above 17. A rolling 24 h mean had switched heating off just before
+- Heating season: moved to `heating_season.lua` on 2026-10-10 (detail in
+  `bundled-examples.md`); the HA automation (id 1782250376702) is to be
+  disabled by the user. Mean is `sensor.kinti_3_napos_atlag` (a 72 h
+  average_step statistics helper). A rolling 24 h mean had switched heating off just before
   an 11° night. Whether 17 is right is open (the user turned heating back on at
   a mean of ~17.2).
 - "Fürdő fűtés reggelente" keeps the 24 h mean (< 17). Asked; the user said no
