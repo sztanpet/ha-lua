@@ -1189,6 +1189,10 @@ func TestEnhancedClimateOvershootDiscardsOnWindow(t *testing.T) {
 	f.setWindow("binary_sensor.w1", "on")
 
 	rows := f.waitJournal("climate.lr", 1, "the window discard is journaled")
+	// FIFO barrier: the journal row lands before the episode is deleted in the
+	// same handler, so let that handler finish before reading the episode.
+	f.fireCommand("configure", `{"climate_entity":"climate.barrier"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m["climate.barrier"] != nil }, "barrier processed")
 	last := rows[len(rows)-1]
 	if last["outcome"] != "discarded" {
 		t.Fatalf("outcome = %v, want discarded", last["outcome"])
