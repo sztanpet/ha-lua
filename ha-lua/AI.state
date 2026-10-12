@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-10-10
+Last updated: 2026-10-12
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Anything readable off
@@ -9,12 +9,12 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Heating season moved into Lua** (detail: `state/bundled-examples.md`,
-"heating_season.lua"). `examples/heating_season.lua` switches heating off at
-most once per season instead of every warm 10:00; deployed 2026-10-10. The HA
-automation it replaces is removed and HA reloaded; check the zones are still in
-heat after 10:00 on 10-11. The overshoot
-track's open items (pull v4.16.0, D1) are unchanged in `state/overshoot.md`.
+**Bedroom TV follows the bedroom PC** (detail: `state/bundled-examples.md`,
+"halo_pc_tv.lua"). `examples/halo_pc_tv.lua` drives `media_player.bedroom_tv`
+on/off from the Ping sensor `binary_sensor.bedroom_halo_pc`, retrying until
+the TV reports it; deployed 2026-10-12. Unverified until the PC is seen
+answering ping. The overshoot track's open items (pull v4.16.0, D1) are
+unchanged in `state/overshoot.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

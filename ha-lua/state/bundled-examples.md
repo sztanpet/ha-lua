@@ -124,3 +124,23 @@ constraints, each learned from a field report:
   down at 10:00 on the armed day switches off whenever it comes back, even in
   the evening. Accepted as rare (one armed morning a year).
 - Started unarmed at a mean of 18.7: nothing happens until it drops below 14.
+
+## halo_pc_tv.lua (2026-10-12, `3e0161a`, deployed 20:29 CEST)
+- `media_player.bedroom_tv` (androidtv_remote) follows the bedroom PC (HALOPC,
+  192.168.1.12). Online = HA Ping integration, added by the user in the UI
+  (the add-on can't create config entries): `binary_sensor.bedroom_halo_pc`,
+  count 3, consider_home 30 s.
+- Why Ping: nothing on the box reported the PC — `device_tracker.halopc`
+  (Mikrotik) is disabled, and MELKOR's hass-workstation-service entities have
+  been `unavailable` for the whole recorder history. ha-lua has no ping.
+- No off delay in the script (user: Ping's consider_home is enough). A 2 min
+  OFF_AFTER was written first and dropped.
+- Retry (user asked): drive until the TV REPORTS the state, 5 tries 20 s
+  apart, `pcall` around the call. androidtv_remote (HA 2026.10.1 source):
+  state on/off from the TV's push, `unavailable` when disconnected, and the
+  key send raises then. turn_on/turn_off both send POWER, skipped by HA if
+  `is_on` already matches — so a retry faster than the state push toggles the
+  TV back. A generation counter drops the old chain on a new PC edge.
+- Unverified on the box: at deploy time 192.168.1.12 answered no ping (PC off,
+  or Windows firewall dropping ICMP). If the sensor never goes `on` with the
+  PC up, allow ICMPv4 echo in the PC's firewall.
