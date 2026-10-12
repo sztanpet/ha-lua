@@ -141,6 +141,12 @@ constraints, each learned from a field report:
   key send raises then. turn_on/turn_off both send POWER, skipped by HA if
   `is_on` already matches — so a retry faster than the state push toggles the
   TV back. A generation counter drops the old chain on a new PC edge.
-- Unverified on the box: at deploy time 192.168.1.12 answered no ping (PC off,
-  or Windows firewall dropping ICMP). If the sensor never goes `on` with the
-  PC up, allow ICMPv4 echo in the PC's firewall.
+- Ping works: the sensor went off->on cleanly at 20:37:54 on 10-12.
+- BLOCKED on the TV (10-12): `media_player.bedroom_tv` goes `unavailable`
+  ~16 s after switching off (TCL Smart TV Pro drops off the network in
+  standby). HA silently skips unavailable entities in a service call, so all
+  5 tries "succeeded" and the script gave up at 20:39:35. WoL is no way round
+  it yet: `wake_on_lan.send_magic_packet` is not registered on this install
+  (the WoL switches are YAML switch-platform), and the SSH add-on is not on
+  the LAN. Fix is a TV setting that keeps the network up in standby; asked
+  the user. Off still works (the TV is reachable while on).
