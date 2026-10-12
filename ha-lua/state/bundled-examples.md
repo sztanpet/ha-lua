@@ -148,5 +148,9 @@ constraints, each learned from a field report:
   5 tries "succeeded" and the script gave up at 20:39:35. WoL is no way round
   it yet: `wake_on_lan.send_magic_packet` is not registered on this install
   (the WoL switches are YAML switch-platform), and the SSH add-on is not on
-  the LAN. Fix is a TV setting that keeps the network up in standby; asked
-  the user. Off still works (the TV is reachable while on).
+  the LAN. WoL from the dev box (192.168.1.139, on the LAN) did not wake it
+  either: the NIC answers ARP in standby, but no service is up.
+- UNBLOCKED (10-12 20:52): the user changed a TV setting so it stays connected
+  in standby (reports `off`, not `unavailable`). Via HA `media_player.turn_on`
+  the TV reported `on` in ~4 s; `turn_off` -> `off` in ~2 s and still `off`
+  (reachable) 30 s later. The PC->TV edge itself not yet seen end to end.

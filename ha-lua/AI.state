@@ -12,8 +12,8 @@ and only that one.
 **Bedroom TV follows the bedroom PC** (detail: `state/bundled-examples.md`,
 "halo_pc_tv.lua"). `examples/halo_pc_tv.lua` drives `media_player.bedroom_tv`
 on/off from the Ping sensor `binary_sensor.bedroom_halo_pc`, retrying until
-the TV reports it; deployed 2026-10-12. Turning ON is blocked: the TV goes
-`unavailable` in standby and HA skips it silently — needs a TV setting. The overshoot track's open items (pull v4.16.0, D1) are
+the TV reports it; deployed 2026-10-12. The TV used to go `unavailable` in
+standby (HA skips that silently); a TV setting fixed it, on/off via HA work. The overshoot track's open items (pull v4.16.0, D1) are
 unchanged in `state/overshoot.md`.
 
 ## State files (per spec)
