@@ -134,7 +134,14 @@ constraints, each learned from a field report:
   (Mikrotik) is disabled, and MELKOR's hass-workstation-service entities have
   been `unavailable` for the whole recorder history. ha-lua has no ping.
 - No off delay in the script (user: Ping's consider_home is enough). A 2 min
-  OFF_AFTER was written first and dropped.
+  OFF_AFTER was written first and dropped. WRONG premise (found 10-13):
+  consider_home only feeds the (disabled) Ping device_tracker; the binary
+  sensor is the last round's is_alive, so one round with every ping lost
+  turns the TV off. Poll interval is hardcoded 30 s; `update_entity` can force
+  more but the coordinator debouncer caps it at one round per 10 s. User set
+  count 2, consider_home 10 s (10-13) — the latter has no effect on the
+  sensor. Faster-than-poll option offered: PC pushes on/off to ha.serve from a
+  Windows Scheduled Task.
 - Retry (user asked): drive until the TV REPORTS the state, 5 tries 20 s
   apart, `pcall` around the call. androidtv_remote (HA 2026.10.1 source):
   state on/off from the TV's push, `unavailable` when disconnected, and the
