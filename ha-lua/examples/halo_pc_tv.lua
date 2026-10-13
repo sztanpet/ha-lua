@@ -3,10 +3,11 @@
 -- The bedroom TV follows the bedroom PC: on when the PC comes online, off when
 -- it goes offline.
 --
--- Online comes from HA's Ping integration on 192.168.1.12, whose consider_home
--- already rides out a lost ping round. Only clean on/off edges count, so a
--- sensor going unavailable and back (an HA restart) neither wakes nor kills
--- the TV.
+-- Online comes from HA's Ping integration on 192.168.1.12, polled every 30 s
+-- (hardcoded). Its consider_home only feeds the device tracker: the binary
+-- sensor goes off after a single round with no reply. Only clean on/off edges
+-- count, so a sensor going unavailable and back (an HA restart) neither wakes
+-- nor kills the TV.
 --
 -- The TV is retried until it REPORTS the wanted state: a TV in deep standby
 -- drops its remote connection and the call raises, and one that is busy can
