@@ -175,3 +175,9 @@ constraints, each learned from a field report:
   From the add-on container: 192.168.1.12:445 answers in ~0.6 ms, a dead
   address times out at exactly 250 ms. The PC->TV edge itself not yet seen
   end to end. The Ping config entry is now unused (user may delete it).
+- RENAMED (10-15, user: "dial" is a bad name for a yes/no): `net.dial` ->
+  `net.reachable`, returning `true` | `false, err` (a predicate, not the
+  I/O modules' nil, err). On main, NOT released: the box runs 4.17.0 with
+  `net.dial` and the old script — do NOT copy halo_pc_tv.lua there before
+  the next release is installed. Next changelog needs a **BREAKING** line
+  for the rename.
