@@ -11,10 +11,10 @@ and only that one.
 ## Latest
 **Bedroom TV follows the bedroom PC via an in-script TCP probe** (detail:
 `state/bundled-examples.md`, "halo_pc_tv.lua"). New stdlib `net.reachable`
-(shipped as `net.dial` in v4.17.0, renamed on main — unreleased, BREAKING);
+(shipped as `net.dial` in v4.17.0, renamed in v5.0.0);
 `examples/halo_pc_tv.lua` dials the PC's SMB port every 2 s instead of
-following HA's 30 s Ping sensor. Released in v4.17.0 and deployed 10-15; the
-end-to-end PC->TV edge is not yet observed. The
+following HA's 30 s Ping sensor. The end-to-end PC->TV edge is not yet
+observed. The
 overshoot track's open items (pull v4.16.0, D1) are unchanged in
 `state/overshoot.md`.
 

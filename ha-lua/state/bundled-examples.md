@@ -177,7 +177,6 @@ constraints, each learned from a field report:
   end to end. The Ping config entry is now unused (user may delete it).
 - RENAMED (10-15, user: "dial" is a bad name for a yes/no): `net.dial` ->
   `net.reachable`, returning `true` | `false, err` (a predicate, not the
-  I/O modules' nil, err). On main, NOT released: the box runs 4.17.0 with
-  `net.dial` and the old script — do NOT copy halo_pc_tv.lua there before
-  the next release is installed. Next changelog needs a **BREAKING** line
-  for the rename.
+  I/O modules' nil, err). Released as v5.0.0 (`3d3eed4`; user chose the
+  major bump over keeping a `net.dial` alias). The add-on update and the
+  script copy must go together: 5.0.0 breaks the old script, 4.17.0 the new.
