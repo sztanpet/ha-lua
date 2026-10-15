@@ -5,6 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,29 +21,83 @@ import (
 )
 
 const (
-	pcTvPC = "binary_sensor.bedroom_halo_pc"
 	pcTvTV = "media_player.bedroom_tv"
-	// The shipped RETRY_EVERY is seconds; the copy under test waits this long.
+	// The shipped intervals are seconds; the copy under test uses these.
+	pcTvProbe    = 20 * time.Millisecond
 	pcTvRetry    = 150 * time.Millisecond
 	pcTvAttempts = 5
 )
 
 // pcTvHarness runs the real examples/halo_pc_tv.lua against a spy call
-// service and a live scheduler, since the retries are ha.after timers.
+// service, a live scheduler (the probe and the retries are timers) and a
+// local listener standing in for the PC.
 type pcTvHarness struct {
 	t       *testing.T
 	ctx     context.Context
 	tracker *state.Tracker
 	reg     *Registry
+	pc      *fakePC
 	cmds    chan string  // "turn_on"
 	fail    atomic.Int32 // the next this-many calls raise, like a TV in deep standby
 }
 
-func newPcTvHarness(t *testing.T, pc, tv string) *pcTvHarness {
+// fakePC answers net.dial on a fixed port while it is on, and refuses it
+// while it is off.
+type fakePC struct {
+	t    *testing.T
+	addr string
+	ln   net.Listener
+}
+
+func newFakePC(t *testing.T, on bool) *fakePC {
+	pc := &fakePC{t: t}
+	pc.listen("127.0.0.1:0")
+	pc.addr = pc.ln.Addr().String()
+	if !on {
+		pc.off()
+	}
+	t.Cleanup(func() {
+		if pc.ln != nil {
+			pc.ln.Close()
+		}
+	})
+	return pc
+}
+
+func (pc *fakePC) listen(addr string) {
+	ln, err := (&net.ListenConfig{}).Listen(pc.t.Context(), "tcp", addr)
+	if err != nil {
+		pc.t.Fatal(err)
+	}
+	pc.ln = ln
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+}
+
+func (pc *fakePC) on() { pc.listen(pc.addr) }
+
+func (pc *fakePC) off() {
+	pc.ln.Close()
+	pc.ln = nil
+}
+
+func newPcTvHarness(t *testing.T, pcOn bool, tv string) *pcTvHarness {
+	pc := newFakePC(t, pcOn)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "halo_pc_tv.lua")
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "halo_pc_tv.lua"), script)
-	shortenPcTvRetry(t, script)
+	rewriteShipped(t, script, map[string]string{
+		`local PC = "192.168.1.12:445"`: `local PC = "` + pc.addr + `"`,
+		`local PROBE_EVERY = "2s"`:      `local PROBE_EVERY = "` + pcTvProbe.String() + `"`,
+		`local RETRY_EVERY = "20s"`:     `local RETRY_EVERY = "` + pcTvRetry.String() + `"`,
+	})
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
 	if err := state.Migrate(writeDB); err != nil {
@@ -54,11 +109,10 @@ func newPcTvHarness(t *testing.T, pc, tv string) *pcTvHarness {
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &pcTvHarness{t: t, ctx: ctx, tracker: tracker, reg: reg,
+	h := &pcTvHarness{t: t, ctx: ctx, tracker: tracker, reg: reg, pc: pc,
 		cmds: make(chan string, 16)}
 
 	if err := tracker.Seed(ctx, []ha.StateData{
-		seedEntity(pcTvPC, pc, `{}`),
 		seedEntity(pcTvTV, tv, `{}`),
 	}); err != nil {
 		t.Fatal(err)
@@ -98,19 +152,21 @@ func newPcTvHarness(t *testing.T, pc, tv string) *pcTvHarness {
 	return h
 }
 
-// shortenPcTvRetry asserts the shipped line is there, so renaming the option
+// rewriteShipped asserts each shipped line is there, so renaming an option
 // breaks the test loudly instead of waiting out the real interval.
-func shortenPcTvRetry(t *testing.T, path string) {
+func rewriteShipped(t *testing.T, path string, lines map[string]string) {
 	t.Helper()
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const shipped = `local RETRY_EVERY = "20s"`
-	if !strings.Contains(string(src), shipped) {
-		t.Fatalf("%q not found in the example — was the option renamed?", shipped)
+	out := string(src)
+	for shipped, replacement := range lines {
+		if !strings.Contains(out, shipped) {
+			t.Fatalf("%q not found in the example — was the option renamed?", shipped)
+		}
+		out = strings.Replace(out, shipped, replacement, 1)
 	}
-	out := strings.Replace(string(src), shipped, `local RETRY_EVERY = "`+pcTvRetry.String()+`"`, 1)
 	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -155,14 +211,15 @@ func (h *pcTvHarness) expectSilence() {
 }
 
 func TestPcTvFollowsPC(t *testing.T) {
-	h := newPcTvHarness(t, "off", "off")
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
 
-	h.report(pcTvPC, "off", "on")
+	h.pc.on()
 	h.expectCmd("turn_on")
 	h.report(pcTvTV, "off", "on")
 	h.expectSilence()
 
-	h.report(pcTvPC, "on", "off")
+	h.pc.off()
 	h.expectCmd("turn_off")
 	h.report(pcTvTV, "on", "off")
 	h.expectSilence()
@@ -171,9 +228,10 @@ func TestPcTvFollowsPC(t *testing.T) {
 // TestPcTvRetriesUntilTvReports: a call that goes through but leaves the TV
 // off is not done — only the TV's own state is.
 func TestPcTvRetriesUntilTvReports(t *testing.T) {
-	h := newPcTvHarness(t, "off", "off")
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
 
-	h.report(pcTvPC, "off", "on")
+	h.pc.on()
 	h.expectCmd("turn_on")
 	h.expectCmd("turn_on")
 	h.report(pcTvTV, "off", "on")
@@ -183,10 +241,11 @@ func TestPcTvRetriesUntilTvReports(t *testing.T) {
 // TestPcTvRetriesFailedCall: a TV in deep standby has no remote connection,
 // so HA raises; that must not end the retries.
 func TestPcTvRetriesFailedCall(t *testing.T) {
-	h := newPcTvHarness(t, "on", "unavailable")
+	h := newPcTvHarness(t, true, "unavailable")
+	h.expectSilence()
 	h.fail.Store(2)
 
-	h.report(pcTvPC, "on", "off")
+	h.pc.off()
 	h.expectCmd("turn_off")
 	h.expectCmd("turn_off")
 	h.expectCmd("turn_off")
@@ -195,9 +254,10 @@ func TestPcTvRetriesFailedCall(t *testing.T) {
 }
 
 func TestPcTvGivesUp(t *testing.T) {
-	h := newPcTvHarness(t, "off", "off")
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
 
-	h.report(pcTvPC, "off", "on")
+	h.pc.on()
 	for range pcTvAttempts {
 		h.expectCmd("turn_on")
 	}
@@ -207,21 +267,30 @@ func TestPcTvGivesUp(t *testing.T) {
 // TestPcTvNewEdgeCancelsRetries: the PC gone again before the TV came on must
 // not leave the old chain pressing POWER — it would switch the TV on.
 func TestPcTvNewEdgeCancelsRetries(t *testing.T) {
-	h := newPcTvHarness(t, "off", "off")
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
 
-	h.report(pcTvPC, "off", "on")
+	h.pc.on()
 	h.expectCmd("turn_on")
-	h.report(pcTvPC, "on", "off")
+	h.pc.off()
 	h.expectSilence()
 }
 
-// TestPcTvIgnoresUnavailable: an HA restart takes the ping sensor through
-// unavailable; that is not the PC switching on or off.
-func TestPcTvIgnoresUnavailable(t *testing.T) {
-	h := newPcTvHarness(t, "on", "on")
+// TestPcTvFirstVerdictIsNotAnEdge: a restart or reload finding the PC on is
+// not the PC switching on.
+func TestPcTvFirstVerdictIsNotAnEdge(t *testing.T) {
+	h := newPcTvHarness(t, true, "off")
+	h.expectSilence()
+}
 
-	h.report(pcTvPC, "on", "unavailable")
-	h.report(pcTvPC, "unavailable", "on")
-	h.report(pcTvPC, "unavailable", "off")
+// TestPcTvRidesOutAMissedProbe: an outage shorter than two probe intervals
+// misses at most two probes, under OFF_AFTER_MISSES.
+func TestPcTvRidesOutAMissedProbe(t *testing.T) {
+	h := newPcTvHarness(t, true, "on")
+	h.expectSilence()
+
+	h.pc.off()
+	time.Sleep(pcTvProbe + pcTvProbe/4)
+	h.pc.on()
 	h.expectSilence()
 }

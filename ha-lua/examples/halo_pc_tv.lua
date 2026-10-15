@@ -3,18 +3,24 @@
 -- The bedroom TV follows the bedroom PC: on when the PC comes online, off when
 -- it goes offline.
 --
--- Online comes from HA's Ping integration on 192.168.1.12, polled every 30 s
--- (hardcoded). Its consider_home only feeds the device tracker: the binary
--- sensor goes off after a single round with no reply. Only clean on/off edges
--- count, so a sensor going unavailable and back (an HA restart) neither wakes
--- nor kills the TV.
+-- Online is a TCP connect to the PC's SMB port every couple of seconds. HA's
+-- Ping integration polls every 30 s, and its binary sensor drops on a single
+-- round with no reply. One answered probe is online; OFF_AFTER_MISSES in a row
+-- is offline. The first verdict after a load is taken as is, so a restart or
+-- reload neither wakes nor kills the TV.
 --
 -- The TV is retried until it REPORTS the wanted state: a TV in deep standby
 -- drops its remote connection and the call raises, and one that is busy can
 -- take the call and ignore it.
 
-local PC = "binary_sensor.bedroom_halo_pc"
+local PC = "192.168.1.12:445"
 local TV = "media_player.bedroom_tv"
+local PROBE_EVERY = "2s"
+-- The PC answers in under a millisecond on the wired LAN; a dropped SYN is
+-- only resent after 1 s, so waiting longer than this buys nothing.
+local PROBE_TIMEOUT = "250ms"
+-- A busy PC can miss one probe; only a run of them is a shutdown.
+local OFF_AFTER_MISSES = 3
 -- Both directions send the same POWER key, so a retry before the TV has
 -- reported the last one would toggle it straight back.
 local RETRY_EVERY = "20s"
@@ -22,6 +28,8 @@ local ATTEMPTS = 5
 
 -- Bumped on every PC edge; a retry chain stops once it is no longer current.
 local generation = 0
+local online -- nil until the first verdict
+local misses = 0
 
 local function drive(want, mine, attempt)
   if mine ~= generation then return end
@@ -40,19 +48,26 @@ local function drive(want, mine, attempt)
   ha.after(RETRY_EVERY, function() drive(want, mine, attempt + 1) end)
 end
 
-ha.on_state_change(PC, function(data)
-  local old = data.old_state and data.old_state.state
-  local new = data.new_state and data.new_state.state
-  if (old == "off" and new == "on") or (old == "on" and new == "off") then
-    generation = generation + 1
-    drive(new, generation, 1)
+ha.every(PROBE_EVERY, function()
+  local verdict
+  if net.dial(PC, PROBE_TIMEOUT) then
+    misses = 0
+    verdict = true
+  else
+    misses = misses + 1
+    if misses < OFF_AFTER_MISSES then return end
+    verdict = false
   end
+  if verdict == online then return end
+  local first = online == nil
+  online = verdict
+  if first then return end
+  generation = generation + 1
+  drive(online and "on" or "off", generation, 1)
 end)
 
-for _, entity_id in ipairs({ PC, TV }) do
-  if not ha.get_state(entity_id) then
-    ha.log("warn", entity_id .. " is unknown to the daemon — is that the right entity id?")
-  end
+if not ha.get_state(TV) then
+  ha.log("warn", TV .. " is unknown to the daemon — is that the right entity id?")
 end
 
 ha.on_exception(ha.exceptions.log_file("halo_pc_tv-errors.log"))
