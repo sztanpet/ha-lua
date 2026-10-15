@@ -4,6 +4,30 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 4.17.0 - 2026-10-15
+
+### Added
+- **`net.dial(address [, timeout])`** opens a TCP connection and closes it at
+  once: a reachability probe for a LAN host, with no raw socket needed. It
+  returns `true`, or `nil, err`. The timeout defaults to 1 s and is capped at
+  5 s, because the dial blocks the script while it waits.
+- **`halo_pc_tv.lua`, an example that switches a TV with a PC.** It dials the
+  PC every 2 s with a 250 ms deadline, so the TV comes on within about 2 s of
+  the PC and goes off after three missed probes in a row. HA's Ping sensor
+  polls only every 30 s and drops on a single lost round. The TV is retried
+  until it reports the wanted state.
+- **`heating_season.lua`, an example that switches the heating season off
+  once.** The first 3-day outdoor average below 14 °C turns heating on and
+  arms one switch-off, spent at the next 10:00 the average is above 17 °C.
+  After that a mode set by hand stands until the average has been below 14
+  again, so a warm spell with cold nights no longer turns the heating off
+  every morning.
+
+### Removed
+- `enhanced_climate.lua` no longer clears the v4.13 overshoot model's
+  leftovers at load. An install that skipped 4.16.0 keeps a few dead keys
+  and journal fields that nothing reads.
+
 ## 4.16.0 - 2026-10-02
 
 ### Changed
