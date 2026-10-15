@@ -168,6 +168,7 @@ constraints, each learned from a field report:
   deadline; PC RTT 0.78 ms, SYN resent only after 1 s). 1 answer = online,
   3 misses in a row = offline; first verdict after load is not an edge. PC
   had 135/139/445/3389/7680 open on 10-15. Cost: one timers-row UPDATE per
-  fire (every 2 s). PENDING: needs a release (box runs 4.16.0, no `net`) —
-  do NOT copy the script to the box before the add-on is updated. After
-  that the Ping config entry can be deleted (user's call).
+  fire (every 2 s). Released in v4.17.0 (`5d6f212`, 10-15). PENDING: the
+  user updates the add-on to 4.17.0; only THEN copy the script to the box
+  (4.16.0 has no `net`). After that the Ping config entry can be deleted
+  (user's call).
