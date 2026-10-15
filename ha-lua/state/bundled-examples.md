@@ -168,7 +168,10 @@ constraints, each learned from a field report:
   deadline; PC RTT 0.78 ms, SYN resent only after 1 s). 1 answer = online,
   3 misses in a row = offline; first verdict after load is not an edge. PC
   had 135/139/445/3389/7680 open on 10-15. Cost: one timers-row UPDATE per
-  fire (every 2 s). Released in v4.17.0 (`5d6f212`, 10-15). PENDING: the
-  user updates the add-on to 4.17.0; only THEN copy the script to the box
-  (4.16.0 has no `net`). After that the Ping config entry can be deleted
-  (user's call).
+  fire (every 2 s). Released in v4.17.0 (`5d6f212`, 10-15). Add-on updated
+  to 4.17.0 by Claude via the Supervisor API from the SSH add-on
+  (`POST /store/reload`, then `POST /store/addons/0f182187_ha-lua/update`
+  with `{"backup":false}`), script deployed 17:38 CEST, loaded with 1 timer.
+  From the add-on container: 192.168.1.12:445 answers in ~0.6 ms, a dead
+  address times out at exactly 250 ms. The PC->TV edge itself not yet seen
+  end to end. The Ping config entry is now unused (user may delete it).
