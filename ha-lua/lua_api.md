@@ -41,7 +41,7 @@ without its extension (`lights.lua` → `lights`).
 **Error reporting comes in two flavours.** Most `ha.*`, `store.*`, and
 `global.*` calls **raise** a Lua error on failure (catch with `pcall`); an
 uncaught error is routed to the script's [exception handler](#exception-handling).
-The I/O-style modules (`http`, `fs`, `json`, parts of `crypto` and `time`)
+The I/O-style modules (`http`, `net`, `fs`, `json`, parts of `crypto` and `time`)
 instead follow the `value | nil, errmsg` convention — they return `nil` plus an
 error string as a second value, so you check the first return:
 
@@ -755,13 +755,14 @@ an optional table merged on top. Same return shape as `http.get`.
 #### `net.dial(address [, timeout])`
 
 Opens a TCP connection to `address` (`"host:port"`) and closes it at once — a
-reachability probe that needs no ICMP. Returns `true`, or `nil, err`.
-`timeout` is a Go duration string, default `"1s"`, at most `"5s"`; it blocks
-the script, so poll with a short one:
+reachability probe that needs no ICMP. Returns `true`, or `nil, err` when the
+host refuses or the timeout passes. `timeout` is a Go duration string, default
+`"1s"`, at most `"5s"`; a bad or larger one raises. The dial blocks the script,
+so poll with a short one — on a LAN a host answers in about a millisecond:
 
 ```lua
 ha.every("2s", function()
-  local up = net.dial("192.168.1.12:445", "1s")
+  local up = net.dial("192.168.1.12:445", "250ms")
 end)
 ```
 
