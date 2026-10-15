@@ -30,6 +30,7 @@ without its extension (`lights.lua` → `lights`).
   - [`json`](#json)
   - [`re`](#re)
   - [`http`](#http)
+  - [`net`](#net)
   - [`crypto`](#crypto)
   - [`fs`](#fs)
   - [`math` (augmented)](#math-augmented)
@@ -748,6 +749,21 @@ local res, err = http.get("https://api.example.com/x", { Authorization = "Bearer
 
 `body` is a string, `content_type` sets the `Content-Type` header, `headers` is
 an optional table merged on top. Same return shape as `http.get`.
+
+### `net`
+
+#### `net.dial(address [, timeout])`
+
+Opens a TCP connection to `address` (`"host:port"`) and closes it at once — a
+reachability probe that needs no ICMP. Returns `true`, or `nil, err`.
+`timeout` is a Go duration string, default `"1s"`, at most `"5s"`; it blocks
+the script, so poll with a short one:
+
+```lua
+ha.every("2s", function()
+  local up = net.dial("192.168.1.12:445", "1s")
+end)
+```
 
 ### `crypto`
 

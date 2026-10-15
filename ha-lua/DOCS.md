@@ -195,7 +195,7 @@ temporarily — it exposes an unauthenticated debug server.
 | `require "mod"` | Load a module from `scripts/lib/` |
 | `fs.read(path)` / `fs.exists` / `fs.list` / `fs.stat` | Read files in the scripts directory — see *Reading and writing files* below |
 | `fs.write(path, content)` / `fs.append` / `fs.mkdir` / `fs.remove` | Write files in the scripts directory |
-| stdlib | `strings`, `time`, `json`, `re`, `http`, `crypto`, `fs`; augmented `math` |
+| stdlib | `strings`, `time`, `json`, `re`, `http`, `net`, `crypto`, `fs`; augmented `math` |
 
 For the complete API reference — every function's arguments, return values, and
 error behaviour — see [`lua_api.md`](./lua_api.md). For the design rationale, see

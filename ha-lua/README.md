@@ -55,7 +55,7 @@ Scripts get a small, deliberate surface: a core `ha` module (entity state,
 service calls, events, callbacks, timers, HTTP serving, logging, exceptions),
 two SQLite-backed key-value stores (`store` per-script, `global` shared),
 restricted `require`, and a sandboxed standard library (`strings`, `time`,
-`json`, `re`, `http`, `crypto`, `fs`, plus an augmented `math`).
+`json`, `re`, `http`, `net`, `crypto`, `fs`, plus an augmented `math`).
 
 **[`lua_api.md`](./lua_api.md) is the complete reference** — every function,
 its arguments, return values, and error behaviour. A taste:

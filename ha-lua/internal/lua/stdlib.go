@@ -9,7 +9,7 @@ import (
 )
 
 // RegisterStdlib applies full sandboxing (SkipOpenLibs + selective open) and
-// registers all additional modules (strings, time, json, re, http, crypto, fs)
+// registers all additional modules (strings, time, json, re, http, net, crypto, fs)
 // and math augmentations. root is the os.Root backing the read-only fs module;
 // it may be nil (fs calls then error).
 func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
@@ -62,6 +62,7 @@ func RegisterStdlib(L *lua.LState, scriptsDir string, root *os.Root) {
 	registerJSON(L)
 	registerRE(L)
 	registerHTTP(L)
+	registerNet(L)
 	registerCrypto(L)
 	registerFS(L, root)
 }

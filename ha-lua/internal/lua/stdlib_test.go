@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -353,6 +354,33 @@ func TestHTTPRejectsAnOversizedBody(t *testing.T) {
 		local res, err = http.get(server_url)
 		assert(res == nil, "oversized body was accepted")
 		assert(err:find("larger than"), "unexpected error: " .. tostring(err))
+	`); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestNetDial(t *testing.T) {
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed.Close()
+	defer ln.Close()
+
+	L, _ := newStdlibState(t)
+	L.SetGlobal("open_addr", lua.LString(ln.Addr().String()))
+	L.SetGlobal("closed_addr", lua.LString(closed.Addr().String()))
+	if err := L.DoString(`
+		local ok, err = net.dial(open_addr)
+		assert(ok == true, "open port: " .. tostring(err))
+		ok, err = net.dial(closed_addr, "200ms")
+		assert(ok == nil and err:find("refused"), "closed port: " .. tostring(err))
+		assert(not pcall(net.dial, open_addr, "1m"), "timeout over the cap was accepted")
+		assert(not pcall(net.dial, open_addr, "soon"), "bad timeout was accepted")
 	`); err != nil {
 		t.Error(err)
 	}
