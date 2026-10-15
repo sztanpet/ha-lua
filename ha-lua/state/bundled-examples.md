@@ -180,3 +180,5 @@ constraints, each learned from a field report:
   I/O modules' nil, err). Released as v5.0.0 (`3d3eed4`; user chose the
   major bump over keeping a `net.dial` alias). The add-on update and the
   script copy must go together: 5.0.0 breaks the old script, 4.17.0 the new.
+  Deployed 10-15 18:49 CEST: staged the script as a non-.lua file, updated
+  the add-on, then `mv` into place; loaded on 5.0.0 with no errors logged.
