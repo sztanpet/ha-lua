@@ -161,3 +161,13 @@ constraints, each learned from a field report:
   in standby (reports `off`, not `unavailable`). Via HA `media_player.turn_on`
   the TV reported `on` in ~4 s; `turn_off` -> `off` in ~2 s and still `off`
   (reachable) 30 s later. The PC->TV edge itself not yet seen end to end.
+- REPLACED Ping with an in-script probe (10-15): new stdlib `net.dial(addr
+  [, timeout])` (`5e35e02`; TCP connect + close, default 1 s, cap 5 s since it
+  blocks the script goroutine; no raw socket needed in the add-on). Script
+  (`7426f3f`) dials 192.168.1.12:445 every 2 s, 250 ms deadline (user: short
+  deadline; PC RTT 0.78 ms, SYN resent only after 1 s). 1 answer = online,
+  3 misses in a row = offline; first verdict after load is not an edge. PC
+  had 135/139/445/3389/7680 open on 10-15. Cost: one timers-row UPDATE per
+  fire (every 2 s). PENDING: needs a release (box runs 4.16.0, no `net`) —
+  do NOT copy the script to the box before the add-on is updated. After
+  that the Ping config entry can be deleted (user's call).
