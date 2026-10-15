@@ -4,6 +4,16 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.0.0 - 2026-10-15
+
+### Changed
+- **BREAKING: `net.dial` is renamed to `net.reachable`, and an unreachable
+  host now returns `false, err` instead of `nil, err`.** The function is a
+  yes/no probe, and the old name suggested it handed back a connection.
+  Replace `net.dial(` with `net.reachable(` in your scripts; a plain
+  `if net.dial(...) then` check keeps working after the rename. If you run a
+  copy of `halo_pc_tv.lua`, copy the new one over when you update.
+
 ## 4.17.0 - 2026-10-15
 
 ### Added
