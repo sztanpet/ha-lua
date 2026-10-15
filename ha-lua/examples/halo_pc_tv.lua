@@ -50,7 +50,7 @@ end
 
 ha.every(PROBE_EVERY, function()
   local verdict
-  if net.dial(PC, PROBE_TIMEOUT) then
+  if net.reachable(PC, PROBE_TIMEOUT) then
     misses = 0
     verdict = true
   else

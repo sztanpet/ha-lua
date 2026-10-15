@@ -41,7 +41,7 @@ type pcTvHarness struct {
 	fail    atomic.Int32 // the next this-many calls raise, like a TV in deep standby
 }
 
-// fakePC answers net.dial on a fixed port while it is on, and refuses it
+// fakePC answers net.reachable on a fixed port while it is on, and refuses it
 // while it is off.
 type fakePC struct {
 	t    *testing.T
