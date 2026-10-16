@@ -59,10 +59,14 @@ func (reg *Registry) All() []*Runner {
 // Dispatch fans out an HA event to all registered runners. Non-blocking per
 // runner (Send drops events if the channel is full).
 func (reg *Registry) Dispatch(ev ha.Event) {
+	var entityID string
+	if ev.Type == "state_changed" {
+		entityID = stateEventEntityID(ev.Data)
+	}
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
 	for _, r := range reg.runners {
-		if r.wantsHAEvent(ev) {
+		if r.wantsHAEvent(ev, entityID) {
 			r.SendHAEvent(ev)
 		}
 	}

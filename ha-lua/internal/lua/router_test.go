@@ -405,7 +405,7 @@ func TestLoadTimeFieldsAreHiddenWhileLoading(t *testing.T) {
 		LoadedCh:            make(chan struct{}),
 		cachedUITitle:       "Panel",
 		cachedRoutes:        []RouteSpec{{Method: "GET", Prefix: "/"}},
-		cachedStateHandlers: 2,
+		cachedStatePatterns: []string{"light.*", "switch.*"},
 		cachedMQTTHandlers:  []mqttHandler{{filter: "home/#"}},
 	}
 	if st := r.Stats(); st.UITitle != "" || st.Routes != nil || st.StateHandlers != 0 {

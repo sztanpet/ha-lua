@@ -60,13 +60,20 @@ func haEventCoalesceKey(ev Event) (string, bool) {
 	if ev.HAEvent == nil || ev.HAEvent.Type != "state_changed" {
 		return "", false
 	}
+	id := stateEventEntityID(ev.HAEvent.Data)
+	return id, id != ""
+}
+
+// stateEventEntityID returns a state_changed payload's entity_id, or "" when
+// it has none.
+func stateEventEntityID(data jsontext.Value) string {
 	var d struct {
 		EntityID string `json:"entity_id"`
 	}
-	if err := json.Unmarshal(ev.HAEvent.Data, &d); err != nil || d.EntityID == "" {
-		return "", false
+	if err := json.Unmarshal(data, &d); err != nil {
+		return ""
 	}
-	return d.EntityID, true
+	return d.EntityID
 }
 
 // Runner owns a single *lua.LState and its event channel.
@@ -98,7 +105,7 @@ type Runner struct {
 	cachedEventHandlers []eventHandler
 	cachedRoutes        []RouteSpec
 	cachedUITitle       string
-	cachedStateHandlers int
+	cachedStatePatterns []string
 	cachedMQTTHandlers  []mqttHandler
 	cachedImmediate     bool
 
@@ -199,18 +206,24 @@ func (r *Runner) loaded() bool {
 }
 
 // wantsHAEvent reports whether this script has a handler that could act on ev,
-// so a script with no state handlers is not woken for every entity in the house
-// only to walk an empty handler list.
+// so a script is not woken for every entity in the house only to match none of
+// its patterns. entityID is ev's entity for a state_changed, decoded once by
+// the caller for every runner.
 //
 // Before the load finishes the handler set is unknown, so everything is
 // accepted: the channel buffer exists precisely so events arriving during a
 // load are handled after it.
-func (r *Runner) wantsHAEvent(ev ha.Event) bool {
+func (r *Runner) wantsHAEvent(ev ha.Event, entityID string) bool {
 	if !r.loaded() {
 		return true
 	}
 	if ev.Type == "state_changed" {
-		return r.cachedStateHandlers > 0
+		for _, pattern := range r.cachedStatePatterns {
+			if ok, _ := filepath.Match(pattern, entityID); ok {
+				return true
+			}
+		}
+		return false
 	}
 	for _, h := range r.cachedEventHandlers {
 		if h.eventType == ev.Type {
@@ -308,7 +321,10 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	r.cachedMQTTHandlers = api.mqttHandlers
 	r.cachedRoutes = api.routeSpecs()
 	r.cachedUITitle = api.uiTitle
-	r.cachedStateHandlers = len(api.stateChangeHandlers)
+	r.cachedStatePatterns = nil
+	for _, h := range api.stateChangeHandlers {
+		r.cachedStatePatterns = append(r.cachedStatePatterns, h.pattern)
+	}
 	r.cachedImmediate = api.immediateEvents
 	if r.cachedUITitle != "" && api.matchRoute("GET", "/") == nil {
 		slog.Warn("script asked for a UI tab but serves no GET \"/\" — its tab would open onto a 404",
@@ -319,7 +335,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	// rather than only on the debug page. A load error already said its piece.
 	if loadErr == nil {
 		slog.Info("lua: script loaded", "script", r.scriptID,
-			"state_handlers", r.cachedStateHandlers,
+			"state_handlers", len(r.cachedStatePatterns),
 			"event_handlers", len(r.cachedEventHandlers),
 			"mqtt_filters", len(r.cachedMQTTHandlers),
 			"routes", len(r.cachedRoutes),
@@ -449,7 +465,7 @@ func (r *Runner) Stats() RunnerStats {
 	st.UITitle = r.cachedUITitle
 	st.Routes = r.cachedRoutes
 	st.EventHandlers = len(r.cachedEventHandlers)
-	st.StateHandlers = r.cachedStateHandlers
+	st.StateHandlers = len(r.cachedStatePatterns)
 	st.MQTTFilters = r.MQTTFilters()
 	st.Immediate = r.cachedImmediate
 	return st
