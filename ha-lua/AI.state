@@ -9,12 +9,13 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Purge VACUUMs the DB once over 25% of it is free; the debug page shows the
-free space** (detail: `state/core-daemon.md`, "Database compaction").
-Released as v5.2.0, deployed 10-16 22:32 (166 -> 51 MB, 1.2 s). Before it: v5.1.0 deployed 10-16 — the
-bedroom TV wakes on the PC's router-port link (`state/bundled-examples.md`),
-power-on edge not yet seen end to end. The overshoot track's open items
-(pull v4.16.0, D1) are unchanged in `state/overshoot.md`.
+**v5.3.0: the DB uses incremental vacuum; each purge releases its free pages**
+(detail: `state/core-daemon.md`, "Database compaction"). The debug page shows
+the free space (v5.2.0). Add-on update pending the build. Earlier today:
+v5.1.0, the bedroom TV wakes on the PC's router-port link
+(`state/bundled-examples.md`), power-on edge not yet seen end to end. The
+overshoot track's open items (pull v4.16.0, D1) are unchanged in
+`state/overshoot.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -51,9 +52,10 @@ Daemon
   handler latency; the mirror re-seeds, history is throwaway, timers rebuild.
 - **SQLite DSN pragmas must use `_pragma=name(value)`** — modernc silently
   ignores mattn-style params. `TestOpenDBEnablesWAL` is the canary.
-- **VACUUM only past 25% free, never auto_vacuum.** Purged pages are reused
-  by inserts, so steady state needs nothing; a VACUUM holds the single write
-  handle (history and timer writes wait). Detail: `state/core-daemon.md`.
+- **The DB runs in auto_vacuum=INCREMENTAL; each purge releases its free
+  pages.** Chosen by the user over a full VACUUM past 25% free: a full VACUUM
+  rewrites the file holding the single write handle. Detail:
+  `state/core-daemon.md`.
 - **Purge cutoff is computed in Go as RFC3339 and bound as a parameter** —
   never `datetime('now',…)`; the format mismatch breaks the string compare.
 - **History is write-behind and never drops silently**: a full queue blocks

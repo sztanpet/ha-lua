@@ -55,3 +55,9 @@ tracks build on it; code review rounds are in `code-review.md`.
   older floods), file 166 -> 51 MB, 1.2 s. The result is smaller than
   size minus freelist: VACUUM also repacks part-full pages, so the freelist
   understates what a vacuum reclaims. Free after: 90 KB.
+- INCREMENTAL (user, 10-16: "implement incremental vacuuming"): OpenDB
+  switches the file to auto_vacuum=INCREMENTAL (one VACUUM + WAL truncate for
+  an older file, `f441d10`); every purge then runs `PRAGMA incremental_vacuum`
+  + `wal_checkpoint(TRUNCATE)` when the freelist is non-empty (`a43f324`),
+  replacing the 25% threshold. Released as v5.3.0. Note: incremental vacuum
+  does not repack part-full pages the way VACUUM does.
