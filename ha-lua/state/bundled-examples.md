@@ -204,3 +204,8 @@ constraints, each learned from a field report:
   445; hence the 2 min grace, which only reverts a link wake the PC never
   answers (shutdown is still 3 misses, ~6 s). Adopted: either on/off edge
   wakes, for the Sept. link-fully-down spells; `unavailable` ignored.
+- The PC HIBERNATES (S4), it is not shut down (user, 10-16). Hibernate writes
+  the RAM image after 445 closes and cuts the link only then, so
+  LINK_AFTER_OFFLINE (60 s) must outlast the image write; no ether3 change
+  was recorded at the 10-13/14/15 hibernates. A TV coming back on right
+  after a hibernate means raise it.
