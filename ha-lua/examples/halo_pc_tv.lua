@@ -24,8 +24,9 @@ local PC = "192.168.1.12:445"
 local TV = "media_player.bedroom_tv"
 local PROBE_EVERY = "2s"
 -- The PC answers in under a millisecond on the wired LAN; a dropped SYN is
--- only resent after 1 s, so waiting longer than this buys nothing.
-local PROBE_TIMEOUT = "250ms"
+-- only resent after 1 s, so waiting longer buys nothing. While the PC is off
+-- every probe runs to the deadline, and the script's events wait behind it.
+local PROBE_TIMEOUT = "100ms"
 -- A busy PC can miss one probe; only a run of them is it going down.
 local OFF_AFTER_MISSES = 3
 -- Both directions send the same POWER key, so a retry before the TV has
