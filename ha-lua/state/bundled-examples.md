@@ -182,3 +182,18 @@ constraints, each learned from a field report:
   script copy must go together: 5.0.0 breaks the old script, 4.17.0 the new.
   Deployed 10-15 18:49 CEST: staged the script as a non-.lua file, updated
   the add-on, then `mv` into place; loaded on 5.0.0 with no errors logged.
+- SLOW EDGE (10-16, user: ">30 s to detect the PC"): not the counting — one
+  answer was already online. 445 answers only well into the Windows boot.
+  ha-lua history: TV `on` 17:55:22 CEST (ha-lua's call). HA recorder:
+  `binary_sensor.ether3_connectivity` (MikroTik, the PC's port, 10 s poll)
+  off 17:54:49 / on 17:55:09; 10-13 and 10-14 boots the same, 14–34 s
+  ahead of Ping. A month of ether3 history: a 10–20 s drop per boot, none
+  recorded at shutdown, long flaps on 09-20/09-22 only. The 10-15 17:16 boot
+  showed no drop (shorter than the poll). `media_player.bedroom_tv` and
+  `call_service` are not in HA's recorder; ha-lua's own history has the TV.
+  `switch.dugalj5` follows the TV (not ours).
+- LINK WAKE (`1ec0c87`, deployed 10-16 18:18 CEST, loaded with 1 state
+  handler): an ether3 on->off while the probe has had the PC offline >= 60 s
+  turns the TV on; if the probe has not seen the PC 2 min later, it goes back
+  off. Not seen end to end yet. Offered if the 10 s poll proves too coarse:
+  poll RouterOS's `link-downs` counter directly (needs REST + credentials).
