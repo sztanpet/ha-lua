@@ -197,3 +197,10 @@ constraints, each learned from a field report:
   turns the TV on; if the probe has not seen the PC 2 min later, it goes back
   off. Not seen end to end yet. Offered if the 10 s poll proves too coarse:
   poll RouterOS's `link-downs` counter directly (needs REST + credentials).
+- EITHER EDGE (`41959b9`, deployed 10-16 18:21 CEST): user asked
+  for "on when ether3 gains connectivity or the probe answers, off when the
+  probe fails". Kept: the regain is 10-20 s behind the drop under WoL, and a
+  level "probe failing = off" kills the TV in the 20-30 s between link-up and
+  445; hence the 2 min grace, which only reverts a link wake the PC never
+  answers (shutdown is still 3 misses, ~6 s). Adopted: either on/off edge
+  wakes, for the Sept. link-fully-down spells; `unavailable` ignored.
