@@ -45,3 +45,64 @@ func TestOpenDBEnablesWAL(t *testing.T) {
 		}
 	}
 }
+
+func autoVacuum(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var mode int
+	if err := db.QueryRowContext(t.Context(), "PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	return mode
+}
+
+func TestOpenDBUsesIncrementalVacuum(t *testing.T) {
+	writeDB, readDB, err := OpenDB(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writeDB.Close()
+	defer readDB.Close()
+	if mode := autoVacuum(t, readDB); mode != 2 {
+		t.Errorf("auto_vacuum = %d, want 2 (incremental)", mode)
+	}
+}
+
+// A database created before incremental vacuum keeps its data across the
+// one-off rewrite that switches it.
+func TestOpenDBConvertsOldDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	old, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE old_data(name TEXT PRIMARY KEY, value TEXT)`,
+		`INSERT INTO old_data VALUES('mode', 'night')`,
+	} {
+		if _, err := old.ExecContext(t.Context(), q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	if mode := autoVacuum(t, old); mode != 0 {
+		t.Fatalf("setup: auto_vacuum = %d, want 0", mode)
+	}
+	old.Close()
+
+	writeDB, readDB, err := OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writeDB.Close()
+	defer readDB.Close()
+	if mode := autoVacuum(t, readDB); mode != 2 {
+		t.Errorf("auto_vacuum = %d after open, want 2 (incremental)", mode)
+	}
+	var value string
+	if err := readDB.QueryRowContext(t.Context(),
+		`SELECT value FROM old_data WHERE name = 'mode'`).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != "night" {
+		t.Errorf("value = %q after conversion, want night", value)
+	}
+}

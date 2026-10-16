@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -89,12 +91,52 @@ func OpenDB(path string) (writeDB, readDB *sql.DB, err error) {
 		return nil, nil, fmt.Errorf("open read db: %w", err)
 	}
 
+	if err = enableIncrementalVacuum(context.Background(), writeDB); err != nil {
+		writeDB.Close()
+		readDB.Close()
+		return nil, nil, err
+	}
 	if err = Migrate(writeDB); err != nil {
 		writeDB.Close()
 		readDB.Close()
 		return nil, nil, fmt.Errorf("migrate: %w", err)
 	}
 	return writeDB, readDB, nil
+}
+
+// enableIncrementalVacuum puts the database in auto_vacuum=INCREMENTAL, so the
+// purge can hand freed pages back with PRAGMA incremental_vacuum instead of
+// rewriting the file. The mode only takes effect through a VACUUM, so a file
+// created before it is rewritten once, here.
+func enableIncrementalVacuum(ctx context.Context, db *sql.DB) error {
+	var mode int
+	if err := db.QueryRowContext(ctx, "PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		return fmt.Errorf("read auto_vacuum: %w", err)
+	}
+	const incremental = 2
+	if mode == incremental {
+		return nil
+	}
+	start := time.Now()
+	// The pragma is per connection until the VACUUM persists it; the write
+	// handle has one connection, but pin it rather than rely on that.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	for _, q := range []string{
+		"PRAGMA auto_vacuum = INCREMENTAL",
+		"VACUUM",
+		"PRAGMA wal_checkpoint(TRUNCATE)",
+	} {
+		if _, err := conn.ExecContext(ctx, q); err != nil {
+			return fmt.Errorf("enable incremental vacuum: %s: %w", q, err)
+		}
+	}
+	slog.Info("state: switched the database to incremental vacuum",
+		"took", time.Since(start).Round(time.Millisecond))
+	return nil
 }
 
 // Pages reports the database file's size in pages, how many of those are

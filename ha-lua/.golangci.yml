@@ -10,12 +10,14 @@ linters:
     errcheck:
       # Deferred cleanup where the error is unconditionally uninteresting:
       # Rollback after Commit is a no-op error, Rows.Close errors surface
-      # via Rows.Err, double-Close of DB handles is harmless, and
-      # websocket CloseNow is documented best-effort.
+      # via Rows.Err, double-Close of DB handles is harmless, a pinned
+      # sql.Conn only goes back to the pool, and websocket CloseNow is
+      # documented best-effort.
       exclude-functions:
         - (*database/sql.Tx).Rollback
         - (*database/sql.Rows).Close
         - (*database/sql.DB).Close
+        - (*database/sql.Conn).Close
         - (*github.com/coder/websocket.Conn).CloseNow
         - (*github.com/fsnotify/fsnotify.Watcher).Close
         - (*os.Root).Close
