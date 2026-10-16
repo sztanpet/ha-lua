@@ -39,3 +39,14 @@ tracks build on it; code review rounds are in `code-review.md`.
 - pprof goroutine labels: every goroutine runs under `pprof.Do`; the one that
   matters is `goroutine=script, script=<id>`, since every script runs the same
   interpreter loop and a stack alone cannot say which one burns CPU.
+
+## Database compaction (2026-10-16)
+- Nothing compacted the DB before; 166 MB on the box at 2-day retention. The
+  purge now VACUUMs + `wal_checkpoint(TRUNCATE)` when freelist_count /
+  page_count > 0.25 (`8ca609e`); the debug page shows the free bytes
+  (`ced947d`). Unreleased.
+- Why a threshold and not `auto_vacuum`: a default purge frees ~1/48 of the
+  rows and inserts reuse those pages, so steady state needs nothing; only a
+  lasting shrink (lower retention, an aged-out flood) leaves space for good.
+  auto_vacuum=INCREMENTAL would itself need a full VACUUM to switch on, and
+  VACUUM holds the single write handle for its duration.
