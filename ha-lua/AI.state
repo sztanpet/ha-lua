@@ -9,12 +9,13 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Bedroom TV wakes on the PC's router-port link drop** (detail:
-`state/bundled-examples.md`, "halo_pc_tv.lua", LINK WAKE). The SMB probe
-answers ~30 s after the power button; HA's MikroTik `ether3_connectivity`
-drops at power-on, so `examples/halo_pc_tv.lua` turns the TV on then and
-reverts if the probe never sees the PC. Deployed 10-16, unreleased, not yet
-seen end to end. The overshoot track's open items (pull v4.16.0, D1) are
+**v5.1.0: bedroom TV wakes on the PC's router-port link; state changes are
+routed by pattern** (detail: `state/bundled-examples.md`, "halo_pc_tv.lua").
+`examples/halo_pc_tv.lua` turns the TV on at an `ether3_connectivity` edge
+once the PC (hibernated, not shut down) has been gone a minute, and reverts
+if the probe never sees it. The power-on edge is not yet seen end to end;
+the hibernate edge was clean. The add-on update to 5.1.0 is pending the
+release build. The overshoot track's open items (pull v4.16.0, D1) are
 unchanged in `state/overshoot.md`.
 
 ## State files (per spec)

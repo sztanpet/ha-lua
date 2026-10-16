@@ -209,3 +209,10 @@ constraints, each learned from a field report:
   LINK_AFTER_OFFLINE (60 s) must outlast the image write; no ether3 change
   was recorded at the 10-13/14/15 hibernates. A TV coming back on right
   after a hibernate means raise it.
+- First hibernate with the link wake (10-16): TV `off` 21:10:42 CEST, no
+  ether3 change, no false wake. It exposed ~800 WARN "event waited long for
+  its handler"/h from halo_pc_tv: the router sent every state change to any
+  script with a state handler, and the 250 ms dial to the offline PC parked
+  them. Fixed twice: PROBE_TIMEOUT 100 ms (`8bd9a7d`, deployed 22:12) and
+  pattern-matched routing in Registry.Dispatch (`a28a5e3`). Released as
+  v5.1.0 (`d62b74b`).
