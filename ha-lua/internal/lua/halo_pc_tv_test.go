@@ -314,6 +314,26 @@ func TestPcTvWakesOnLinkDrop(t *testing.T) {
 	h.expectSilence()
 }
 
+// TestPcTvWakesOnLinkRise: with the link down while the PC is off, coming
+// back is the first sign of the boot.
+func TestPcTvWakesOnLinkRise(t *testing.T) {
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
+
+	h.report(pcTvLink, "off", "on")
+	h.expectCmd("turn_on")
+}
+
+// TestPcTvIgnoresLinkAvailability: the MikroTik poll failing is not the PC.
+func TestPcTvIgnoresLinkAvailability(t *testing.T) {
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
+
+	h.report(pcTvLink, "on", "unavailable")
+	h.report(pcTvLink, "unavailable", "on")
+	h.expectSilence()
+}
+
 func TestPcTvLinkDropWithoutBootReverts(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
@@ -336,6 +356,7 @@ func TestPcTvIgnoresLinkDropAtShutdown(t *testing.T) {
 	h.expectCmd("turn_off")
 	h.report(pcTvTV, "on", "off")
 	h.report(pcTvLink, "on", "off")
+	h.report(pcTvLink, "off", "on")
 	h.expectSilence()
 }
 

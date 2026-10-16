@@ -10,10 +10,11 @@
 -- reload neither wakes nor kills the TV.
 --
 -- The probe only answers once Windows is well into its boot, ~30 s after the
--- power button. The PC's NIC renegotiates its link at power-on, and HA's
--- MikroTik integration sees that drop on the router port, so a drop while the
--- PC has been gone a while turns the TV on early. A drop that is not followed
--- by the PC answering turns it back off.
+-- power button. The PC's NIC holds a wake-on-LAN link while it is off and
+-- renegotiates at power-on, which HA's MikroTik integration sees as the router
+-- port dropping and coming back. Either edge while the PC has been gone a
+-- while turns the TV on early; one not followed by the PC answering turns it
+-- back off.
 --
 -- The TV is retried until it REPORTS the wanted state: a TV in deep standby
 -- drops its remote connection and the call raises, and one that is busy can
@@ -81,7 +82,8 @@ end)
 
 ha.on_state_change(LINK, function(data)
   if online ~= false then return end
-  if not (data.old_state and data.old_state.state == "on" and data.new_state.state == "off") then return end
+  local from, to = data.old_state and data.old_state.state, data.new_state.state
+  if not ((from == "on" and to == "off") or (from == "off" and to == "on")) then return end
   if time.now():sub(offline_since) < LINK_AFTER_OFFLINE then return end
   generation = generation + 1
   local mine = generation
