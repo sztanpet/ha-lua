@@ -11,7 +11,7 @@ and only that one.
 ## Latest
 **Purge VACUUMs the DB once over 25% of it is free; the debug page shows the
 free space** (detail: `state/core-daemon.md`, "Database compaction").
-Unreleased (`8ca609e`, `ced947d`). Before it: v5.1.0 deployed 10-16 — the
+Released as v5.2.0; add-on update pending the build. Before it: v5.1.0 deployed 10-16 — the
 bedroom TV wakes on the PC's router-port link (`state/bundled-examples.md`),
 power-on edge not yet seen end to end. The overshoot track's open items
 (pull v4.16.0, D1) are unchanged in `state/overshoot.md`.
