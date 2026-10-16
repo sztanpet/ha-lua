@@ -9,6 +9,12 @@
 -- is offline. The first verdict after a load is taken as is, so a restart or
 -- reload neither wakes nor kills the TV.
 --
+-- The probe only answers once Windows is well into its boot, ~30 s after the
+-- power button. The PC's NIC renegotiates its link at power-on, and HA's
+-- MikroTik integration sees that drop on the router port, so a drop while the
+-- PC has been gone a while turns the TV on early. A drop that is not followed
+-- by the PC answering turns it back off.
+--
 -- The TV is retried until it REPORTS the wanted state: a TV in deep standby
 -- drops its remote connection and the call raises, and one that is busy can
 -- take the call and ignore it.
@@ -25,11 +31,17 @@ local OFF_AFTER_MISSES = 3
 -- reported the last one would toggle it straight back.
 local RETRY_EVERY = "20s"
 local ATTEMPTS = 5
+local LINK = "binary_sensor.ether3_connectivity"
+-- The link also drops while the PC shuts down or reboots; those come within
+-- seconds of the probe losing it.
+local LINK_AFTER_OFFLINE = time.parse_duration("60s")
+local BOOT_GRACE = "2m"
 
 -- Bumped on every PC edge; a retry chain stops once it is no longer current.
 local generation = 0
 local online -- nil until the first verdict
 local misses = 0
+local offline_since = time.now()
 
 local function drive(want, mine, attempt)
   if mine ~= generation then return end
@@ -61,9 +73,25 @@ ha.every(PROBE_EVERY, function()
   if verdict == online then return end
   local first = online == nil
   online = verdict
+  if not online then offline_since = time.now() end
   if first then return end
   generation = generation + 1
   drive(online and "on" or "off", generation, 1)
+end)
+
+ha.on_state_change(LINK, function(data)
+  if online ~= false then return end
+  if not (data.old_state and data.old_state.state == "on" and data.new_state.state == "off") then return end
+  if time.now():sub(offline_since) < LINK_AFTER_OFFLINE then return end
+  generation = generation + 1
+  local mine = generation
+  drive("on", mine, 1)
+  ha.after(BOOT_GRACE, function()
+    if mine ~= generation or online then return end
+    ha.log("info", "halo_pc_tv: " .. LINK .. " dropped but the PC never answered")
+    generation = generation + 1
+    drive("off", generation, 1)
+  end)
 end)
 
 if not ha.get_state(TV) then

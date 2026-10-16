@@ -21,11 +21,14 @@ import (
 )
 
 const (
-	pcTvTV = "media_player.bedroom_tv"
+	pcTvTV   = "media_player.bedroom_tv"
+	pcTvLink = "binary_sensor.ether3_connectivity"
 	// The shipped intervals are seconds; the copy under test uses these.
 	pcTvProbe    = 20 * time.Millisecond
 	pcTvRetry    = 150 * time.Millisecond
 	pcTvAttempts = 5
+	pcTvSettle   = 100 * time.Millisecond
+	pcTvGrace    = 300 * time.Millisecond
 )
 
 // pcTvHarness runs the real examples/halo_pc_tv.lua against a spy call
@@ -97,6 +100,8 @@ func newPcTvHarness(t *testing.T, pcOn bool, tv string) *pcTvHarness {
 		`local PC = "192.168.1.12:445"`: `local PC = "` + pc.addr + `"`,
 		`local PROBE_EVERY = "2s"`:      `local PROBE_EVERY = "` + pcTvProbe.String() + `"`,
 		`local RETRY_EVERY = "20s"`:     `local RETRY_EVERY = "` + pcTvRetry.String() + `"`,
+		`time.parse_duration("60s")`:    `time.parse_duration("` + pcTvSettle.String() + `")`,
+		`local BOOT_GRACE = "2m"`:       `local BOOT_GRACE = "` + pcTvGrace.String() + `"`,
 	})
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
@@ -292,5 +297,52 @@ func TestPcTvRidesOutAMissedProbe(t *testing.T) {
 	h.pc.off()
 	time.Sleep(pcTvProbe + pcTvProbe/4)
 	h.pc.on()
+	h.expectSilence()
+}
+
+// TestPcTvWakesOnLinkDrop: the NIC renegotiating at power-on turns the TV on
+// long before the PC answers the probe.
+func TestPcTvWakesOnLinkDrop(t *testing.T) {
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
+
+	h.report(pcTvLink, "on", "off")
+	h.expectCmd("turn_on")
+	h.report(pcTvTV, "off", "on")
+	h.pc.on()
+	time.Sleep(pcTvGrace)
+	h.expectSilence()
+}
+
+func TestPcTvLinkDropWithoutBootReverts(t *testing.T) {
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
+
+	h.report(pcTvLink, "on", "off")
+	h.expectCmd("turn_on")
+	h.report(pcTvTV, "off", "on")
+	h.expectCmd("turn_off")
+	h.report(pcTvTV, "on", "off")
+	h.expectSilence()
+}
+
+// TestPcTvIgnoresLinkDropAtShutdown: a drop seconds after the PC went away is
+// it shutting down or rebooting, not booting.
+func TestPcTvIgnoresLinkDropAtShutdown(t *testing.T) {
+	h := newPcTvHarness(t, true, "on")
+	h.expectSilence()
+
+	h.pc.off()
+	h.expectCmd("turn_off")
+	h.report(pcTvTV, "on", "off")
+	h.report(pcTvLink, "on", "off")
+	h.expectSilence()
+}
+
+func TestPcTvIgnoresLinkDropWhileOnline(t *testing.T) {
+	h := newPcTvHarness(t, true, "on")
+	h.expectSilence()
+
+	h.report(pcTvLink, "on", "off")
 	h.expectSilence()
 }
