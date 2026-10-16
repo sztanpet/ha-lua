@@ -4,6 +4,18 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.2.0 - 2026-10-16
+
+### Added
+- **The purge compacts the database when more than a quarter of it is
+  free.** Deleted history leaves free space that new rows reuse, so the file
+  normally stays at its largest size without growing. After a lasting
+  shrink, such as lowering `retention_days`, that space used to stay in the
+  file for good. The purge now runs `VACUUM` and truncates the WAL, and logs
+  how much it freed. History writes wait for the few seconds that takes.
+- **The debug page shows the database's free space** next to its size, with
+  its share of the file.
+
 ## 5.1.0 - 2026-10-16
 
 ### Added
