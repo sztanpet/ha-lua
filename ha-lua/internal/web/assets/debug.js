@@ -74,6 +74,7 @@
     cells("storage", [
       ["db", store.path],
       ["size", bytes(store.size)],
+      ["free in file", bytes(store.free) + (store.size ? " (" + Math.round(100 * store.free / store.size) + "%)" : "")],
       ["entities mirrored", store.entities],
       ["write queue", store.write_queue_len + " / " + store.write_queue_cap,
         store.write_queue_len > store.write_queue_cap / 2 ? "warn" : ""],

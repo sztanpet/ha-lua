@@ -4,12 +4,14 @@ import (
 	"encoding/json/v2"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sztanpet/ha-lua/internal/logbuf"
+	"github.com/sztanpet/ha-lua/internal/state"
 )
 
 func decodeInfo(t *testing.T, h http.Handler) debugInfo {
@@ -75,6 +77,29 @@ func TestDebugInfoReportsRuntimeAndStorage(t *testing.T) {
 	}
 	if info.Storage.RetentionDays != 2 || info.Storage.PurgeInterval != "1h0m0s" {
 		t.Errorf("storage = %+v", info.Storage)
+	}
+}
+
+func TestDebugInfoReportsFreeSpace(t *testing.T) {
+	writeDB, readDB, err := state.OpenDB(filepath.Join(t.TempDir(), "ha-lua.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { writeDB.Close(); readDB.Close() })
+	for _, q := range []string{
+		`CREATE TABLE pad(blob TEXT)`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50)
+		 INSERT INTO pad SELECT printf('%.4000c', 'x') FROM n`,
+		`DELETE FROM pad`,
+	} {
+		if _, err := writeDB.ExecContext(t.Context(), q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+
+	info := decodeInfo(t, DebugHandler(DebugDeps{DB: readDB}))
+	if info.Storage.Free < 50*4000 {
+		t.Errorf("free = %d bytes, want the deleted rows' pages", info.Storage.Free)
 	}
 }
 

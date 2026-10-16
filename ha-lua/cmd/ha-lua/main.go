@@ -293,6 +293,7 @@ func main() {
 			Started:       started,
 			PprofAddr:     cfg.Debug.PprofAddr,
 			DBPath:        cfg.Database,
+			DB:            readDB,
 			Runners:       reg.All,
 			Scheduler:     sched,
 			Tracker:       tracker,

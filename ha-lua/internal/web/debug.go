@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json/v2"
 	"log/slog"
 	"net/http"
@@ -24,6 +26,8 @@ type DebugDeps struct {
 	Started   time.Time
 	PprofAddr string
 	DBPath    string
+	// DB is a read handle, for the file's free-page count.
+	DB *sql.DB
 
 	Runners   func() []*lua.Runner
 	Scheduler *scheduler.Scheduler
@@ -51,6 +55,7 @@ type runtimeInfo struct {
 type storageInfo struct {
 	Path          string `json:"path,omitempty"`
 	Size          int64  `json:"size"`
+	Free          int64  `json:"free"`
 	Entities      int    `json:"entities"`
 	WriteQueueLen int    `json:"write_queue_len"`
 	WriteQueueCap int    `json:"write_queue_cap"`
@@ -84,7 +89,7 @@ func DebugHandler(deps DebugDeps) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/api/info", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, collectInfo(deps))
+		writeJSON(w, collectInfo(r.Context(), deps))
 	})
 	mux.HandleFunc("/debug/api/logs", func(w http.ResponseWriter, r *http.Request) {
 		serveLogs(w, r, deps)
@@ -98,7 +103,7 @@ func DebugHandler(deps DebugDeps) http.Handler {
 	return mux
 }
 
-func collectInfo(deps DebugDeps) debugInfo {
+func collectInfo(ctx context.Context, deps DebugDeps) debugInfo {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 
@@ -139,6 +144,11 @@ func collectInfo(deps DebugDeps) debugInfo {
 	if deps.DBPath != "" {
 		if fi, err := os.Stat(deps.DBPath); err == nil {
 			info.Storage.Size = fi.Size()
+		}
+	}
+	if deps.DB != nil {
+		if _, free, pageSize, err := state.Pages(ctx, deps.DB); err == nil {
+			info.Storage.Free = free * pageSize
 		}
 	}
 
