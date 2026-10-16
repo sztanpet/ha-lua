@@ -4,6 +4,15 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.3.0 - 2026-10-16
+
+### Changed
+- **The database now uses SQLite's incremental vacuum.** Each purge hands the
+  space it freed back to the filesystem by moving only the pages at the end
+  of the file. Before, it waited until a quarter of the file was free and then
+  rewrote the whole of it. The first start of 5.3.0 rewrites the database
+  once to switch it over, which takes about a second for a 50 MB file.
+
 ## 5.2.0 - 2026-10-16
 
 ### Added
