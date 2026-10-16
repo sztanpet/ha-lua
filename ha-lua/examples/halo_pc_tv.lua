@@ -9,8 +9,8 @@
 -- is offline. The first verdict after a load is taken as is, so a restart or
 -- reload neither wakes nor kills the TV.
 --
--- The probe only answers once Windows is well into its boot, ~30 s after the
--- power button. The PC's NIC holds a wake-on-LAN link while it is off and
+-- The probe only answers once Windows is well into resuming, ~30 s after the
+-- power button. The PC hibernates; its NIC holds a wake-on-LAN link then and
 -- renegotiates at power-on, which HA's MikroTik integration sees as the router
 -- port dropping and coming back. Either edge while the PC has been gone a
 -- while turns the TV on early; one not followed by the PC answering turns it
@@ -26,15 +26,15 @@ local PROBE_EVERY = "2s"
 -- The PC answers in under a millisecond on the wired LAN; a dropped SYN is
 -- only resent after 1 s, so waiting longer than this buys nothing.
 local PROBE_TIMEOUT = "250ms"
--- A busy PC can miss one probe; only a run of them is a shutdown.
+-- A busy PC can miss one probe; only a run of them is it going down.
 local OFF_AFTER_MISSES = 3
 -- Both directions send the same POWER key, so a retry before the TV has
 -- reported the last one would toggle it straight back.
 local RETRY_EVERY = "20s"
 local ATTEMPTS = 5
 local LINK = "binary_sensor.ether3_connectivity"
--- The link also drops while the PC shuts down or reboots; those come within
--- seconds of the probe losing it.
+-- The link also drops as the PC hibernates or reboots. Hibernate writes RAM to
+-- disk after 445 closes and only then cuts the link, so this must outlast that.
 local LINK_AFTER_OFFLINE = time.parse_duration("60s")
 local BOOT_GRACE = "2m"
 

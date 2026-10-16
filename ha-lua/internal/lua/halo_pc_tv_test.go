@@ -346,9 +346,9 @@ func TestPcTvLinkDropWithoutBootReverts(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvIgnoresLinkDropAtShutdown: a drop seconds after the PC went away is
-// it shutting down or rebooting, not booting.
-func TestPcTvIgnoresLinkDropAtShutdown(t *testing.T) {
+// TestPcTvIgnoresLinkDropAtHibernate: a drop seconds after the PC went away is
+// it hibernating or rebooting, not booting.
+func TestPcTvIgnoresLinkDropAtHibernate(t *testing.T) {
 	h := newPcTvHarness(t, true, "on")
 	h.expectSilence()
 
