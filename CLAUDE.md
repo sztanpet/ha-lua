@@ -84,7 +84,7 @@ See `ha-lua/plan.md` for the full design. Short version:
 - **Script IDs** are the filename without extension (`lights.lua` → `lights`).
 - **`store.*`** is scoped per script; **`global.*`** is shared across all scripts. `global` has no proxy — use `global.get/set` directly.
 - `store.state(defaults)` returns a persistent-proxy table: reads load from the script's KV store, writes auto-persist as JSON.
-- Purge job runs on a ticker (`state_history.purge_interval`). Single DELETE: rows older than `retention_days` (default 2), then a `VACUUM` only when more than 25% of the file is free. `Purger.RunOnce()` is exposed for tests.
+- Purge job runs on a ticker (`state_history.purge_interval`). Single DELETE: rows older than `retention_days` (default 2), then `PRAGMA incremental_vacuum` (the DB is opened in `auto_vacuum=INCREMENTAL`). `Purger.RunOnce()` is exposed for tests.
 - Scheduler fires timers via an `onFire` callback → `TimerFiredEvent` → script channel. Scheduler never holds `*lua.LFunction` references.
 - `ha.exceptions.email` uses `net/smtp`. Credentials must come from `store.get(...)`, never hardcoded in scripts.
 - Restricted `require`: resolves only paths inside `scripts/lib/`. Any other path raises a Lua error.

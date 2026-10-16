@@ -223,7 +223,7 @@ func openFileDB(t *testing.T) (*sql.DB, string) {
 	return writeDB, path
 }
 
-func TestRunOnceVacuumsMostlyFreeFile(t *testing.T) {
+func TestRunOnceReleasesFreePages(t *testing.T) {
 	db, path := openFileDB(t)
 	now := time.Now()
 	fillHistory(t, db, 3000, now.Add(-72*time.Hour))
@@ -241,31 +241,12 @@ func TestRunOnceVacuumsMostlyFreeFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if free != 0 || pages*3 > pagesBefore {
-		t.Errorf("after purge: %d pages (%d free), was %d; want vacuumed", pages, free, pagesBefore)
+		t.Errorf("after purge: %d pages (%d free), was %d; want the freed pages released", pages, free, pagesBefore)
 	}
 	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() != 0 {
 		t.Errorf("WAL is %d bytes after vacuum, want truncated", fi.Size())
 	}
 	if got := countHistory(t, db); got != 300 {
 		t.Errorf("%d rows survived, want 300", got)
-	}
-}
-
-// Deletes the next inserts will reuse are not worth rewriting the file for.
-func TestRunOnceLeavesSmallFreeListAlone(t *testing.T) {
-	db, _ := openFileDB(t)
-	now := time.Now()
-	fillHistory(t, db, 300, now.Add(-72*time.Hour))
-	fillHistory(t, db, 3000, now)
-
-	if err := New(db, 2, time.Hour).RunOnce(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	_, free, _, err := state.Pages(t.Context(), db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if free == 0 {
-		t.Error("free list is empty: a ~10% free file was vacuumed")
 	}
 }

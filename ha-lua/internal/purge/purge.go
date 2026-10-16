@@ -118,33 +118,26 @@ func (p *Purger) RunOnce(ctx context.Context) error {
 	return p.compact(ctx)
 }
 
-// vacuumFreeFraction is the free share of the file above which a purge
-// compacts it. Steady-state purging frees about one interval's worth of rows
-// (1/48 at the default 2 days, 1 h), and inserts reuse those pages; only a
-// lasting shrink, such as lowered retention, leaves more.
-const vacuumFreeFraction = 0.25
-
-// compact VACUUMs the database when too much of it is free. The rewrite holds
-// the write handle, so history writes and timer updates wait it out.
+// compact hands the pages the purge freed back to the filesystem. The
+// database is in incremental auto-vacuum (see state.OpenDB), so this moves only
+// the pages at the tail of the file, never rewriting the whole of it.
 func (p *Purger) compact(ctx context.Context) error {
-	pages, free, pageSize, err := state.Pages(ctx, p.db)
+	_, free, pageSize, err := state.Pages(ctx, p.db)
 	if err != nil {
 		return err
 	}
-	if pages == 0 || float64(free)/float64(pages) < vacuumFreeFraction {
+	if free == 0 {
 		return nil
 	}
-	start := time.Now()
-	if _, err := p.db.ExecContext(ctx, "VACUUM"); err != nil {
-		return fmt.Errorf("vacuum: %w", err)
+	if _, err := p.db.ExecContext(ctx, "PRAGMA incremental_vacuum"); err != nil {
+		return fmt.Errorf("incremental vacuum: %w", err)
 	}
-	// VACUUM writes the whole database through the WAL, which keeps that size
-	// on disk until truncated.
+	// The moved pages went through the WAL, which keeps its largest size on
+	// disk until truncated.
 	if _, err := p.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 		return fmt.Errorf("checkpoint after vacuum: %w", err)
 	}
-	slog.Info("purge: vacuumed database", "freed_bytes", free*pageSize,
-		"size_before", pages*pageSize, "took", time.Since(start).Round(time.Millisecond))
+	slog.Debug("purge: released free pages", "bytes", free*pageSize)
 	return nil
 }
 

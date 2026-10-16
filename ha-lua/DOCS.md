@@ -118,10 +118,10 @@ job. Default `2`.
 How often the purge job runs, as a Go duration (`30m`, `1h`, `6h`). A purge
 also runs once at startup. Default `1h`.
 
-Deleted rows leave free space in the database file that new history reuses, so
-the file stays at its largest size rather than growing. When more than a quarter
-of it is free, as after lowering `retention_days`, the purge compacts it with
-`VACUUM`. History writes wait for the few seconds that takes.
+Each purge hands the space it freed back to the filesystem (SQLite's
+incremental vacuum), so the database file shrinks along with its history, for
+example after lowering `retention_days`. The first start of a version with this
+rewrites an older database file once to enable it.
 
 ### Option: `state_history.keep`
 
