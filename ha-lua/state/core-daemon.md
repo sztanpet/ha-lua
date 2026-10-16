@@ -61,3 +61,5 @@ tracks build on it; code review rounds are in `code-review.md`.
   + `wal_checkpoint(TRUNCATE)` when the freelist is non-empty (`a43f324`),
   replacing the 25% threshold. Released as v5.3.0. Note: incremental vacuum
   does not repack part-full pages the way VACUUM does.
+  Deployed 10-16 22:49 CEST: conversion took 539 ms on the 52 MB file; the
+  first purge deleted 1653 rows and released 606 KB in ~40 ms; free 0 after.
