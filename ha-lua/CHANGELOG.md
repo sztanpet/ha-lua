@@ -4,6 +4,27 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.1.0 - 2026-10-16
+
+### Added
+- **`halo_pc_tv.lua` turns the TV on at the PC's power button, not ~30 s
+  later.** The SMB probe only answers once Windows is well into resuming.
+  The PC's network link drops and comes back at power-on, and HA's MikroTik
+  integration reports that on the router port. Either change while the PC
+  has been gone for a minute turns the TV on. If the PC still has not
+  answered two minutes later, the TV goes back off. Turning off is
+  unchanged.
+
+### Changed
+- **A state change now reaches only the scripts whose `ha.on_state_change`
+  patterns match it.** Previously, any script with a state handler was sent
+  every state change in the house and filtered it itself. A script that
+  blocks, such as one probing an unreachable host with `net.reachable`, held
+  up all of those events and logged a stream of "event waited long for its
+  handler" warnings for events it then ignored.
+- `halo_pc_tv.lua` probes with a 100 ms deadline instead of 250 ms. Each probe
+  blocks the script while the PC is off.
+
 ## 5.0.0 - 2026-10-15
 
 ### Changed
