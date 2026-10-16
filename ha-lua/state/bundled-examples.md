@@ -216,3 +216,6 @@ constraints, each learned from a field report:
   them. Fixed twice: PROBE_TIMEOUT 100 ms (`8bd9a7d`, deployed 22:12) and
   pattern-matched routing in Registry.Dispatch (`a28a5e3`). Released as
   v5.1.0 (`d62b74b`).
+  Add-on updated to 5.1.0 by Claude 10-16 22:18 CEST (Supervisor API): all
+  12 scripts loaded, no errors; 0 "waited long" in the first 3.5 min (was
+  ~13/min), and only enhanced_climate still logs dispatch lines.
