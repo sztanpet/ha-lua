@@ -97,6 +97,24 @@ func OpenDB(path string) (writeDB, readDB *sql.DB, err error) {
 	return writeDB, readDB, nil
 }
 
+// Pages reports the database file's size in pages, how many of those are
+// free (left behind by deletes, reused by later inserts), and the page size.
+func Pages(ctx context.Context, db *sql.DB) (pages, free, pageSize int64, err error) {
+	for _, q := range []struct {
+		pragma string
+		dst    *int64
+	}{
+		{"page_count", &pages},
+		{"freelist_count", &free},
+		{"page_size", &pageSize},
+	} {
+		if err := db.QueryRowContext(ctx, "PRAGMA "+q.pragma).Scan(q.dst); err != nil {
+			return 0, 0, 0, fmt.Errorf("pragma %s: %w", q.pragma, err)
+		}
+	}
+	return pages, free, pageSize, nil
+}
+
 // Migrate applies the schema to db. Safe to call multiple times (idempotent).
 func Migrate(db *sql.DB) error {
 	ctx := context.Background()

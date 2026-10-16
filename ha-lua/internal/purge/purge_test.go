@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -184,5 +187,85 @@ func BenchmarkPurge(b *testing.B) {
 		if err := p.RunOnce(context.Background()); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// fillHistory writes n rows of changedAt age with attributes big enough that
+// the row count drives the page count.
+func fillHistory(tb testing.TB, db *sql.DB, n int, changedAt time.Time) {
+	tb.Helper()
+	attrs := `{"pad":"` + strings.Repeat("x", 400) + `"}`
+	tx, err := db.BeginTx(tb.Context(), nil)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	for i := range n {
+		if _, err := tx.ExecContext(tb.Context(), `
+			INSERT INTO state_history(entity_id, state, attributes, changed_at)
+			VALUES(?,?,?,?)`,
+			fmt.Sprintf("sensor.s%d", i), "1", attrs, changedAt.UTC().Format(time.RFC3339)); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		tb.Fatal(err)
+	}
+}
+
+func openFileDB(t *testing.T) (*sql.DB, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ha-lua.db")
+	writeDB, readDB, err := state.OpenDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { writeDB.Close(); readDB.Close() })
+	return writeDB, path
+}
+
+func TestRunOnceVacuumsMostlyFreeFile(t *testing.T) {
+	db, path := openFileDB(t)
+	now := time.Now()
+	fillHistory(t, db, 3000, now.Add(-72*time.Hour))
+	fillHistory(t, db, 300, now)
+	pagesBefore, _, _, err := state.Pages(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := New(db, 2, time.Hour).RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	pages, free, _, err := state.Pages(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if free != 0 || pages*3 > pagesBefore {
+		t.Errorf("after purge: %d pages (%d free), was %d; want vacuumed", pages, free, pagesBefore)
+	}
+	if fi, err := os.Stat(path + "-wal"); err == nil && fi.Size() != 0 {
+		t.Errorf("WAL is %d bytes after vacuum, want truncated", fi.Size())
+	}
+	if got := countHistory(t, db); got != 300 {
+		t.Errorf("%d rows survived, want 300", got)
+	}
+}
+
+// Deletes the next inserts will reuse are not worth rewriting the file for.
+func TestRunOnceLeavesSmallFreeListAlone(t *testing.T) {
+	db, _ := openFileDB(t)
+	now := time.Now()
+	fillHistory(t, db, 300, now.Add(-72*time.Hour))
+	fillHistory(t, db, 3000, now)
+
+	if err := New(db, 2, time.Hour).RunOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, free, _, err := state.Pages(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if free == 0 {
+		t.Error("free list is empty: a ~10% free file was vacuumed")
 	}
 }

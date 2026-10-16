@@ -118,6 +118,11 @@ job. Default `2`.
 How often the purge job runs, as a Go duration (`30m`, `1h`, `6h`). A purge
 also runs once at startup. Default `1h`.
 
+Deleted rows leave free space in the database file that new history reuses, so
+the file stays at its largest size rather than growing. When more than a quarter
+of it is free, as after lowering `retention_days`, the purge compacts it with
+`VACUUM`. History writes wait for the few seconds that takes.
+
 ### Option: `state_history.keep`
 
 Per-entity retention overrides: a list of `pattern` (an entity glob) and `days`.
