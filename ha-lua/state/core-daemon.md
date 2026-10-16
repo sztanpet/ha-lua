@@ -50,3 +50,8 @@ tracks build on it; code review rounds are in `code-review.md`.
   lasting shrink (lower retention, an aged-out flood) leaves space for good.
   auto_vacuum=INCREMENTAL would itself need a full VACUUM to switch on, and
   VACUUM holds the single write handle for its duration.
+- Deployed 10-16 22:32 CEST. First purge vacuumed at once: freelist 83 MB of
+  166 MB (50%, not the ~2% expected; likely the dropped `states` table and
+  older floods), file 166 -> 51 MB, 1.2 s. The result is smaller than
+  size minus freelist: VACUUM also repacks part-full pages, so the freelist
+  understates what a vacuum reclaims. Free after: 90 KB.
