@@ -11,10 +11,12 @@
 --
 -- The probe only answers once Windows is well into resuming, ~30 s after the
 -- power button. The PC hibernates; its NIC holds a wake-on-LAN link then and
--- renegotiates at power-on, which HA's MikroTik integration sees as the router
--- port dropping and coming back. Either edge while the PC has been gone a
--- while turns the TV on early; one not followed by the PC answering turns it
--- back off.
+-- renegotiates at power-on, dropping the router port for about a second. HA's
+-- MikroTik integration polls every 30 s and misses that, so the script reads
+-- the port's link-downs counter from the router's REST API itself. A drop
+-- while the PC has been gone a while turns the TV on early; one not followed
+-- by the PC answering turns it back off. The router login, "user:password",
+-- is read from global.get("mikrotik_login"); without it only the probe runs.
 --
 -- The TV is retried until it REPORTS the wanted state: a TV in deep standby
 -- drops its remote connection and the call raises, and one that is busy can
@@ -33,7 +35,9 @@ local OFF_AFTER_MISSES = 3
 -- reported the last one would toggle it straight back.
 local RETRY_EVERY = "20s"
 local ATTEMPTS = 5
-local LINK = "binary_sensor.ether3_connectivity"
+local ROUTER = "http://192.168.1.1"
+local PORT = "ether3"
+local LINK_EVERY = "1s"
 -- The link also drops as the PC hibernates or reboots. Hibernate writes RAM to
 -- disk after 445 closes and only then cuts the link, so this must outlast that.
 local LINK_AFTER_OFFLINE = time.parse_duration("60s")
@@ -44,6 +48,8 @@ local generation = 0
 local online -- nil until the first verdict
 local misses = 0
 local offline_since = time.now()
+local link_downs -- the router's counter at the last read
+local router_error -- logged once per outage
 
 local function drive(want, mine, attempt)
   if mine ~= generation then return end
@@ -81,21 +87,52 @@ ha.every(PROBE_EVERY, function()
   drive(online and "on" or "off", generation, 1)
 end)
 
-ha.on_state_change(LINK, function(data)
+local function link_dropped()
   if online ~= false then return end
-  local from, to = data.old_state and data.old_state.state, data.new_state.state
-  if not ((from == "on" and to == "off") or (from == "off" and to == "on")) then return end
   if time.now():sub(offline_since) < LINK_AFTER_OFFLINE then return end
   generation = generation + 1
   local mine = generation
   drive("on", mine, 1)
   ha.after(BOOT_GRACE, function()
     if mine ~= generation or online then return end
-    ha.log("info", "halo_pc_tv: " .. LINK .. " dropped but the PC never answered")
+    ha.log("info", "halo_pc_tv: " .. PORT .. " dropped but the PC never answered")
     generation = generation + 1
     drive("off", generation, 1)
   end)
-end)
+end
+
+local function read_link_downs(auth)
+  local res, err = http.get(ROUTER .. "/rest/interface/" .. PORT .. "?.proplist=link-downs",
+    { Authorization = auth })
+  if not res then return nil, err end
+  if res.status ~= 200 then return nil, "HTTP " .. res.status end
+  local ok, port = pcall(json.decode, res.body)
+  local count = ok and type(port) == "table" and tonumber(port["link-downs"])
+  if not count then return nil, "unexpected reply " .. res.body end
+  return count
+end
+
+local login = global.get("mikrotik_login")
+if login then
+  local auth = "Basic " .. crypto.base64_encode(login)
+  ha.every(LINK_EVERY, function()
+    local count, err = read_link_downs(auth)
+    if not count then
+      if not router_error then
+        ha.log("warn", "halo_pc_tv: cannot read " .. PORT .. " from " .. ROUTER .. ": " .. tostring(err))
+      end
+      router_error = true
+      return
+    end
+    router_error = nil
+    local before = link_downs
+    link_downs = count
+    -- A router reboot resets the counter; that is a new baseline, not a drop.
+    if before and count > before then link_dropped() end
+  end)
+else
+  ha.log("warn", "halo_pc_tv: global mikrotik_login is not set; waking on the probe alone")
+end
 
 if not ha.get_state(TV) then
   ha.log("warn", TV .. " is unknown to the daemon — is that the right entity id?")
