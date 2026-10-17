@@ -364,6 +364,16 @@ func TestPcTvIgnoresOtherLines(t *testing.T) {
 	h.expectSilence()
 }
 
+func TestPcTvWakesOnLineWithoutTopics(t *testing.T) {
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
+
+	msg := syslog.Parse([]byte("<30>Oct 17 19:14:53 AmonHen ether3 link down"))
+	msg.From = pcTvRouter
+	h.reg.DispatchSyslog(msg)
+	h.expectCmd("turn_on")
+}
+
 func TestPcTvLinkChangeWithoutBootReverts(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()

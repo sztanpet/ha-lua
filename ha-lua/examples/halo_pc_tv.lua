@@ -103,10 +103,11 @@ local function link_changed()
   end)
 end
 
--- Any link line counts: at power-on the first is a 10M "link up".
+-- Any link line counts: at power-on the first is a 10M "link up". Without
+-- add-topics-string the port opens the message, hence the leading space.
 local ok, err = pcall(syslog.on, function(msg)
   if msg.from ~= ROUTER then return end
-  if msg.message:find(" " .. PORT .. " link ", 1, true) then link_changed() end
+  if (" " .. msg.message):find(" " .. PORT .. " link ", 1, true) then link_changed() end
 end)
 if not ok then
   ha.log("warn", "halo_pc_tv: no syslog input, waking on the probe alone: " .. tostring(err))
