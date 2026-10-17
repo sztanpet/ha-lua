@@ -8,7 +8,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/syslog"
 )
 
-var errSyslogDisabled = errors.New("syslog input disabled (set the syslog_port option)")
+var errSyslogDisabled = errors.New("no syslog input: syslog_port is 0, or binding it failed (see the log)")
 
 // registerSyslogAPI installs the `syslog` module on L. Like mqtt, it is
 // installed when disabled and raises then: a script waiting on a port

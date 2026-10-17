@@ -78,7 +78,7 @@
         ["dropped", syslog.dropped, syslog.dropped ? "bad" : ""],
       ]);
     } else {
-      cells("syslog", [["input", "off (syslog_port is 0)"]]);
+      cells("syslog", [["input", "off: syslog_port is 0, or binding it failed (see the log)"]]);
     }
 
     var store = info.storage || {};
