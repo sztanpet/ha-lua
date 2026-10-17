@@ -2,14 +2,10 @@ package lua
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
-	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,32 +17,30 @@ import (
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
+	"github.com/sztanpet/ha-lua/internal/syslog"
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
 const (
-	pcTvTV    = "media_player.bedroom_tv"
-	pcTvLogin = "homeassistant:secret"
+	pcTvTV = "media_player.bedroom_tv"
 	// The shipped intervals are seconds; the copy under test uses these.
 	pcTvProbe    = 20 * time.Millisecond
 	pcTvRetry    = 150 * time.Millisecond
 	pcTvAttempts = 5
 	pcTvSettle   = 100 * time.Millisecond
 	pcTvGrace    = 300 * time.Millisecond
-	pcTvLinkPoll = 20 * time.Millisecond
 )
 
 // pcTvHarness runs the real examples/halo_pc_tv.lua against a spy call
 // service, a live scheduler (the probe and the retries are timers), a local
-// listener standing in for the PC and a REST server standing in for the
-// router.
+// listener standing in for the PC, and router log lines fed to the registry
+// as the syslog listener would.
 type pcTvHarness struct {
 	t       *testing.T
 	ctx     context.Context
 	tracker *state.Tracker
 	reg     *Registry
 	pc      *fakePC
-	router  *fakeRouter
 	cmds    chan string  // "turn_on"
 	fail    atomic.Int32 // the next this-many calls raise, like a TV in deep standby
 }
@@ -98,49 +92,21 @@ func (pc *fakePC) off() {
 	pc.ln = nil
 }
 
-// fakeRouter answers the MikroTik REST read of ether3's link-downs counter.
-type fakeRouter struct {
-	linkDowns atomic.Int64
-	failing   atomic.Bool
-}
-
-func newFakeRouter(t *testing.T) (*fakeRouter, string) {
-	router := &fakeRouter{}
-	router.linkDowns.Store(227)
-	want := "Basic " + base64.StdEncoding.EncodeToString([]byte(pcTvLogin))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/interface/ether3" || r.URL.Query().Get(".proplist") != "link-downs" {
-			t.Errorf("router request %s", r.URL)
-		}
-		if r.Header.Get("Authorization") != want {
-			t.Errorf("router auth %q, want %q", r.Header.Get("Authorization"), want)
-		}
-		if router.failing.Load() {
-			http.Error(w, "busy", http.StatusInternalServerError)
-			return
-		}
-		if _, err := fmt.Fprintf(w, `{"link-downs":"%d"}`, router.linkDowns.Load()); err != nil {
-			t.Errorf("router reply: %v", err)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return router, srv.URL
-}
-
 func newPcTvHarness(t *testing.T, pcOn bool, tv string) *pcTvHarness {
+	return newPcTvHarnessSyslog(t, pcOn, tv, true)
+}
+
+func newPcTvHarnessSyslog(t *testing.T, pcOn bool, tv string, syslogOn bool) *pcTvHarness {
 	pc := newFakePC(t, pcOn)
-	router, routerURL := newFakeRouter(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "halo_pc_tv.lua")
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "halo_pc_tv.lua"), script)
 	rewriteShipped(t, script, map[string]string{
-		`local PC = "192.168.1.12:445"`:       `local PC = "` + pc.addr + `"`,
-		`local PROBE_EVERY = "2s"`:            `local PROBE_EVERY = "` + pcTvProbe.String() + `"`,
-		`local RETRY_EVERY = "20s"`:           `local RETRY_EVERY = "` + pcTvRetry.String() + `"`,
-		`time.parse_duration("60s")`:          `time.parse_duration("` + pcTvSettle.String() + `")`,
-		`local BOOT_GRACE = "2m"`:             `local BOOT_GRACE = "` + pcTvGrace.String() + `"`,
-		`local ROUTER = "http://192.168.1.1"`: `local ROUTER = "` + routerURL + `"`,
-		`local LINK_EVERY = "1s"`:             `local LINK_EVERY = "` + pcTvLinkPoll.String() + `"`,
+		`local PC = "192.168.1.12:445"`: `local PC = "` + pc.addr + `"`,
+		`local PROBE_EVERY = "2s"`:      `local PROBE_EVERY = "` + pcTvProbe.String() + `"`,
+		`local RETRY_EVERY = "20s"`:     `local RETRY_EVERY = "` + pcTvRetry.String() + `"`,
+		`time.parse_duration("60s")`:    `time.parse_duration("` + pcTvSettle.String() + `")`,
+		`local BOOT_GRACE = "2m"`:       `local BOOT_GRACE = "` + pcTvGrace.String() + `"`,
 	})
 
 	writeDB, readDB := testutil.NewTestDB(t, nil)
@@ -153,12 +119,9 @@ func newPcTvHarness(t *testing.T, pcOn bool, tv string) *pcTvHarness {
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &pcTvHarness{t: t, ctx: ctx, tracker: tracker, reg: reg, pc: pc, router: router,
+	h := &pcTvHarness{t: t, ctx: ctx, tracker: tracker, reg: reg, pc: pc,
 		cmds: make(chan string, 16)}
 	global := store.NewGlobal(writeDB, readDB)
-	if err := global.Set(ctx, "mikrotik_login", pcTvLogin); err != nil {
-		t.Fatal(err)
-	}
 
 	if err := tracker.Seed(ctx, []ha.StateData{
 		seedEntity(pcTvTV, tv, `{}`),
@@ -171,6 +134,7 @@ func newPcTvHarness(t *testing.T, pcOn bool, tv string) *pcTvHarness {
 
 	r := NewRunner("halo_pc_tv", dir, openTestRoot(t, dir), openTestRoot(t, t.TempDir()),
 		tracker, sched, store.New(writeDB, readDB, "halo_pc_tv"), global)
+	r.SetSyslog(syslogOn)
 	r.SetCallService(func(_ context.Context, domain, service string, data jsontext.Value) error {
 		var payload struct {
 			EntityID any `json:"entity_id"`
@@ -233,6 +197,13 @@ func (h *pcTvHarness) report(entityID, oldState, newState string) {
 		h.t.Fatal(err)
 	}
 	h.reg.Dispatch(ha.Event{Type: "state_changed", Data: raw})
+}
+
+// routerLog delivers a line as AmonHen's halua logging action sends it.
+func (h *pcTvHarness) routerLog(from, text string) {
+	msg := syslog.Parse([]byte("<30>Oct 17 19:14:53 AmonHen interface,info " + text))
+	msg.From = from
+	h.reg.DispatchSyslog(msg)
 }
 
 func (h *pcTvHarness) expectCmd(want string) {
@@ -343,13 +314,15 @@ func TestPcTvRidesOutAMissedProbe(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvWakesOnLinkDrop: the NIC renegotiating at power-on turns the TV on
-// long before the PC answers the probe.
-func TestPcTvWakesOnLinkDrop(t *testing.T) {
+const pcTvRouter = "192.168.1.1"
+
+// TestPcTvWakesOnLinkChange: the NIC renegotiating at power-on turns the TV
+// on long before the PC answers the probe.
+func TestPcTvWakesOnLinkChange(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
 
-	h.router.linkDowns.Add(1)
+	h.routerLog(pcTvRouter, "ether3 link up (speed 10M, full duplex)")
 	h.expectCmd("turn_on")
 	h.report(pcTvTV, "off", "on")
 	h.pc.on()
@@ -357,25 +330,45 @@ func TestPcTvWakesOnLinkDrop(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvIgnoresRouterHiccups: a failed read or a router reboot resetting
-// the counter is not the PC.
-func TestPcTvIgnoresRouterHiccups(t *testing.T) {
+// TestPcTvPowerOnPressesOnce: a power-on logs up, down, up within seconds.
+// Each press is the same POWER key, so a second wake before the TV reports
+// would switch it straight back off.
+func TestPcTvPowerOnPressesOnce(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
 
-	h.router.failing.Store(true)
-	h.expectSilence()
-	h.router.failing.Store(false)
-	h.expectSilence()
-	h.router.linkDowns.Store(0)
+	h.routerLog(pcTvRouter, "ether3 link up (speed 10M, full duplex)")
+	h.expectCmd("turn_on")
+	h.routerLog(pcTvRouter, "ether3 link down")
+	h.routerLog(pcTvRouter, "ether3 link up (speed 1G, full duplex)")
+	select {
+	case got := <-h.cmds:
+		t.Fatalf("a second link line pressed %q before the TV reported", got)
+	case <-time.After(pcTvRetry / 2):
+	}
+	h.report(pcTvTV, "off", "on")
+	h.pc.on()
+	time.Sleep(pcTvGrace)
 	h.expectSilence()
 }
 
-func TestPcTvLinkDropWithoutBootReverts(t *testing.T) {
+// TestPcTvIgnoresOtherLines: another port, or the same text from anyone but
+// the router, is not the PC.
+func TestPcTvIgnoresOtherLines(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
 
-	h.router.linkDowns.Add(1)
+	h.routerLog(pcTvRouter, "ether2 link down")
+	h.routerLog(pcTvRouter, "ether30 link down")
+	h.routerLog("192.168.1.66", "ether3 link down")
+	h.expectSilence()
+}
+
+func TestPcTvLinkChangeWithoutBootReverts(t *testing.T) {
+	h := newPcTvHarness(t, false, "off")
+	h.expectSilence()
+
+	h.routerLog(pcTvRouter, "ether3 link down")
 	h.expectCmd("turn_on")
 	h.report(pcTvTV, "off", "on")
 	h.expectCmd("turn_off")
@@ -383,23 +376,34 @@ func TestPcTvLinkDropWithoutBootReverts(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvIgnoresLinkDropAtHibernate: a drop seconds after the PC went away is
-// it hibernating or rebooting, not booting.
-func TestPcTvIgnoresLinkDropAtHibernate(t *testing.T) {
+// TestPcTvIgnoresLinkChangeAtHibernate: a drop seconds after the PC went away
+// is it hibernating or rebooting, not booting.
+func TestPcTvIgnoresLinkChangeAtHibernate(t *testing.T) {
 	h := newPcTvHarness(t, true, "on")
 	h.expectSilence()
 
 	h.pc.off()
 	h.expectCmd("turn_off")
 	h.report(pcTvTV, "on", "off")
-	h.router.linkDowns.Add(1)
+	h.routerLog(pcTvRouter, "ether3 link down")
+	h.routerLog(pcTvRouter, "ether3 link up (speed 10M, full duplex)")
 	h.expectSilence()
 }
 
-func TestPcTvIgnoresLinkDropWhileOnline(t *testing.T) {
+func TestPcTvIgnoresLinkChangeWhileOnline(t *testing.T) {
 	h := newPcTvHarness(t, true, "on")
 	h.expectSilence()
 
-	h.router.linkDowns.Add(1)
+	h.routerLog(pcTvRouter, "ether3 link down")
 	h.expectSilence()
+}
+
+// TestPcTvWithoutSyslog: no syslog input is a warning, not a dead script;
+// the probe still drives the TV.
+func TestPcTvWithoutSyslog(t *testing.T) {
+	h := newPcTvHarnessSyslog(t, false, "off", false)
+	h.expectSilence()
+
+	h.pc.on()
+	h.expectCmd("turn_on")
 }
