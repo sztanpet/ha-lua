@@ -2,7 +2,7 @@
 
 Spec: `syslog-spec.md`. Global decisions live in `../AI.state`.
 
-Status: **in progress** (started 2026-10-17).
+Status: **done** (2026-10-17).
 
 ## Milestones
 - [x] 0. Capture the real format (AmonHen, 7.23.5, 2026-10-17).
@@ -23,11 +23,10 @@ Status: **in progress** (started 2026-10-17).
   idempotent). A temporary `topics=script` rule proved the path end to end.
 - [x] 10. `examples: wake the TV on router syslog` (8f24add), deployed
   10-17 19:44 CEST: loaded with syslog=true, 1 timer.
-- [ ] 11. **Pending a real power-on through syslog.** Then: drop `rest-api`
-  from the `homeassistant` group (`policy=read,test,api`, mikrotik repo
-  rules: backup, apply, re-export, commit, push) and delete
-  `global mikrotik_login` with a throwaway script. User authorization for
-  the router change is per-session: ask.
+- [x] 11. The user confirmed a real power-on through syslog (10-17), then
+  authorized the cleanup: `rest-api` dropped from AmonHen's `homeassistant`
+  group (mikrotik `ac5a7e5`, backup fetched first) and
+  `global mikrotik_login` deleted with a throwaway script.
 
 ## Review (2026-10-17, after M10) — v5.5.0
 - 2505e91 parser: "1 " after the PRI is RFC 5424 only with a nil or RFC 3339

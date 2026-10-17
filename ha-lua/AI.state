@@ -9,15 +9,12 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**Syslog input** (`syslog-spec.md`, detail in `state/syslog.md`): shipped in
-v5.4.0 and running on the box with `syslog_port: 5514`; AmonHen pushes its
-interface log there, and halo_pc_tv wakes the TV on ether3 link lines instead
-of polling REST (redeployed after review 10-17 20:07; the review's fixes and
-`msg.received_at` shipped in v5.5.0). Open: milestone 11, revoking the
-router's `rest-api` grant and `global mikrotik_login`, waits for one real
-power-on through syslog and needs the user's go-ahead for the router change.
-The overshoot track's open items (pull v4.16.0, D1) are unchanged in
-`state/overshoot.md`.
+**Syslog input** (`syslog-spec.md`, detail in `state/syslog.md`): done.
+Shipped in v5.4.0/v5.5.0 and running on the box with `syslog_port: 5514`;
+AmonHen pushes its interface log there and halo_pc_tv wakes the TV on ether3
+link lines. The REST path is gone: the router group has no `rest-api` and
+`global mikrotik_login` is deleted. The overshoot track's open items (pull
+v4.16.0, D1) are unchanged in `state/overshoot.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
