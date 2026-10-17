@@ -29,7 +29,7 @@ Status: **in progress** (started 2026-10-17).
   `global mikrotik_login` with a throwaway script. User authorization for
   the router change is per-session: ask.
 
-## Review (2026-10-17, after M10) — unreleased
+## Review (2026-10-17, after M10) — v5.5.0
 - 2505e91 parser: "1 " after the PRI is RFC 5424 only with a nil or RFC 3339
   timestamp and all six header fields; "<13>1 apple pie" had lost its text.
 - cbbefea `msg.received_at` (time object): the user kept `ReceivedAt` and
@@ -43,7 +43,7 @@ Status: **in progress** (started 2026-10-17).
   revert would switch off someone watching with the PC asleep.
 - a18855d comments cut to the non-obvious why.
 - Example redeployed 10-17 20:07 CEST (md5 4b4bc679…): syslog=true, 1 timer.
-  The Go fixes ship with the next release.
+- Released as v5.5.0 (59936f5, tagged 2026-10-17).
 - **Open, unverified:** whether a router reboot forwards ether3's boot-time
   link lines. If it does, with the PC asleep and the TV off, the TV comes on
   for BOOT_GRACE and goes off again. The REST counter never had this (a
