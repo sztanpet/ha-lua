@@ -604,6 +604,8 @@ syslog.on(function(msg)
   -- msg.facility  3, msg.severity 6 — from <PRI>, nil without one
   -- msg.message   "interface,info ether3 link down" — the text after the header
   -- msg.raw       the datagram as received
+  -- msg.received_at  time object: when the daemon read it, not when the
+  --                  handler runs (the queue can lag) nor the header's clock
 end)
 ```
 

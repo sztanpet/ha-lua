@@ -46,6 +46,7 @@ const syslogRecorder = `
 syslog.on(function(msg)
   store.set("got", table.concat({msg.from, tostring(msg.host), tostring(msg.facility),
     tostring(msg.severity), msg.message, msg.raw}, "|"))
+  store.set("received_at", msg.received_at:unix())
 end)
 syslog.on(function(msg) store.set("second", msg.message) end)
 `
@@ -55,6 +56,7 @@ func TestSyslogDelivers(t *testing.T) {
 	raw := "<30>Oct 17 19:14:53 AmonHen interface,info ether3 link down"
 	msg := syslog.Parse([]byte(raw))
 	msg.From = "192.168.1.1"
+	msg.ReceivedAt = time.Date(2026, 10, 17, 19, 14, 53, 0, time.UTC)
 	reg.DispatchSyslog(msg)
 
 	kv := reg.Get("s").kv
@@ -63,6 +65,9 @@ func TestSyslogDelivers(t *testing.T) {
 	want := "192.168.1.1|AmonHen|3|6|interface,info ether3 link down|" + raw
 	if got != want {
 		t.Errorf("msg = %v, want %v", got, want)
+	}
+	if at, _ := kv.Get(t.Context(), "received_at"); at != float64(msg.ReceivedAt.Unix()) {
+		t.Errorf("received_at = %v, want %d", at, msg.ReceivedAt.Unix())
 	}
 }
 

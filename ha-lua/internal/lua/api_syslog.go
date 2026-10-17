@@ -38,6 +38,7 @@ func (r *Runner) handleSyslogMessage(L *lua.LState, api *haAPI, msg syslog.Messa
 	}
 	tbl.RawSetString("message", lua.LString(msg.Text))
 	tbl.RawSetString("raw", lua.LString(msg.Raw))
+	tbl.RawSetString("received_at", newTime(L, msg.ReceivedAt))
 	for _, fn := range api.syslogHandlers {
 		callProtected(L, api, "syslog_message", nil, fn, tbl)
 	}

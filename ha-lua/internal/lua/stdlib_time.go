@@ -50,11 +50,13 @@ var timeMethods = map[string]lua.LGFunction{
 	"utc":     luaTimeUTC,
 }
 
-func pushTime(L *lua.LState, t time.Time) {
+func pushTime(L *lua.LState, t time.Time) { L.Push(newTime(L, t)) }
+
+func newTime(L *lua.LState, t time.Time) *lua.LUserData {
 	ud := L.NewUserData()
 	ud.Value = &t
 	L.SetMetatable(ud, L.GetTypeMetatable(timeUserdataName))
-	L.Push(ud)
+	return ud
 }
 
 func luaTimeNow(L *lua.LState) int {
