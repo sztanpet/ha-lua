@@ -1,7 +1,8 @@
 # Syslog input — Specification
 
-Status: **planned, not started** (written 2026-10-17). No working-state file
-yet; create `state/syslog.md` and link it here when the work begins.
+Status: **in progress** (written 2026-10-17).
+
+> **Working state:** `state/syslog.md`
 
 ## 1. Goal
 
@@ -127,11 +128,14 @@ Pin the exact RouterOS bytes in the parser tests (milestone 0).
 Into `router/logging.rsc`, written idempotently (remove by name, then add):
 
 ```
-/system logging action add name=ha-lua target=remote remote=192.168.1.123 remote-port=5514
-/system logging add topics=interface action=ha-lua
+/system logging action add name=halua target=remote remote=192.168.1.123 remote-port=5514 remote-log-format=syslog add-topics-string=yes
+/system logging add topics=interface action=halua
 ```
 
-`192.168.1.123` is homeassistant.lan's static lease. Once the script no
+`192.168.1.123` is homeassistant.lan's static lease. Action names are
+letters and digits only. The syslog format carries the hostname and, with
+`add-topics-string`, the `interface,info` topics (formats captured in
+`state/syslog.md`). Once the script no
 longer polls:
 
 ```

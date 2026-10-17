@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-10-15
+Last updated: 2026-10-17
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Anything readable off
@@ -9,14 +9,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**halo_pc_tv reads the PC's port from the router**: HA's 30 s MikroTik poll
-missed the 1 s wake-on-LAN link drop, so the script polls AmonHen's REST
-`link-downs` counter for ether3 every second (`state/bundled-examples.md`,
-"ROUTER POLL"). Deployed 10-17 19:10; the first power-on through it lit the TV
-~22 s before 445 answered. Next, planned not started: replace the poll with
-router syslog pushes, `syslog-spec.md` (milestones in §8). v5.3.0 (incremental
-vacuum) is the current release. The overshoot track's open items (pull
-v4.16.0, D1) are unchanged in `state/overshoot.md`.
+**Syslog input** (`syslog-spec.md`), in progress: a UDP syslog listener and
+`syslog.on` so halo_pc_tv can drop its 1 s router REST poll. Milestone
+progress, captured RouterOS formats and decisions: `state/syslog.md`. The
+overshoot track's open items (pull v4.16.0, D1) are unchanged in
+`state/overshoot.md`.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -33,6 +30,7 @@ v4.16.0, D1) are unchanged in `state/overshoot.md`.
 - `state/insight.md` — change context + `who_changed`, history aggregates,
   retention overrides, the reminders lib. COMPLETE.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module. COMPLETE.
+- `state/syslog.md` — UDP syslog input, halo_pc_tv off the router poll.
 - `state/code-review.md` — rounds 1–5 CLOSED (v4.15.0 deployed); D1 pending.
 - (sse-spec.md has no implementation and no state file.)
 
