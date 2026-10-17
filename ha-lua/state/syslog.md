@@ -15,7 +15,7 @@ Status: **in progress** (started 2026-10-17).
 - [x] 5. `debug: count syslog datagrams` (9c05c47)
 - [x] 6. `docs: document the syslog input` (2562146). CLAUDE.md has no
   package list, so nothing to add there.
-- [ ] 7. release v5.4.0
+- [x] 7. release v5.4.0 (5390bb7, tagged 2026-10-17)
 - [ ] 8. update the add-on, `syslog_port: 5514`
 - [ ] 9. router logging action, settle §9 Q1
 - [ ] 10. halo_pc_tv on syslog
