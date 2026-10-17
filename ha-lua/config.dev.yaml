@@ -33,6 +33,9 @@ log_dir: ""
 # LAN port for the script-driven UI server (ha.serve). 0 disables it.
 http_port: 8100
 
+# UDP port for the syslog input (syslog.on). 0 disables it.
+syslog_port: 0
+
 # IANA name (e.g. "Europe/Budapest"). Empty falls back to $TZ, then UTC.
 # Affects what wall-clock instant ha.at("07:00") resolves to.
 timezone: ""

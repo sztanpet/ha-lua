@@ -78,6 +78,7 @@ homeassistant:
   url: "ws://x/api/websocket"
   token: "t"
 http_port: 8100
+syslog_port: 5514
 `)
 	cfg, err := load(path, false)
 	if err != nil {
@@ -85,6 +86,9 @@ http_port: 8100
 	}
 	if cfg.HTTPPort != 8100 {
 		t.Errorf("http_port: got %d, want 8100", cfg.HTTPPort)
+	}
+	if cfg.SyslogPort != 5514 {
+		t.Errorf("syslog_port: got %d, want 5514", cfg.SyslogPort)
 	}
 	// Dev mode binds no ingress listener.
 	if cfg.IngressPort != 0 {

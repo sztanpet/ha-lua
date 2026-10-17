@@ -37,6 +37,8 @@ type Config struct {
 	LogDir string `json:"log_dir" yaml:"log_dir"`
 	// HTTPPort is the LAN port for the script-driven UI server. 0 disables it.
 	HTTPPort int `json:"http_port" yaml:"http_port"`
+	// SyslogPort is the UDP port the syslog listener binds. 0 disables it.
+	SyslogPort int `json:"syslog_port" yaml:"syslog_port"`
 	// IngressPort is the internal port the HA Supervisor proxies for the
 	// authenticated sidebar panel. 0 disables the ingress listener. It is not a
 	// user option: add-on mode forces it to the manifest value, dev mode leaves

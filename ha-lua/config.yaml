@@ -26,8 +26,10 @@ panel_icon: mdi:language-lua
 panel_title: "HA Lua"
 ports:
   "8100/tcp": 8100             # stable LAN port for dashboard Webpage cards (unauthenticated, LAN-trust)
+  "5514/udp": 5514             # syslog input; listens only when syslog_port is set
 ports_description:
   "8100/tcp": "Script-driven UI (e.g. thermostat). Unauthenticated — keep on the LAN only."
+  "5514/udp": "Syslog input for scripts (syslog.on). Unauthenticated — keep on the LAN only."
 map:
   # Mount the Home Assistant config directory (the one the File Editor and
   # Samba expose as "config") at /config inside the container, so scripts
@@ -43,6 +45,7 @@ options:
   log_level: "info"
   timezone: ""
   http_port: 8100
+  syslog_port: 0
   mqtt:
     broker: ""
     username: ""
@@ -58,6 +61,9 @@ schema:
   log_level: "str"
   timezone: "str?"
   http_port: "int"
+  # UDP port scripts receive syslog on (syslog.on); 0 = off. Match the
+  # container side of the 5514/udp mapping above.
+  syslog_port: "int"
   # Direct MQTT, for devices Home Assistant cannot surface as entities (a
   # Zigbee2MQTT button published as a device trigger is the motivating case).
   # Leave broker empty to use the Mosquitto add-on's own credentials, or point
