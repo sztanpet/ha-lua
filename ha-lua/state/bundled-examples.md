@@ -233,5 +233,8 @@ constraints, each learned from a field report:
   (mikrotik repo `1c43c9b`, binary backup taken first); it had `!rest-api`,
   hence the 401. The user considered disabling WoL in the BIOS instead:
   advised against (HA would still see link-up up to 30 s late, WoL lost).
-  Pending: the first power-on through the poll; the router's
-  last-link-down-time vs. the TV's `on` will show the real lead over 445.
+  First power-on through it (10-17, user: "the tv turned on in seconds"):
+  link-downs 227->228 just before 19:14:48, TV `on` 19:14:48.96 (our
+  call), further drops 19:14:55 and 19:15:07, 445 answered 19:15:11: the
+  TV led the probe by ~22 s. The PC went again at 19:15:50 (1 s link drop
+  19:15:51), TV `off` 19:15:56 from the probe; no false re-wake.
