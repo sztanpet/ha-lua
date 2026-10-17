@@ -6,17 +6,31 @@ Status: **in progress** (started 2026-10-17).
 
 ## Milestones
 - [x] 0. Capture the real format (AmonHen, 7.23.5, 2026-10-17).
-- [ ] 1. `config: add syslog_port`
-- [ ] 2. `syslog: parse datagrams`
-- [ ] 3. `syslog: listen and dispatch`
-- [ ] 4. `lua: add syslog.on`
-- [ ] 5. `debug: count syslog datagrams`
-- [ ] 6. docs
+- [x] 1. `config: add syslog_port` (913afb9)
+- [x] 2. `syslog: parse datagrams` (7e2d24f)
+- [x] 3. `syslog: listen on UDP` (eda27c9) — the listener alone; the
+  dispatch moved into 4, which is the first commit that can test it.
+- [x] 4. `lua: add syslog.on` (adf7107) — DispatchSyslog, the runner flag,
+  the loopback test.
+- [x] 5. `debug: count syslog datagrams` (9c05c47)
+- [x] 6. `docs: document the syslog input` (2562146). CLAUDE.md has no
+  package list, so nothing to add there.
 - [ ] 7. release v5.4.0
 - [ ] 8. update the add-on, `syslog_port: 5514`
 - [ ] 9. router logging action, settle §9 Q1
 - [ ] 10. halo_pc_tv on syslog
 - [ ] 11. revoke `rest-api`, delete `mikrotik_login` (after a real wake)
+
+## Decisions
+- **The "wants syslog" flag is an atomic set by `syslog.on` itself**, not a
+  load-time cache like the MQTT filters: a handler registered from a callback
+  works, and datagrams arriving mid-load after the call queue up.
+- `syslog.on` with the input off (port 0 or a failed bind) raises with a
+  `syslog_port` hint, same rule as `mqtt.*` without a broker.
+- Drops are counted per registry (`SyslogDropped`): `Runner.Send` now returns
+  whether it queued. The per-script dropped counter still counts them too.
+- `(*net.conn).Close` joined the errcheck exclusions: `*net.UDPConn`'s Close
+  is promoted from the unexported type, so that is the name errcheck sees.
 
 ## Field facts: RouterOS 7.23.5 datagrams
 One line per datagram, no trailing newline. Captured with `:log` on
