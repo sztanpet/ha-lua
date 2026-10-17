@@ -238,3 +238,10 @@ constraints, each learned from a field report:
   call), further drops 19:14:55 and 19:15:07, 445 answered 19:15:11: the
   TV led the probe by ~22 s. The PC went again at 19:15:50 (1 s link drop
   19:15:51), TV `off` 19:15:56 from the probe; no false re-wake.
+- SYSLOG WAKE (`8f24add`, deployed 10-17 19:44 CEST, 1 timer + syslog, no
+  errors): the REST poll is replaced by AmonHen pushing `topics=interface`
+  to the syslog input (detail: `state/syslog.md`). Any ether3 link line from
+  192.168.1.1 is the old link edge, same 60 s / 2 min gates. New `waking`
+  guard: a power-on logs up/down/up within ~10 s and each press is the same
+  POWER key, so only the first line of a wake acts until BOOT_GRACE ends.
+  Not yet seen end to end on a real power-on.

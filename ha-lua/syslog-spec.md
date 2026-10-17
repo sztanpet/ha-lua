@@ -174,7 +174,8 @@ push the repo.
 
 ## 9. Open questions
 
-1. **Does the Supervisor's UDP port mapping keep the source address?** With
+1. **Answered 10-17: yes**, `msg.from` is the real sender
+   (`state/syslog.md`). **Does the Supervisor's UDP port mapping keep the source address?** With
    iptables DNAT it does; Docker's userland proxy would replace it with the
    bridge gateway. Check in milestone 9: log `msg.from` for a router line.
    If it is rewritten, filter on `msg.host`. That needs a header format with

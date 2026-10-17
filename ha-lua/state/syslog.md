@@ -16,10 +16,18 @@ Status: **in progress** (started 2026-10-17).
 - [x] 6. `docs: document the syslog input` (2562146). CLAUDE.md has no
   package list, so nothing to add there.
 - [x] 7. release v5.4.0 (5390bb7, tagged 2026-10-17)
-- [ ] 8. update the add-on, `syslog_port: 5514`
-- [ ] 9. router logging action, settle §9 Q1
-- [ ] 10. halo_pc_tv on syslog
-- [ ] 11. revoke `rest-api`, delete `mikrotik_login` (after a real wake)
+- [x] 8. Add-on on the box updated to 5.4.0 and `syslog_port: 5514` set
+  (Supervisor API, 10-17 19:39 CEST); "syslog: listening addr=[::]:5514".
+- [x] 9. AmonHen `halua` action applied from `router/logging.rsc` (mikrotik
+  `47b3755`; binary backup + export fetched first, re-run checked
+  idempotent). A temporary `topics=script` rule proved the path end to end.
+- [x] 10. `examples: wake the TV on router syslog` (8f24add), deployed
+  10-17 19:44 CEST: loaded with syslog=true, 1 timer.
+- [ ] 11. **Pending a real power-on through syslog.** Then: drop `rest-api`
+  from the `homeassistant` group (`policy=read,test,api`, mikrotik repo
+  rules: backup, apply, re-export, commit, push) and delete
+  `global mikrotik_login` with a throwaway script. User authorization for
+  the router change is per-session: ask.
 
 ## Decisions
 - **The "wants syslog" flag is an atomic set by `syslog.on` itself**, not a
@@ -31,6 +39,11 @@ Status: **in progress** (started 2026-10-17).
   whether it queued. The per-script dropped counter still counts them too.
 - `(*net.conn).Close` joined the errcheck exclusions: `*net.UDPConn`'s Close
   is promoted from the unexported type, so that is the name errcheck sees.
+
+## §9 Q1 answered: the source address survives
+The Supervisor's 5514/udp mapping keeps the sender's address: a datagram
+from the dev box arrived as `from=192.168.1.139`, AmonHen's as
+`from=192.168.1.1 host=AmonHen`. halo_pc_tv filters on `msg.from`.
 
 ## Field facts: RouterOS 7.23.5 datagrams
 One line per datagram, no trailing newline. Captured with `:log` on
