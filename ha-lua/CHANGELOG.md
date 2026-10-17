@@ -4,6 +4,31 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.5.0 - 2026-10-17
+
+### Added
+- **`msg.received_at` for syslog handlers**: when the daemon read the line,
+  as a time object like `time.now()`. Unlike `time.now()` in the handler it
+  is not late by however long the line waited in the script's queue, and
+  unlike the header's timestamp it does not depend on the sender's clock.
+
+### Changed
+- **`halo_pc_tv.lua` wakes the TV on router syslog** instead of polling the
+  router's REST API every second. Any `ether3 link` line from the router,
+  with or without the topics prefix, starts the early wake; a power-on logs
+  several, and only the first presses POWER. A TV that is already on is
+  left alone, so a stray link change can no longer switch off someone
+  watching with the PC asleep. The `mikrotik_login` global is no longer
+  read.
+
+### Fixed
+- **A syslog line whose text began with "1 "** after its priority was taken
+  for RFC 5424 and lost its text. The header is now checked first, and
+  anything else keeps its text whole.
+- **`syslog.on` and the debug page blamed only `syslog_port: 0`** when the
+  input was off; a port that failed to bind is now named too, with a
+  pointer to the log.
+
 ## 5.4.0 - 2026-10-17
 
 ### Added
