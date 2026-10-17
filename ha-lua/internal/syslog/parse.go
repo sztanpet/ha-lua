@@ -76,26 +76,19 @@ func cutPriority(s string) (int, string, bool) {
 	return pri, s[end+1:], true
 }
 
-// cutRFC5424 takes "1 TIMESTAMP HOST APP PROCID MSGID SD " after the PRI.
+// RFC 5424 after the <PRI>: 1 TIMESTAMP HOST APP PROCID MSGID SD MSG
 func cutRFC5424(s string, msg *Message) (string, bool) {
-	fields := make([]string, 0, 6)
-	rest := s
-	for range 6 {
-		field, after, ok := strings.Cut(rest, " ")
-		if !ok {
-			// A message-less record ends right after the last field.
-			field, after = rest, ""
-		}
-		fields = append(fields, field)
-		rest = after
-	}
-	if fields[0] != "1" {
+	fields := strings.SplitN(s, " ", 7)
+	if len(fields) < 6 || fields[0] != "1" || (fields[1] != "-" && !isRFC3339(fields[1])) {
 		return s, false
 	}
 	if fields[2] != "-" {
 		msg.Host = fields[2]
 	}
-	return skipStructuredData(rest), true
+	if len(fields) < 7 {
+		return "", true
+	}
+	return skipStructuredData(fields[6]), true
 }
 
 // skipStructuredData drops "-" or one or more "[id k="v"]" elements.
@@ -141,13 +134,18 @@ func cutTimestamp(s string) (string, bool) {
 			return s[len(bsd)+1:], true
 		}
 	}
-	token, after, _ := strings.Cut(s, " ")
-	if len(token) > 10 && token[10] == 'T' {
-		if _, err := time.Parse(time.RFC3339Nano, token); err == nil {
-			return after, true
-		}
+	if token, after, _ := strings.Cut(s, " "); isRFC3339(token) {
+		return after, true
 	}
 	return s, false
+}
+
+func isRFC3339(s string) bool {
+	if len(s) <= 10 || s[10] != 'T' {
+		return false
+	}
+	_, err := time.Parse(time.RFC3339Nano, s)
+	return err == nil
 }
 
 // cutHost takes the hostname after a timestamp. A token ending in ':' or
