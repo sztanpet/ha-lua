@@ -7,6 +7,7 @@ import (
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/mqtt"
+	"github.com/sztanpet/ha-lua/internal/syslog"
 )
 
 // Registry manages all running script runners and routes events to them.
@@ -84,6 +85,18 @@ func (reg *Registry) DispatchMQTT(msg mqtt.Message) {
 				r.Send(Event{MQTTMessage: &msg})
 				break
 			}
+		}
+	}
+}
+
+// DispatchSyslog sends a syslog datagram to every script with a syslog.on
+// handler.
+func (reg *Registry) DispatchSyslog(msg syslog.Message) {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	for _, r := range reg.runners {
+		if r.WantsSyslog() {
+			r.Send(Event{SyslogMessage: &msg})
 		}
 	}
 }

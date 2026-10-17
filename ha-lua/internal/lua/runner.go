@@ -21,13 +21,15 @@ import (
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
+	"github.com/sztanpet/ha-lua/internal/syslog"
 )
 
 // Event is the union type delivered to script goroutines.
 type Event struct {
-	HAEvent     *ha.Event
-	TimerFired  *TimerFiredEvent
-	MQTTMessage *mqtt.Message
+	HAEvent       *ha.Event
+	TimerFired    *TimerFiredEvent
+	MQTTMessage   *mqtt.Message
+	SyslogMessage *syslog.Message
 }
 
 // TimerFiredEvent is sent to a script goroutine when a timer fires.
@@ -110,8 +112,10 @@ type Runner struct {
 	cachedImmediate     bool
 
 	// Read from other goroutines, so never behind the LState.
-	dropped   atomic.Uint64
-	lastError atomic.Pointer[ScriptError]
+	dropped atomic.Uint64
+	// wantsSyslog is set by the first syslog.on, at load or from a callback.
+	wantsSyslog atomic.Bool
+	lastError   atomic.Pointer[ScriptError]
 
 	tracker   *state.Tracker
 	scheduler *scheduler.Scheduler
@@ -130,6 +134,7 @@ type Runner struct {
 	// daemon found a broker or the runner was never wired at all.
 	mqttSubscribe func(filter string) error
 	mqttPublish   func(topic string, payload []byte, qos byte, retain bool) error
+	syslogEnabled bool
 	setState      func(ctx context.Context, entityID, state string, attrs jsontext.Value) (bool, error)
 	removeState   func(ctx context.Context, entityID string) error
 }
@@ -178,6 +183,13 @@ func (r *Runner) SetMQTT(subscribe func(filter string) error,
 	publish func(topic string, payload []byte, qos byte, retain bool) error) {
 	r.mqttSubscribe, r.mqttPublish = subscribe, publish
 }
+
+// SetSyslog enables the Lua syslog module; without it syslog.on raises.
+// Must be called before Start.
+func (r *Runner) SetSyslog(enabled bool) { r.syslogEnabled = enabled }
+
+// WantsSyslog reports whether the script registered a syslog handler.
+func (r *Runner) WantsSyslog() bool { return r.wantsSyslog.Load() }
 
 // SetFireEvent wires the fire_event function. Must be called before Start.
 func (r *Runner) SetFireEvent(fn func(ctx context.Context, eventType string, data jsontext.Value) error) {
@@ -293,6 +305,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 	}
 	r.registerHaAPI(L, api)
 	r.registerMQTTAPI(L, api)
+	r.registerSyslogAPI(L, api)
 	registerStoreAPI(L, r.kv, r.global)
 
 	loadErr := L.DoFile(scriptPath)
@@ -338,6 +351,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			"state_handlers", len(r.cachedStatePatterns),
 			"event_handlers", len(r.cachedEventHandlers),
 			"mqtt_filters", len(r.cachedMQTTHandlers),
+			"syslog", r.WantsSyslog(),
 			"routes", len(r.cachedRoutes),
 			"timers", len(r.timerFns),
 			"immediate_events", r.cachedImmediate)
@@ -382,8 +396,8 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			// batched event never overtakes one delivered immediately.
 			// MQTT joins timers in bypassing the batch window: coalescing a
 			// button press with the release that follows it would break
-			// every button on the broker.
-			if immediate || ev.TimerFired != nil || ev.MQTTMessage != nil {
+			// every button on the broker. Syslog lines are discrete events too.
+			if immediate || ev.TimerFired != nil || ev.MQTTMessage != nil || ev.SyslogMessage != nil {
 				flush()
 				r.handleEvent(L, api, ev)
 				continue
@@ -528,6 +542,9 @@ func (r *Runner) handleEvent(L *lua.LState, api *haAPI, ev Event) {
 	}
 	if ev.MQTTMessage != nil {
 		r.handleMQTTMessage(L, api, *ev.MQTTMessage)
+	}
+	if ev.SyslogMessage != nil {
+		r.handleSyslogMessage(L, api, *ev.SyslogMessage)
 	}
 }
 

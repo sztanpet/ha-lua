@@ -28,6 +28,7 @@ import (
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
+	"github.com/sztanpet/ha-lua/internal/syslog"
 	"github.com/sztanpet/ha-lua/internal/web"
 )
 
@@ -202,6 +203,7 @@ func main() {
 	// device trigger produces no entity and no bus event). An unconfigured or
 	// unreachable broker only disables the mqtt module.
 	mqttClient := startMQTT(ctx, cfg, reg)
+	syslogListener := startSyslog(ctx, cfg, reg)
 
 	sup := luapkg.NewSupervisor(reg, cfg.ScriptsDir, luapkg.Deps{
 		Tracker:   tracker,
@@ -251,6 +253,7 @@ func main() {
 		RemoveState:   client.RemoveState,
 		MQTTSubscribe: mqttClient.Subscribe,
 		MQTTPublish:   mqttClient.Publish,
+		SyslogEnabled: syslogListener != nil,
 		// AddEventType dedups and subscribes on the live connection, so
 		// scripts loaded or reloaded at any time get their events.
 		OnLoaded: func(r *luapkg.Runner) {
@@ -420,4 +423,22 @@ func startMQTT(ctx context.Context, cfg *config.Config, reg *luapkg.Registry) *m
 		slog.Warn("mqtt: initial connect failed", "err", err)
 	}
 	return client
+}
+
+// startSyslog binds the syslog input, or returns nil when it is off or the
+// bind failed. Either way only the syslog module is disabled.
+func startSyslog(ctx context.Context, cfg *config.Config, reg *luapkg.Registry) *syslog.Listener {
+	if cfg.SyslogPort == 0 {
+		return nil
+	}
+	l, err := syslog.Listen(ctx, fmt.Sprintf(":%d", cfg.SyslogPort))
+	if err != nil {
+		slog.Error("syslog: input disabled", "err", err)
+		return nil
+	}
+	slog.Info("syslog: listening", "addr", l.Addr())
+	go pprof.Do(ctx, pprof.Labels("goroutine", "syslog"), func(ctx context.Context) {
+		l.Serve(ctx, reg.DispatchSyslog)
+	})
+	return l
 }
