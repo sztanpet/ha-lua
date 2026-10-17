@@ -386,6 +386,15 @@ func TestPcTvLinkChangeWithoutBootReverts(t *testing.T) {
 	h.expectSilence()
 }
 
+func TestPcTvLinkChangeLeavesWatchedTvOn(t *testing.T) {
+	h := newPcTvHarness(t, false, "on")
+	h.expectSilence()
+
+	h.routerLog(pcTvRouter, "ether3 link down")
+	time.Sleep(pcTvGrace)
+	h.expectSilence()
+}
+
 // TestPcTvIgnoresLinkChangeAtHibernate: a drop seconds after the PC went away
 // is it hibernating or rebooting, not booting.
 func TestPcTvIgnoresLinkChangeAtHibernate(t *testing.T) {

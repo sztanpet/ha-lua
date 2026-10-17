@@ -90,6 +90,9 @@ end)
 local function link_changed()
   if online ~= false or waking then return end
   if time.now():sub(offline_since) < LINK_AFTER_OFFLINE then return end
+  local tv = ha.get_state(TV)
+  -- Someone is watching without the PC; the revert would switch them off.
+  if tv and tv.state == "on" then return end
   waking = true
   generation = generation + 1
   local mine = generation
