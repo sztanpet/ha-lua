@@ -3,13 +3,15 @@ package syslog
 import (
 	"context"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 )
 
 func TestListenerDelivers(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	l, err := Listen(ctx, "127.0.0.1:0")
+	// Dual-stack, like the add-on's ":5514": IPv4 senders arrive v4-mapped.
+	l, err := Listen(ctx, ":0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +23,8 @@ func TestListenerDelivers(t *testing.T) {
 	}()
 
 	var d net.Dialer
-	conn, err := d.DialContext(ctx, "udp", l.Addr().String())
+	port := l.Addr().(*net.UDPAddr).Port
+	conn, err := d.DialContext(ctx, "udp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		t.Fatal(err)
 	}
