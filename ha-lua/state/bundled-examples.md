@@ -219,3 +219,19 @@ constraints, each learned from a field report:
   Add-on updated to 5.1.0 by Claude 10-16 22:18 CEST (Supervisor API): all
   12 scripts loaded, no errors; 0 "waited long" in the first 3.5 min (was
   ~13/min), and only enhanced_climate still logs dispatch lines.
+- ROUTER POLL (`21d2503`, deployed 10-17 19:10 CEST, 2 timers, no errors):
+  the HA ether3 sensor never moved on the 10-17 17:04 power-on nor the
+  18:56 hibernate; AmonHen's own counters showed the hibernate drop lasted
+  1 s (down 18:56:25, up 18:56:26; link-downs 227), before the probe's
+  offline verdict (TV off 18:56:31), so the `online ~= false` gate ignores
+  it. The script now reads `/rest/interface/ether3?.proplist=link-downs`
+  from 192.168.1.1 every 1 s (9 ms per read); any increase over the last
+  read is the old link edge (60 s offline gate, 2 min revert unchanged).
+  Login from `global.get("mikrotik_login")` (= HA's `homeassistant` user,
+  seeded on the box with a throwaway script; kept out of the public repo).
+  Router side: user granted `rest-api` on AmonHen's `homeassistant` group
+  (mikrotik repo `1c43c9b`, binary backup taken first); it had `!rest-api`,
+  hence the 401. The user considered disabling WoL in the BIOS instead:
+  advised against (HA would still see link-up up to 30 s late, WoL lost).
+  Pending: the first power-on through the poll; the router's
+  last-link-down-time vs. the TV's `on` will show the real lead over 445.
