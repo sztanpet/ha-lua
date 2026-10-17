@@ -61,8 +61,7 @@ schema:
   log_level: "str"
   timezone: "str?"
   http_port: "int"
-  # UDP port scripts receive syslog on (syslog.on); 0 = off. Match the
-  # container side of the 5514/udp mapping above.
+  # 0 = off; otherwise 5514, the container side of the mapping above.
   syslog_port: "int"
   # Direct MQTT, for devices Home Assistant cannot surface as entities (a
   # Zigbee2MQTT button published as a device trigger is the motivating case).

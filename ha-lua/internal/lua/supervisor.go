@@ -51,8 +51,6 @@ type Deps struct {
 	// no broker is configured, which makes every mqtt.* call raise.
 	MQTTSubscribe func(filter string) error
 	MQTTPublish   func(topic string, payload []byte, qos byte, retain bool) error
-	// SyslogEnabled is true when the syslog listener is bound; false makes
-	// syslog.on raise.
 	SyslogEnabled bool
 	// OnLoaded is called (on its own goroutine) once a started script has
 	// finished loading — the hook for subscribing newly required event

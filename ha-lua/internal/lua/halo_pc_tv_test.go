@@ -31,10 +31,6 @@ const (
 	pcTvGrace    = 300 * time.Millisecond
 )
 
-// pcTvHarness runs the real examples/halo_pc_tv.lua against a spy call
-// service, a live scheduler (the probe and the retries are timers), a local
-// listener standing in for the PC, and router log lines fed to the registry
-// as the syslog listener would.
 type pcTvHarness struct {
 	t       *testing.T
 	ctx     context.Context
@@ -116,6 +112,7 @@ func newPcTvHarnessSyslog(t *testing.T, pcOn bool, tv string, syslogOn bool) *pc
 	tracker := state.New(writeDB, readDB)
 	tracker.Start(t.Context())
 	reg := NewRegistry()
+	// Live, because the probe and the retries are timers.
 	sched := scheduler.New(writeDB, time.UTC, reg.DispatchToTimer)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -199,7 +196,6 @@ func (h *pcTvHarness) report(entityID, oldState, newState string) {
 	h.reg.Dispatch(ha.Event{Type: "state_changed", Data: raw})
 }
 
-// routerLog delivers a line as AmonHen's halua logging action sends it.
 func (h *pcTvHarness) routerLog(from, text string) {
 	msg := syslog.Parse([]byte("<30>Oct 17 19:14:53 AmonHen interface,info " + text))
 	msg.From = from
@@ -316,8 +312,6 @@ func TestPcTvRidesOutAMissedProbe(t *testing.T) {
 
 const pcTvRouter = "192.168.1.1"
 
-// TestPcTvWakesOnLinkChange: the NIC renegotiating at power-on turns the TV
-// on long before the PC answers the probe.
 func TestPcTvWakesOnLinkChange(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
@@ -330,9 +324,7 @@ func TestPcTvWakesOnLinkChange(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvPowerOnPressesOnce: a power-on logs up, down, up within seconds.
-// Each press is the same POWER key, so a second wake before the TV reports
-// would switch it straight back off.
+// On and off are one POWER key, so a second press switches the TV back off.
 func TestPcTvPowerOnPressesOnce(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
@@ -352,8 +344,6 @@ func TestPcTvPowerOnPressesOnce(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvIgnoresOtherLines: another port, or the same text from anyone but
-// the router, is not the PC.
 func TestPcTvIgnoresOtherLines(t *testing.T) {
 	h := newPcTvHarness(t, false, "off")
 	h.expectSilence()
@@ -395,8 +385,6 @@ func TestPcTvLinkChangeLeavesWatchedTvOn(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvIgnoresLinkChangeAtHibernate: a drop seconds after the PC went away
-// is it hibernating or rebooting, not booting.
 func TestPcTvIgnoresLinkChangeAtHibernate(t *testing.T) {
 	h := newPcTvHarness(t, true, "on")
 	h.expectSilence()
@@ -417,8 +405,6 @@ func TestPcTvIgnoresLinkChangeWhileOnline(t *testing.T) {
 	h.expectSilence()
 }
 
-// TestPcTvWithoutSyslog: no syslog input is a warning, not a dead script;
-// the probe still drives the TV.
 func TestPcTvWithoutSyslog(t *testing.T) {
 	h := newPcTvHarnessSyslog(t, false, "off", false)
 	h.expectSilence()

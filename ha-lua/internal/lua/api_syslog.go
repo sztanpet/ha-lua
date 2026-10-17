@@ -10,14 +10,12 @@ import (
 
 var errSyslogDisabled = errors.New("no syslog input: syslog_port is 0, or binding it failed (see the log)")
 
-// registerSyslogAPI installs the `syslog` module on L. Like mqtt, it is
-// installed when disabled and raises then: a script waiting on a port
-// nothing listens on would otherwise wait forever, silently.
 func (r *Runner) registerSyslogAPI(L *lua.LState, api *haAPI) {
 	mod := L.NewTable()
 	L.SetField(mod, "on", L.NewFunction(func(L *lua.LState) int {
 		fn := L.CheckFunction(1)
 		if !r.syslogEnabled {
+			// A handler that can never fire would fail silently.
 			L.RaiseError("syslog.on: %v", errSyslogDisabled)
 			return 0
 		}

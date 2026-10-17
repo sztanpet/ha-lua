@@ -10,7 +10,7 @@ func TestParse(t *testing.T) {
 		priority int
 		text     string
 	}{
-		// RouterOS 7.23.5 bytes, captured from AmonHen (state/syslog.md).
+		// Verbatim RouterOS 7.23.5 datagrams: fix the parser, not these.
 		{"RouterOS default", "script,info ha-lua test",
 			"", -1, "script,info ha-lua test"},
 		{"RouterOS syslog", "<30>Oct 17 19:24:25 AmonHen ha-lua test",

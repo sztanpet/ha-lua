@@ -112,8 +112,7 @@ type Runner struct {
 	cachedImmediate     bool
 
 	// Read from other goroutines, so never behind the LState.
-	dropped atomic.Uint64
-	// wantsSyslog is set by the first syslog.on, at load or from a callback.
+	dropped     atomic.Uint64
 	wantsSyslog atomic.Bool
 	lastError   atomic.Pointer[ScriptError]
 
@@ -184,11 +183,9 @@ func (r *Runner) SetMQTT(subscribe func(filter string) error,
 	r.mqttSubscribe, r.mqttPublish = subscribe, publish
 }
 
-// SetSyslog enables the Lua syslog module; without it syslog.on raises.
-// Must be called before Start.
+// SetSyslog must be called before Start.
 func (r *Runner) SetSyslog(enabled bool) { r.syslogEnabled = enabled }
 
-// WantsSyslog reports whether the script registered a syslog handler.
 func (r *Runner) WantsSyslog() bool { return r.wantsSyslog.Load() }
 
 // SetFireEvent wires the fire_event function. Must be called before Start.
@@ -263,8 +260,7 @@ func (r *Runner) EventTypes() []string {
 	return out
 }
 
-// Send delivers an event to the script goroutine (non-blocking), and reports
-// false when the queue was full and the event dropped.
+// Send never blocks: a full queue drops ev and returns false.
 func (r *Runner) Send(ev Event) bool {
 	select {
 	case r.ch <- ev:
@@ -399,7 +395,8 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 			// batched event never overtakes one delivered immediately.
 			// MQTT joins timers in bypassing the batch window: coalescing a
 			// button press with the release that follows it would break
-			// every button on the broker. Syslog lines are discrete events too.
+			// every button on the broker. A syslog line never coalesces, so a
+			// window would only delay it.
 			if immediate || ev.TimerFired != nil || ev.MQTTMessage != nil || ev.SyslogMessage != nil {
 				flush()
 				r.handleEvent(L, api, ev)

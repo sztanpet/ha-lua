@@ -92,8 +92,6 @@ func (reg *Registry) DispatchMQTT(msg mqtt.Message) {
 	}
 }
 
-// DispatchSyslog sends a syslog datagram to every script with a syslog.on
-// handler.
 func (reg *Registry) DispatchSyslog(msg syslog.Message) {
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
@@ -104,7 +102,6 @@ func (reg *Registry) DispatchSyslog(msg syslog.Message) {
 	}
 }
 
-// SyslogDropped counts syslog deliveries lost to a full script queue.
 func (reg *Registry) SyslogDropped() uint64 { return reg.syslogDropped.Load() }
 
 // DispatchToTimer sends a TimerFiredEvent to the runner for scriptID.

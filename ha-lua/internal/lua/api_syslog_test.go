@@ -16,7 +16,6 @@ import (
 	"github.com/sztanpet/ha-lua/internal/testutil"
 )
 
-// startSyslogScripts loads each id→source script into one registry.
 func startSyslogScripts(t *testing.T, enabled bool, scripts map[string]string) *Registry {
 	t.Helper()
 	dir := t.TempDir()
@@ -77,8 +76,6 @@ func TestSyslogNoPriorityFieldsAreNil(t *testing.T) {
 	}
 }
 
-// TestSyslogSkipsScriptsWithoutHandler: a datagram must not wake, or fill
-// the queue of, a script that never asked for syslog.
 func TestSyslogSkipsScriptsWithoutHandler(t *testing.T) {
 	reg := startSyslogScripts(t, true, map[string]string{
 		"s":     syslogRecorder,
@@ -124,7 +121,6 @@ func TestSyslogDisabledRaises(t *testing.T) {
 	}
 }
 
-// TestSyslogOverUDP is the whole path: socket, parser, registry, script.
 func TestSyslogOverUDP(t *testing.T) {
 	reg := startSyslogScripts(t, true, map[string]string{"s": syslogRecorder})
 	ctx, cancel := context.WithCancel(t.Context())

@@ -48,8 +48,7 @@ type haAPI struct {
 	// eventHandlers registered during load time.
 	eventHandlers []eventHandler
 	// mqttHandlers registered during load time via mqtt.subscribe.
-	mqttHandlers []mqttHandler
-	// syslogHandlers registered via syslog.on, at load or from callbacks.
+	mqttHandlers   []mqttHandler
 	syslogHandlers []*lua.LFunction
 	// timerFns registered during load time or from callbacks.
 	timerFns map[string]*lua.LFunction

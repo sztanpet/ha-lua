@@ -426,8 +426,6 @@ func startMQTT(ctx context.Context, cfg *config.Config, reg *luapkg.Registry) *m
 	return client
 }
 
-// startSyslog binds the syslog input, or returns nil when it is off or the
-// bind failed. Either way only the syslog module is disabled.
 func startSyslog(ctx context.Context, cfg *config.Config, reg *luapkg.Registry) *syslog.Listener {
 	if cfg.SyslogPort == 0 {
 		return nil

@@ -1,5 +1,4 @@
-// Package syslog receives UDP syslog datagrams and hands them to scripts.
-// It is an input, not a log store: nothing is persisted.
+// Package syslog is an input, not a log store: nothing is persisted.
 package syslog
 
 import (
@@ -8,17 +7,15 @@ import (
 	"time"
 )
 
-// Message is one received datagram.
 type Message struct {
-	From       string // sender IP, from the UDP source address
-	Host       string // hostname from the header; empty when the format has none
-	Priority   int    // the <PRI> value, -1 without one
-	Text       string // what follows the header, trimmed
-	Raw        string // the datagram as received
+	From       string
+	Host       string
+	Priority   int // -1 without a <PRI>
+	Text       string
+	Raw        string
 	ReceivedAt time.Time
 }
 
-// Facility is Priority/8, or -1 without a <PRI>.
 func (m Message) Facility() int {
 	if m.Priority < 0 {
 		return -1
@@ -26,7 +23,6 @@ func (m Message) Facility() int {
 	return m.Priority / 8
 }
 
-// Severity is Priority%8, or -1 without a <PRI>.
 func (m Message) Severity() int {
 	if m.Priority < 0 {
 		return -1
@@ -34,9 +30,7 @@ func (m Message) Severity() int {
 	return m.Priority % 8
 }
 
-// Parse splits a datagram into header fields and text. It never rejects:
-// whatever it cannot recognise stays in Text, so a sender with an odd
-// format still reaches scripts whole.
+// Parse never rejects: whatever it cannot recognise stays in Text.
 func Parse(raw []byte) Message {
 	msg := Message{Raw: string(raw), Priority: -1}
 	rest := msg.Raw
@@ -60,7 +54,6 @@ func Parse(raw []byte) Message {
 
 func trim(s string) string { return strings.Trim(s, " \t\r\n\x00") }
 
-// cutPriority takes a leading "<0>".."<191>".
 func cutPriority(s string) (int, string, bool) {
 	if !strings.HasPrefix(s, "<") {
 		return 0, s, false
@@ -91,7 +84,6 @@ func cutRFC5424(s string, msg *Message) (string, bool) {
 	return skipStructuredData(fields[6]), true
 }
 
-// skipStructuredData drops "-" or one or more "[id k="v"]" elements.
 func skipStructuredData(s string) string {
 	if strings.HasPrefix(s, "-") {
 		return s[1:]
@@ -106,8 +98,7 @@ func skipStructuredData(s string) string {
 	return s
 }
 
-// elementEnd finds the ']' closing the element s starts with; a ']' inside
-// a quoted, possibly escaped, param value does not count.
+// A ']' inside a quoted param value does not close the element.
 func elementEnd(s string) int {
 	escaped, quoted := false, false
 	for i := 1; i < len(s); i++ {
@@ -125,8 +116,7 @@ func elementEnd(s string) int {
 	return -1
 }
 
-// cutTimestamp takes an RFC 3164 "Oct 17 19:14:53" or an ISO 8601
-// "2026-10-17T19:14:53.159+02:00" and the space after it.
+// RouterOS's iso8601 format puts an RFC 3339 timestamp in an RFC 3164 header.
 func cutTimestamp(s string) (string, bool) {
 	const bsd = "Jan _2 15:04:05"
 	if len(s) > len(bsd) && s[len(bsd)] == ' ' {
@@ -148,9 +138,7 @@ func isRFC3339(s string) bool {
 	return err == nil
 }
 
-// cutHost takes the hostname after a timestamp. A token ending in ':' or
-// carrying '[' is a tag ("sshd[42]:"), which means the sender left the
-// hostname out.
+// A tag ("sshd[42]:") where the hostname belongs means the sender left it out.
 func cutHost(s string) (string, string, bool) {
 	host, after, ok := strings.Cut(s, " ")
 	if !ok || host == "" || strings.HasSuffix(host, ":") || strings.ContainsRune(host, '[') {

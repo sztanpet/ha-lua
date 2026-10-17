@@ -34,8 +34,7 @@ type DebugDeps struct {
 	Tracker   *state.Tracker
 	Client    *ha.Client
 	Logs      *logbuf.Buffer
-	// Syslog is nil while the syslog input is off.
-	Syslog func() SyslogInfo
+	Syslog    func() SyslogInfo
 
 	RetentionDays int
 	PurgeInterval time.Duration
@@ -65,7 +64,6 @@ type storageInfo struct {
 	PurgeInterval string `json:"purge_interval"`
 }
 
-// SyslogInfo is the syslog input's counters.
 type SyslogInfo struct {
 	Addr     string `json:"addr"`
 	Received uint64 `json:"received"`

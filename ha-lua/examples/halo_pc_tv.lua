@@ -47,8 +47,7 @@ local generation = 0
 local online -- nil until the first verdict
 local misses = 0
 local offline_since = time.now()
--- A power-on logs up, down, up within seconds, and a second POWER press
--- before the TV reports would switch it back off.
+-- A power-on logs several link lines; a second POWER press undoes the first.
 local waking = false
 
 local function drive(want, mine, attempt)
