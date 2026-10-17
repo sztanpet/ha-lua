@@ -12,7 +12,8 @@ and only that one.
 **Syslog input** (`syslog-spec.md`, detail in `state/syslog.md`): shipped in
 v5.4.0 and running on the box with `syslog_port: 5514`; AmonHen pushes its
 interface log there, and halo_pc_tv wakes the TV on ether3 link lines instead
-of polling REST (deployed 10-17 19:44). Open: milestone 11, revoking the
+of polling REST (redeployed after review 10-17 20:07; the review's Go fixes
+are unreleased). Open: milestone 11, revoking the
 router's `rest-api` grant and `global mikrotik_login`, waits for one real
 power-on through syslog and needs the user's go-ahead for the router change.
 The overshoot track's open items (pull v4.16.0, D1) are unchanged in

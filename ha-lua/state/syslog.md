@@ -29,6 +29,26 @@ Status: **in progress** (started 2026-10-17).
   `global mikrotik_login` with a throwaway script. User authorization for
   the router change is per-session: ask.
 
+## Review (2026-10-17, after M10) — unreleased
+- 2505e91 parser: "1 " after the PRI is RFC 5424 only with a nil or RFC 3339
+  timestamp and all six header fields; "<13>1 apple pie" had lost its text.
+- cbbefea `msg.received_at` (time object): the user kept `ReceivedAt` and
+  wanted it used, rather than dropped as unread.
+- 96cc284 listener test binds ":0" like the add-on, so a lost `Unmap` (from
+  "::ffff:192.168.1.1", every `msg.from` filter dead) fails a test.
+- 99b179e the off message names a failed bind too, not only port 0.
+- ef892cb halo_pc_tv matches `ether3 link` at the message start too
+  (a logging action without add-topics-string).
+- 2cce69f halo_pc_tv skips a link wake while the TV is already on: the
+  revert would switch off someone watching with the PC asleep.
+- a18855d comments cut to the non-obvious why.
+- Example redeployed 10-17 20:07 CEST (md5 4b4bc679…): syslog=true, 1 timer.
+  The Go fixes ship with the next release.
+- **Open, unverified:** whether a router reboot forwards ether3's boot-time
+  link lines. If it does, with the PC asleep and the TV off, the TV comes on
+  for BOOT_GRACE and goes off again. The REST counter never had this (a
+  reboot reset it to a new baseline).
+
 ## Decisions
 - **The "wants syslog" flag is an atomic set by `syslog.on` itself**, not a
   load-time cache like the MQTT filters: a handler registered from a callback
