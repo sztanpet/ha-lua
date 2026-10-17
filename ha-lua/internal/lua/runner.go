@@ -263,13 +263,16 @@ func (r *Runner) EventTypes() []string {
 	return out
 }
 
-// Send delivers an event to the script goroutine (non-blocking).
-func (r *Runner) Send(ev Event) {
+// Send delivers an event to the script goroutine (non-blocking), and reports
+// false when the queue was full and the event dropped.
+func (r *Runner) Send(ev Event) bool {
 	select {
 	case r.ch <- ev:
+		return true
 	default:
 		r.dropped.Add(1)
 		slog.Warn("lua: event channel full, dropping", "script", r.scriptID)
+		return false
 	}
 }
 
@@ -454,6 +457,7 @@ type RunnerStats struct {
 	EventHandlers int          `json:"event_handlers"`
 	StateHandlers int          `json:"state_handlers"`
 	MQTTFilters   []string     `json:"mqtt_filters,omitempty"`
+	Syslog        bool         `json:"syslog,omitempty"`
 	Immediate     bool         `json:"immediate_events"`
 	QueueLen      int          `json:"queue_len"`
 	QueueCap      int          `json:"queue_cap"`
@@ -481,6 +485,7 @@ func (r *Runner) Stats() RunnerStats {
 	st.EventHandlers = len(r.cachedEventHandlers)
 	st.StateHandlers = len(r.cachedStatePatterns)
 	st.MQTTFilters = r.MQTTFilters()
+	st.Syslog = r.WantsSyslog()
 	st.Immediate = r.cachedImmediate
 	return st
 }

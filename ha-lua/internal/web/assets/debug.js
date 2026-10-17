@@ -70,6 +70,17 @@
       cells("ha", [["client", "not wired"]]);
     }
 
+    var syslog = info.syslog;
+    if (syslog) {
+      cells("syslog", [
+        ["listening", syslog.addr],
+        ["received", syslog.received],
+        ["dropped", syslog.dropped, syslog.dropped ? "bad" : ""],
+      ]);
+    } else {
+      cells("syslog", [["input", "off (syslog_port is 0)"]]);
+    }
+
     var store = info.storage || {};
     cells("storage", [
       ["db", store.path],
@@ -105,7 +116,8 @@
         [script.script_id, "mono"],
         [tab, script.ui_title ? "" : (servesRoot ? "warn" : "muted")],
         [routes || "—", "mono lines"],
-        [script.state_handlers + " state / " + script.event_handlers + " event", ""],
+        [script.state_handlers + " state / " + script.event_handlers + " event" +
+          (script.syslog ? " / syslog" : ""), ""],
         [timers || "—", "lines"],
         [script.queue_len + " / " + script.queue_cap + (script.immediate_events ? " (immediate)" : ""), ""],
         [script.dropped_events, script.dropped_events ? "bad" : "muted"],

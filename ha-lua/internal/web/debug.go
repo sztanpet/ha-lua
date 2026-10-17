@@ -34,6 +34,8 @@ type DebugDeps struct {
 	Tracker   *state.Tracker
 	Client    *ha.Client
 	Logs      *logbuf.Buffer
+	// Syslog is nil while the syslog input is off.
+	Syslog func() SyslogInfo
 
 	RetentionDays int
 	PurgeInterval time.Duration
@@ -63,6 +65,13 @@ type storageInfo struct {
 	PurgeInterval string `json:"purge_interval"`
 }
 
+// SyslogInfo is the syslog input's counters.
+type SyslogInfo struct {
+	Addr     string `json:"addr"`
+	Received uint64 `json:"received"`
+	Dropped  uint64 `json:"dropped"`
+}
+
 type scriptInfo struct {
 	lua.RunnerStats
 	Timers []scheduler.TimerInfo `json:"timers"`
@@ -71,6 +80,7 @@ type scriptInfo struct {
 type debugInfo struct {
 	Runtime runtimeInfo  `json:"runtime"`
 	HA      *ha.Stats    `json:"ha,omitempty"`
+	Syslog  *SyslogInfo  `json:"syslog,omitempty"`
 	Scripts []scriptInfo `json:"scripts"`
 	Storage storageInfo  `json:"storage"`
 }
@@ -134,6 +144,10 @@ func collectInfo(ctx context.Context, deps DebugDeps) debugInfo {
 	if deps.Client != nil {
 		st := deps.Client.Stats()
 		info.HA = &st
+	}
+	if deps.Syslog != nil {
+		st := deps.Syslog()
+		info.Syslog = &st
 	}
 	if deps.Tracker != nil {
 		st := deps.Tracker.Stats()

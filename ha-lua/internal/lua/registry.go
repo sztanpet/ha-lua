@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/mqtt"
@@ -14,6 +15,8 @@ import (
 type Registry struct {
 	mu      sync.RWMutex
 	runners map[string]*Runner
+
+	syslogDropped atomic.Uint64
 }
 
 // NewRegistry creates an empty registry.
@@ -95,11 +98,14 @@ func (reg *Registry) DispatchSyslog(msg syslog.Message) {
 	reg.mu.RLock()
 	defer reg.mu.RUnlock()
 	for _, r := range reg.runners {
-		if r.WantsSyslog() {
-			r.Send(Event{SyslogMessage: &msg})
+		if r.WantsSyslog() && !r.Send(Event{SyslogMessage: &msg}) {
+			reg.syslogDropped.Add(1)
 		}
 	}
 }
+
+// SyslogDropped counts syslog deliveries lost to a full script queue.
+func (reg *Registry) SyslogDropped() uint64 { return reg.syslogDropped.Load() }
 
 // DispatchToTimer sends a TimerFiredEvent to the runner for scriptID.
 // The Send happens under the read lock: a runner's channel is closed only

@@ -150,3 +150,16 @@ func TestSyslogOverUDP(t *testing.T) {
 		t.Errorf("msg = %v", got)
 	}
 }
+
+func TestSyslogDropCounted(t *testing.T) {
+	reg := NewRegistry()
+	r := NewRunner("stuck", t.TempDir(), nil, nil, nil, nil, nil, nil)
+	r.wantsSyslog.Store(true)
+	reg.Add(r)
+	for range cap(r.ch) + 2 {
+		reg.DispatchSyslog(syslog.Message{Priority: -1})
+	}
+	if got := reg.SyslogDropped(); got != 2 {
+		t.Errorf("SyslogDropped = %d, want 2", got)
+	}
+}

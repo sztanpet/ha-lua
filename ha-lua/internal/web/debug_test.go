@@ -51,6 +51,9 @@ func TestDebugInfoWithNoSources(t *testing.T) {
 	if info.HA != nil {
 		t.Errorf("ha = %+v, want omitted", info.HA)
 	}
+	if info.Syslog != nil {
+		t.Errorf("syslog = %+v, want omitted while off", info.Syslog)
+	}
 	if info.Scripts == nil {
 		t.Error("scripts is null, want an empty list")
 	}
@@ -208,3 +211,12 @@ func TestDebugGoroutineDump(t *testing.T) {
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
+
+func TestDebugInfoReportsSyslog(t *testing.T) {
+	info := decodeInfo(t, DebugHandler(DebugDeps{Syslog: func() SyslogInfo {
+		return SyslogInfo{Addr: "[::]:5514", Received: 7, Dropped: 1}
+	}}))
+	if info.Syslog == nil || *info.Syslog != (SyslogInfo{Addr: "[::]:5514", Received: 7, Dropped: 1}) {
+		t.Errorf("syslog = %+v", info.Syslog)
+	}
+}

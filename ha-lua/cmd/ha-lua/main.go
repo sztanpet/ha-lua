@@ -292,6 +292,7 @@ func main() {
 		},
 		Router: router,
 		Debug: web.DebugHandler(web.DebugDeps{
+			Syslog:        syslogInfo(syslogListener, reg),
 			Version:       version,
 			Started:       started,
 			PprofAddr:     cfg.Debug.PprofAddr,
@@ -441,4 +442,13 @@ func startSyslog(ctx context.Context, cfg *config.Config, reg *luapkg.Registry) 
 		l.Serve(ctx, reg.DispatchSyslog)
 	})
 	return l
+}
+
+func syslogInfo(l *syslog.Listener, reg *luapkg.Registry) func() web.SyslogInfo {
+	if l == nil {
+		return nil
+	}
+	return func() web.SyslogInfo {
+		return web.SyslogInfo{Addr: l.Addr().String(), Received: l.Received(), Dropped: reg.SyslogDropped()}
+	}
 }
