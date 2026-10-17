@@ -21,6 +21,8 @@ without its extension (`lights.lua` → `lights`).
   - [UI tab — `ha.ui`](#hauititle)
   - [Logging](#logging)
   - [Exception handling](#exception-handling)
+- [`mqtt` — the broker](#mqtt--the-broker)
+- [`syslog` — pushed log lines](#syslog--pushed-log-lines)
 - [`store` — per-script storage](#store--per-script-storage)
 - [`global` — shared storage](#global--shared-storage)
 - [`require` — shared modules](#require--shared-modules)
@@ -581,6 +583,35 @@ device); everything else is JSON-encoded. `opts.qos` is 0–2 (default 0) and
 mqtt.publish("zigbee2mqtt/light1/set", { brightness_move = -40 })
 mqtt.publish("zigbee2mqtt/light1/set", { brightness_move = 0 })
 ```
+
+## `syslog` — pushed log lines
+
+Receives UDP syslog, so a device that can forward its log — a router, a NAS —
+can push an event the moment it happens instead of a script polling it.
+Enabled by the `syslog_port` add-on option (the add-on maps 5514/udp). **With
+the port unset, or taken, `syslog.on` raises**, like `mqtt.*` without a
+broker.
+
+UDP syslog has no authentication. Check `msg.from`, and only do things that are
+harmless if someone on the LAN fakes a line.
+
+### `syslog.on(fn)`
+
+```lua
+syslog.on(function(msg)
+  -- msg.from      "192.168.1.1" — the sender's address
+  -- msg.host      "AmonHen" — hostname from the header, nil if it has none
+  -- msg.facility  3, msg.severity 6 — from <PRI>, nil without one
+  -- msg.message   "interface,info ether3 link down" — the text after the header
+  -- msg.raw       the datagram as received
+end)
+```
+
+Every handler sees every datagram; filter with `strings`/`re`. May be called
+more than once, and from a callback. The parser is tolerant: RFC 3164, RFC
+5424, RouterOS's own formats, and bare text all work, and whatever it does not
+recognise as a header stays in `message`. Lines **bypass the 100 ms batch
+window**, like MQTT messages.
 
 ## `store` — per-script storage
 

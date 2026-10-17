@@ -115,6 +115,9 @@ The rules that keep this simple:
   to see a device Home Assistant never turns into an entity — a Zigbee2MQTT
   button published as a device trigger. An unconfigured broker disables the
   module and nothing else.
+- **Syslog is a third.** A device that can only log an event, like a router's
+  port going down, can push that line over UDP (`syslog.on`) instead of a
+  script polling it. Off unless `syslog_port` is set.
 
 ## Design decisions
 

@@ -74,6 +74,7 @@ Save it. The add-on log shows the script loading, and the automation is live.
 log_level: info
 timezone: ""
 http_port: 8100
+syslog_port: 0
 state_history:
   retention_days: 2
   purge_interval: "1h"
@@ -107,6 +108,13 @@ in a dashboard, or at `http://<ha-host>:8100/` for the tab bar. **This port is u
 whatever the script exposes. Keep it on the LAN, off the WAN. Set to `0` to
 disable the LAN listener (the authenticated ingress panel still works).
 Default `8100`.
+
+### Option: `syslog_port`
+
+UDP port for the syslog input (`syslog.on`). Set it to `5514`, the port the
+add-on maps, to receive syslog from devices on the LAN; `0` turns the input
+off. Like `http_port` it is **unauthenticated**. Default `0`. See *Receiving
+syslog* below.
 
 ### Option: `state_history.retention_days`
 
@@ -197,6 +205,8 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.exceptions.email(cfg)` / `ha.exceptions.log_file(path)` | Built-in error sinks |
 | `store.*` | Per-script persistent key-value store; `store.state(defaults)` is an auto-persisting proxy table |
 | `global.*` | Key-value store shared across all scripts |
+| `mqtt.subscribe(filter, fn)` / `mqtt.publish(topic, payload, opts)` | Talk to the MQTT broker directly |
+| `syslog.on(fn)` | Run `fn` for every syslog line pushed to `syslog_port` — see *Receiving syslog* below |
 | `require "mod"` | Load a module from `scripts/lib/` |
 | `fs.read(path)` / `fs.exists` / `fs.list` / `fs.stat` | Read files in the scripts directory — see *Reading and writing files* below |
 | `fs.write(path, content)` / `fs.append` / `fs.mkdir` / `fs.remove` | Write files in the scripts directory |
@@ -314,6 +324,36 @@ fs.remove("generated/report.html")            -- file or empty dir
 - For **data**, prefer `store.*`/`global.*` — they are transactional and
   survive script renames. `fs.write` is for files something else consumes
   (a served page, an export).
+
+## Receiving syslog
+
+Some devices cannot call anything when something happens, but they log it, and
+can forward that log over UDP syslog the moment each line is written. With
+`syslog_port: 5514` set, a script receives those lines as events:
+
+```lua
+local ROUTER = "192.168.1.1"
+
+syslog.on(function(msg)
+  if msg.from ~= ROUTER then return end
+  if msg.message:find(" ether3 link ", 1, true) then
+    ha.log("info", "PC port: " .. msg.message)
+  end
+end)
+```
+
+A MikroTik router forwards its interface log with (action names are letters
+and digits only):
+
+```
+/system logging action add name=halua target=remote remote=<ha-ip> remote-port=5514 remote-log-format=syslog add-topics-string=yes
+/system logging add topics=interface action=halua
+```
+
+`remote-log-format=syslog` puts the router's hostname in `msg.host`, and
+`add-topics-string=yes` keeps the `interface,info` prefix in `msg.message`.
+The Debug tab's **Syslog** section counts the datagrams received: if it stays
+at zero, the sender or a firewall is the problem, not the script.
 
 ## Examples
 
