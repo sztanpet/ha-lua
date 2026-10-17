@@ -4,6 +4,28 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.4.0 - 2026-10-17
+
+### Added
+- **Scripts can receive syslog.** Set the new `syslog_port` option to
+  `5514` (the add-on maps that UDP port) and `syslog.on(fn)` runs `fn` for
+  every line a device on the LAN sends, with the sender's address, the
+  hostname, facility and severity when the format has them, and the text.
+  A router that can only log a port going down can now push that event
+  instead of a script polling it. RFC 3164, RFC 5424 and RouterOS's own
+  formats are understood, and anything else arrives whole as the text.
+  With the option unset `syslog.on` raises. Syslog is unauthenticated, so
+  check `msg.from`. See *Receiving syslog* in the docs.
+- **The debug page has a Syslog section**: the bound port, datagrams
+  received, and lines dropped on a full script queue.
+
+### Changed
+- **`halo_pc_tv.lua` reads the PC's router port itself.** HA's MikroTik
+  integration polls every ~30 s and missed the one-second link drop at
+  power-on, so the example polls RouterOS's REST `link-downs` counter every
+  second, with a login from `global.get("mikrotik_login")`. It moves to
+  `syslog.on` in a later release.
+
 ## 5.3.0 - 2026-10-16
 
 ### Changed
