@@ -44,7 +44,7 @@ syslog.
 ## 3. Configuration
 
 - New option `syslog_port` (int, default `0` = off), in `internal/config`,
-  `config.yaml` (`options` + `schema`) and `config.dev.yaml`, next to
+  `config.yaml` (`options` + `schema`) and `dev-config.yaml`, next to
   `http_port`.
 - `config.yaml` `ports:` gains `"5514/udp": 5514`, with a `ports_description`
   entry. Not 514: the port is unprivileged, and stays clear of any other

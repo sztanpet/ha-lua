@@ -125,7 +125,7 @@ One HTTP server, one set of routes, reachable two ways:
 2. **Stable LAN port** (dashboard embedding + dev). `config.yaml` exposes a
    fixed port via `ports:` (e.g. `8100/tcp`); a Lovelace **Webpage card**
    points at `http://<ha-host>:8100/`. This is the URL that actually lives in a
-   dashboard view, and it is the port dev mode (`config.dev.yaml`) serves on —
+   dashboard view, and it is the port dev mode (`dev-config.yaml`) serves on —
    there is no Supervisor/ingress outside the add-on.
 
 The daemon binds both listeners to the same handler set; relative fetch URLs

@@ -149,6 +149,6 @@ is only about not losing the canonical copy from version control.
 - `embed_test.go` covers materialize/overwrite; `config_test.go` covers the
   forced `ExamplesDir`; the existing thermostat/schedule tests prove the renamed
   dir still feeds them.
-- Manual dev run: set `examples_dir` in `config.dev.yaml`, run
-  `./ha-lua --config config.dev.yaml`, confirm the dir is populated read-only and
+- Manual dev run: set `examples_dir` in `dev-config.yaml`, run
+  `./ha-lua --config dev-config.yaml`, confirm the dir is populated read-only and
   that nothing from it executes (only `scripts/` loads).

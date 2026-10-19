@@ -73,7 +73,7 @@ func TestLoadAddonMode(t *testing.T) {
 }
 
 func TestHTTPAndIngressPorts(t *testing.T) {
-	path := writeFile(t, "config.dev.yaml", `
+	path := writeFile(t, "dev-config.yaml", `
 homeassistant:
   url: "ws://x/api/websocket"
   token: "t"
@@ -123,7 +123,7 @@ func TestLoadAddonIgnoresConnectionOptions(t *testing.T) {
 }
 
 func TestLoadDevYAML(t *testing.T) {
-	path := writeFile(t, "config.dev.yaml", `
+	path := writeFile(t, "dev-config.yaml", `
 homeassistant:
   url: "ws://homeassistant.local:8123/api/websocket"
   token: "dev-token"

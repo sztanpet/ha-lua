@@ -9,4 +9,4 @@
 trace.out
 /config/
 benchmarks/current.txt
-config.dev.yaml
+dev-config.yaml

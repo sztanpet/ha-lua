@@ -110,7 +110,7 @@ to `ha-lua/`.
 | File | Purpose |
 |------|---------|
 | `config.yaml` | HA add-on manifest (options schema, arch, maps) — read by Supervisor, NOT the Go binary |
-| `config.dev.yaml` | Standalone config for development outside HA (passed via `--config`) |
+| `dev-config.yaml` | Standalone config for development outside HA (passed via `--config`) |
 | `Dockerfile` | Multi-stage: Go builder → `ghcr.io/home-assistant/base-debian` |
 | `run.sh` | Add-on entrypoint: passes `$SUPERVISOR_TOKEN` + fixed WS URL, execs binary |
 | `build.yaml` | Multi-arch targets for HA builder |

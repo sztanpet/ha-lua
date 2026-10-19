@@ -213,7 +213,7 @@ process.
   `internal/lua/thermostat_ui_test.go:96-145`) — the shell renders its tabs,
   the iframe loads the first script's page, changing the hash swaps the iframe,
   the debug page renders.
-- Manual: `go run ./cmd/ha-lua --config config.dev.yaml` with both examples in
+- Manual: `go run ./cmd/ha-lua --config dev-config.yaml` with both examples in
   `./scripts`, open `http://localhost:8100/` — a tab per example, thermostat
   controls still work (proves stripped-path forwarding), debug tab lists both
   scripts, their timers, and live log lines while events flow.

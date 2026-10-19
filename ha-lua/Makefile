@@ -21,9 +21,9 @@ push:
 	done
 
 # Run the daemon in development mode against the standalone dev config
-# (config.dev.yaml), outside Home Assistant. Ctrl-C to stop.
+# (dev-config.yaml), outside Home Assistant. Ctrl-C to stop.
 run:
-	go run ./cmd/ha-lua --config config.dev.yaml
+	go run ./cmd/ha-lua --config dev-config.yaml
 
 test:
 	go test -race ./...

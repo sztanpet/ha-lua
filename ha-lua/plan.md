@@ -89,7 +89,7 @@ ha-lua/
 ├── Makefile                  # analyzers pinned via go.mod `tool` directives
 ├── .golangci.yml
 ├── config.yaml               # HA add-on manifest (options schema, arch, maps)
-├── config.dev.yaml           # standalone config for development outside HA
+├── dev-config.yaml           # standalone config for development outside HA
 ├── Dockerfile                # multi-stage: Go builder → HA base image
 ├── run.sh                    # add-on entrypoint: reads options, execs binary
 ├── build.yaml                # multi-arch build targets for HA builder
@@ -415,7 +415,7 @@ Script KV data in SQLite persists across reloads automatically.
 
 When running as an add-on, the HA Supervisor writes user settings to `/data/options.json`. The binary reads this file at startup — this is the **only** production config channel; `run.sh` passes no flags. Connection details are not options: the URL is always `ws://supervisor/core/websocket`, the token comes from `$SUPERVISOR_TOKEN`, scripts are at `/config/ha-lua/scripts`, the daemon log is mirrored to `/config/ha-lua/logs/ha-lua.log` (and stderr), and the DB is at `/data/ha-lua.db`.
 
-### Development (`config.dev.yaml`)
+### Development (`dev-config.yaml`)
 
 For running outside HA (standalone development), a YAML file is used. Pass the path via `--config` flag; the binary falls back to `/data/options.json` if the flag is absent.
 
@@ -696,7 +696,7 @@ The `onFire` callback is provided by the runner — it sends a `TimerFiredEvent`
 2. `TZ` environment variable, if set
 3. UTC, with a startup warning that `ha.at` timers will fire in UTC
 
-The `timezone` option exists in both `config.dev.yaml` and the add-on options schema. All `next_run` values are still stored as RFC3339 UTC; the location only affects what wall-clock instant `"07:00"` maps to.
+The `timezone` option exists in both `dev-config.yaml` and the add-on options schema. All `next_run` values are still stored as RFC3339 UTC; the location only affects what wall-clock instant `"07:00"` maps to.
 
 ### `ha.after` persistence semantics
 

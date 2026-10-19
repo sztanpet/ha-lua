@@ -208,7 +208,7 @@ setup in one step:
 Run it outside Home Assistant with a YAML config:
 
 ```yaml
-# config.dev.yaml
+# dev-config.yaml
 homeassistant:
   url: "ws://homeassistant.local:8123/api/websocket"
   token: "your_long_lived_access_token"
@@ -218,7 +218,7 @@ log_level: "debug"
 ```
 
 ```sh
-./ha-lua --config config.dev.yaml
+./ha-lua --config dev-config.yaml
 ```
 
 Other targets:
