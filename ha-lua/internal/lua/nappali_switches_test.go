@@ -25,6 +25,7 @@ const (
 	nappaliSwitch2 = "zigbee2mqtt/switch2/action"
 	nappaliAblak   = "light.zbminir2_nappaliablak"
 	nappaliCsillar = "light.zbminir2_nappalicsillar"
+	nappaliKonyha  = "light.konyha_konyha_led"
 )
 
 // nappaliHarness runs the real examples/nappali_switches.lua against a spy
@@ -56,6 +57,7 @@ func newNappaliHarness(t *testing.T, ablak, csillar string) *nappaliHarness {
 	if err := tracker.Seed(ctx, []ha.StateData{
 		seedEntity(nappaliAblak, ablak, `{}`),
 		seedEntity(nappaliCsillar, csillar, `{}`),
+		seedEntity(nappaliKonyha, "off", `{}`),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,27 +135,37 @@ func (h *nappaliHarness) expectSilence() {
 	}
 }
 
-// TestNappaliSingleClickTogglesOwnLight: each button owns one light, and a
-// single click touches only that one.
-func TestNappaliSingleClickTogglesOwnLight(t *testing.T) {
+// TestNappaliSingleClickTogglesOneLight: a single click touches only the
+// button's own light — switch2's is the kitchen LED, not a living-room lamp.
+func TestNappaliSingleClickTogglesOneLight(t *testing.T) {
 	h := newNappaliHarness(t, "off", "off")
 
 	h.press(nappaliSwitch1, "single")
 	h.expectCmd("toggle " + nappaliAblak)
 	h.press(nappaliSwitch2, "single")
-	h.expectCmd("toggle " + nappaliCsillar)
+	h.expectCmd("toggle " + nappaliKonyha)
 }
 
-// TestNappaliDoubleAndHoldTakeTheRoom is the reason the script exists rather
-// than two one-liners: double and hold act on both lights as a group, from
-// either button.
-func TestNappaliDoubleAndHoldTakeTheRoom(t *testing.T) {
+// TestNappaliSwitch1DoubleAndHoldTakeTheRoom: switch1's double and hold act
+// on both living-room lights as a group.
+func TestNappaliSwitch1DoubleAndHoldTakeTheRoom(t *testing.T) {
 	h := newNappaliHarness(t, "off", "off")
 
 	h.press(nappaliSwitch1, "double")
 	h.expectCmd("turn_on " + nappaliAblak + "," + nappaliCsillar)
-	h.press(nappaliSwitch2, "hold")
+	h.press(nappaliSwitch1, "hold")
 	h.expectCmd("turn_on " + nappaliAblak + "," + nappaliCsillar)
+}
+
+// TestNappaliSwitch2DoubleAndHoldToggleChandelier: switch2's double and hold
+// reach the chandelier alone, leaving the window light be.
+func TestNappaliSwitch2DoubleAndHoldToggleChandelier(t *testing.T) {
+	h := newNappaliHarness(t, "on", "off")
+
+	h.press(nappaliSwitch2, "double")
+	h.expectCmd("toggle " + nappaliCsillar)
+	h.press(nappaliSwitch2, "hold")
+	h.expectCmd("toggle " + nappaliCsillar)
 }
 
 // TestNappaliGroupToggleTurnsOffWhenAnyIsOn: a half-lit room goes dark, it

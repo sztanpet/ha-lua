@@ -1,11 +1,11 @@
 -- nappali_switches.lua
 --
--- Two Aqara WXKG03LM rockers driving the two living-room lights straight off
--- the MQTT broker:
+-- Two Aqara WXKG03LM rockers driving lights straight off the MQTT broker:
 --
---   switch1 single  -> toggle light.zbminir2_nappaliablak
---   switch2 single  -> toggle light.zbminir2_nappalicsillar
---   double or hold  -> both lights, as a group
+--   switch1 single         -> toggle light.zbminir2_nappaliablak
+--   switch1 double or hold -> both living-room lights, as a group
+--   switch2 single         -> toggle light.konyha_konyha_led
+--   switch2 double or hold -> toggle light.zbminir2_nappalicsillar
 --
 -- WHY MQTT AND NOT AN ENTITY. Zigbee2MQTT 2.x publishes a button as an MQTT
 -- device trigger: it creates no entity, and Home Assistant consumes the press
@@ -13,9 +13,10 @@
 -- the HA WebSocket API can see it. The broker is the only place the press
 -- exists.
 --
--- "Both" is a GROUP toggle: if either light is on both go off, otherwise both
--- come on. Toggling each independently would leave a half-lit room half-lit,
--- swapping which lamp is on instead of clearing the room.
+-- A gesture naming several lights is a GROUP toggle: if any of them is on they
+-- all go off, otherwise they all come on. Toggling each independently would
+-- leave a half-lit room half-lit, swapping which lamp is on instead of clearing
+-- the room.
 --
 -- The device sends one word per gesture and never a "single" ahead of a
 -- "double", so a click acts immediately rather than waiting out a double-click
@@ -27,15 +28,28 @@
 --
 --   mosquitto_sub -h <broker> -t 'zigbee2mqtt/switch+/#' -v
 
-local BUTTONS = {
-  { topic = "zigbee2mqtt/switch1/action", light = "light.zbminir2_nappaliablak" },
-  { topic = "zigbee2mqtt/switch2/action", light = "light.zbminir2_nappalicsillar" },
-}
+local ABLAK = "light.zbminir2_nappaliablak"
+local CSILLAR = "light.zbminir2_nappalicsillar"
+local KONYHA_LED = "light.konyha_konyha_led"
 
-local ALL_LIGHTS = {}
-for _, button in ipairs(BUTTONS) do
-  table.insert(ALL_LIGHTS, button.light)
-end
+local BUTTONS = {
+  {
+    topic = "zigbee2mqtt/switch1/action",
+    actions = {
+      single = { ABLAK },
+      double = { ABLAK, CSILLAR },
+      hold = { ABLAK, CSILLAR },
+    },
+  },
+  {
+    topic = "zigbee2mqtt/switch2/action",
+    actions = {
+      single = { KONYHA_LED },
+      double = { CSILLAR },
+      hold = { CSILLAR },
+    },
+  },
+}
 
 -- When a press misbehaves the only useful question is what the button sent and
 -- what we made of it. Run the add-on at log_level: debug for that trace.
@@ -49,8 +63,8 @@ local function command(service, entity_id)
   ha.call_service("light", service, { entity_id = entity_id }, { wait = false })
 end
 
-local function any_light_on()
-  for _, light in ipairs(ALL_LIGHTS) do
+local function any_light_on(lights)
+  for _, light in ipairs(lights) do
     local state = ha.get_state(light)
     if state and state.state == "on" then
       return true
@@ -59,36 +73,34 @@ local function any_light_on()
   return false
 end
 
-local function toggle_all()
-  local service = any_light_on() and "turn_off" or "turn_on"
-  trace("both lights -> " .. service)
-  command(service, ALL_LIGHTS)
+local function switch(lights)
+  if #lights == 1 then
+    command("toggle", lights[1])
+    return
+  end
+  command(any_light_on(lights) and "turn_off" or "turn_on", lights)
 end
 
-local ACTIONS = {
-  double = toggle_all,
-  hold = toggle_all,
-}
-
+local seen = {}
 for _, button in ipairs(BUTTONS) do
-  local light = button.light
+  local actions = button.actions
   mqtt.subscribe(button.topic, function(topic, action)
-    if action == "single" then
-      trace(topic .. ": single -> toggle " .. light)
-      command("toggle", light)
-      return
-    end
-    local handler = ACTIONS[action]
-    if not handler then
+    local lights = actions[action]
+    if not lights then
       trace(string.format("%s: ignoring unknown action %q", topic, tostring(action)))
       return
     end
-    trace(topic .. ": " .. action)
-    handler()
+    trace(topic .. ": " .. action .. " -> " .. table.concat(lights, ","))
+    switch(lights)
   end)
 
-  if not ha.get_state(light) then
-    ha.log("warn", light .. " is unknown to the daemon — is that the right entity id?")
+  for _, lights in pairs(actions) do
+    for _, light in ipairs(lights) do
+      if not seen[light] and not ha.get_state(light) then
+        ha.log("warn", light .. " is unknown to the daemon — is that the right entity id?")
+      end
+      seen[light] = true
+    end
   end
-  ha.log("info", "nappali: watching " .. button.topic .. " for " .. light)
+  ha.log("info", "nappali: watching " .. button.topic)
 end

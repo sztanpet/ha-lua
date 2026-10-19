@@ -9,10 +9,9 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**v5.5.1** (detail in `state/core-daemon.md`): `config.dev.yaml` renamed to
-`dev-config.yaml` so the Supervisor stops parsing it as an add-on manifest.
-The syslog track is closed (`state/syslog.md`); the overshoot track's open
-items (pull v4.16.0, D1) are unchanged in `state/overshoot.md`.
+**nappali_switches remap** (detail in `state/bundled-examples.md`): switch2
+now toggles the kitchen LED on a single click and the chandelier alone on
+double/hold; switch1 unchanged. Unreleased; deployed to the box.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

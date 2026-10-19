@@ -724,17 +724,17 @@ after the fact, since one press turns into a burst of service calls.
 
 ## Zigbee button example
 
-`nappali_switches.lua` maps two Aqara WXKG03LM rockers onto the two lights of
-one room:
+`nappali_switches.lua` maps two Aqara WXKG03LM rockers onto three lights:
 
 | Gesture | Effect |
 |---------|--------|
 | `switch1` single | toggle `light.zbminir2_nappaliablak` |
-| `switch2` single | toggle `light.zbminir2_nappalicsillar` |
-| `double` or `hold`, either button | both lights, as a group |
+| `switch1` double or hold | both living-room lights, as a group |
+| `switch2` single | toggle `light.konyha_konyha_led` |
+| `switch2` double or hold | toggle `light.zbminir2_nappalicsillar` |
 
-**Both** is a group toggle, not two independent toggles: if either light is on
-both go off, otherwise both come on. Toggled independently, a half-lit room
+A gesture naming several lights is a group toggle, not independent toggles: if
+any of them is on they all go off, otherwise they all come on. Toggled independently, a half-lit room
 would stay half-lit — the gesture meant to take the whole room would only swap
 which lamp is on.
 
@@ -779,8 +779,9 @@ is logged and ignored.
 cp /config/ha-lua/examples/nappali_switches.lua /config/ha-lua/scripts/
 ```
 
-Then edit the `BUTTONS` table at the top — one `{ topic, light }` pair per
-button. Adding a third button extends the group the double and hold act on. At
+Then edit the `BUTTONS` table at the top — one entry per button: its topic,
+and for each gesture the lights it switches. One light is toggled, several are
+switched as a group. At
 `log_level: debug` every press is traced with what the script made of it.
 
 ## Durable reminders example

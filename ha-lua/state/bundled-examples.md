@@ -73,8 +73,10 @@ Status: **COMPLETE** (2.2.0); examples keep growing on top.
 - `ha.on_event` handlers get the event's DATA table, not the envelope.
 
 ## nappali_switches.lua
-- Two Aqara rockers over MQTT: single click owns one light, double/hold takes
-  both. "Both" is a GROUP toggle (any on → all off), a judgment call, not asked.
+- Two Aqara rockers over MQTT, a per-button gesture → lights map. switch1:
+  single ablak, double/hold both living-room lights. switch2 (user, 2026-10-19):
+  single konyha LED, double/hold csillár alone. A multi-light gesture is a
+  GROUP toggle (any on → all off), a judgment call, not asked.
 - The action topic is not retained, so a reload cannot replay a press.
 - Unverified: whether the device ever emits `single` ahead of `double`. If a
   double toggles one light then both, add a ~350 ms single-click debounce.
