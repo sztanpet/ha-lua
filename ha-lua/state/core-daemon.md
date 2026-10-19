@@ -63,3 +63,9 @@ tracks build on it; code review rounds are in `code-review.md`.
   does not repack part-full pages the way VACUUM does.
   Deployed 10-16 22:49 CEST: conversion took 539 ms on the 52 MB file; the
   first purge deleted 1653 rows and released 606 KB in ~40 ms; free 0 after.
+- Dev config renamed (10-19, v5.5.1, `92d3a7d`): the Supervisor globs
+  `config.*` with a yaml/yml/json suffix anywhere in an add-on repository
+  and parsed `config.dev.yaml` as a manifest ("Invalid app config!" on
+  every store reload). Never name a repo file `config.<ext>` again. The
+  same log's StoreGitError for repo `8e82c099` is ljsquare/hassio-addons
+  (GitHub 404, nothing installed from it) — the user's to remove.
