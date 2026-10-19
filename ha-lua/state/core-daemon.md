@@ -69,3 +69,4 @@ tracks build on it; code review rounds are in `code-review.md`.
   every store reload). Never name a repo file `config.<ext>` again. The
   same log's StoreGitError for repo `8e82c099` is ljsquare/hassio-addons
   (GitHub 404, nothing installed from it) — the user's to remove.
+  Deployed 10-19 10:53 CEST; store reload logs no manifest warning.
