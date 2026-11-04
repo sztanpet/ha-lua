@@ -22,7 +22,7 @@
 -- drops its remote connection and the call raises, and one that is busy can
 -- take the call and ignore it.
 
-local PC = "192.168.1.12:445"
+local PC = "192.168.1.21:445"
 local TV = "media_player.bedroom_tv"
 local PROBE_EVERY = "2s"
 -- The PC answers in under a millisecond on the wired LAN; a dropped SYN is

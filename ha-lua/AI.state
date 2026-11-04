@@ -9,9 +9,9 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**nappali_switches remap** (detail in `state/bundled-examples.md`): switch2
-now toggles the kitchen LED on a single click and the chandelier alone on
-double/hold; switch1 unchanged. Unreleased; deployed to the box.
+**halo_pc_tv PC address** (detail in `state/bundled-examples.md`): the PC's
+dynamic lease moved to 192.168.1.21 and the TV took .12; the probe now
+targets .21. Unreleased; deployed to the box.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

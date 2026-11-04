@@ -98,7 +98,7 @@ func newPcTvHarnessSyslog(t *testing.T, pcOn bool, tv string, syslogOn bool) *pc
 	script := filepath.Join(dir, "halo_pc_tv.lua")
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "halo_pc_tv.lua"), script)
 	rewriteShipped(t, script, map[string]string{
-		`local PC = "192.168.1.12:445"`: `local PC = "` + pc.addr + `"`,
+		`local PC = "192.168.1.21:445"`: `local PC = "` + pc.addr + `"`,
 		`local PROBE_EVERY = "2s"`:      `local PROBE_EVERY = "` + pcTvProbe.String() + `"`,
 		`local RETRY_EVERY = "20s"`:     `local RETRY_EVERY = "` + pcTvRetry.String() + `"`,
 		`time.parse_duration("60s")`:    `time.parse_duration("` + pcTvSettle.String() + `")`,

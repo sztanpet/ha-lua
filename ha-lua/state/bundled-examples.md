@@ -128,6 +128,12 @@ constraints, each learned from a field report:
 - Started unarmed at a mean of 18.7: nothing happens until it drops below 14.
 
 ## halo_pc_tv.lua (2026-10-12, `3e0161a`, deployed 20:29 CEST)
+- 2026-11-04: PC moved to 192.168.1.21 (HALOPC.lan, MAC 60:45:CB:A8:F6:28)
+  and the TV took .12 — both are dynamic leases and swapped around the
+  11-03 router upgrade. The probe hit the TV's closed 445, so every link wake
+  was reverted ("never answered"). PC IP updated, deployed 17:18 CEST. The
+  user declined static leases for now; the dlna_dmr entry for the TV still
+  points at .21 (now the PC). It can recur on any lease reshuffle.
 - `media_player.bedroom_tv` (androidtv_remote) follows the bedroom PC (HALOPC,
   192.168.1.12). Online = HA Ping integration, added by the user in the UI
   (the add-on can't create config entries): `binary_sensor.bedroom_halo_pc`,
