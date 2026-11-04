@@ -134,6 +134,10 @@ constraints, each learned from a field report:
   was reverted ("never answered"). PC IP updated, deployed 17:18 CEST. The
   user declined static leases for now; the dlna_dmr entry for the TV still
   points at .21 (now the PC). It can recur on any lease reshuffle.
+- Probing `HALOPC.lan` instead was measured and rejected (11-04): once the
+  30 min lease lapses the name is gone, and HA's DNS falls back to
+  Cloudflare, whose NXDOMAIN carries a 1800 s negative TTL. A woken PC stays
+  "no such host" for up to 30 min, so every link wake is reverted.
 - `media_player.bedroom_tv` (androidtv_remote) follows the bedroom PC (HALOPC,
   192.168.1.12). Online = HA Ping integration, added by the user in the UI
   (the add-on can't create config entries): `binary_sensor.bedroom_halo_pc`,
