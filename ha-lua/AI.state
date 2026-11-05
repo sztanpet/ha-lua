@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-10-19
+Last updated: 2026-11-05
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Anything readable off
@@ -9,9 +9,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**halo_pc_tv PC address** (detail in `state/bundled-examples.md`): the PC's
-dynamic lease moved to 192.168.1.21 and the TV took .12; the probe now
-targets .21. Unreleased; deployed to the box.
+**HA 2026.11 entity naming** (detail in `state/enhanced-climate.md`): card
+0.3.44 titles itself with `hass.formatEntityName`, released as v5.5.2. On the
+box, 18 devices were renamed and 36 entity names fixed over the WebSocket API,
+`customize.yaml` emptied, and the four heating zones moved to ESPHome
+sub-devices (esphome repo `33e7d34`).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -108,6 +110,13 @@ Add-on and UI
   `<ha-card>`, `<ha-icon>` and the editor's entity pickers are the exceptions.
   Card assets are Materialized on boot, so a card fix needs a new image AND a
   restart.
+- **Scripts keep reading `friendly_name`; only the card uses
+  `hass.formatEntityName`.** HA 2026.11 composes names from the registries
+  and plans to deprecate `friendly_name`, with no date, promising notice.
+  It is still set, and with the box's names now in the registries and
+  `customize.yaml` empty, it matches the cards for every entity without an
+  area of its own. Mirror the registries in the daemon only once HA
+  schedules the removal.
 
 Home automation examples
 - **A dimming ramp must be geometric, not linear**, stepped with `transition` =

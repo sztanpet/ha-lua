@@ -6,7 +6,7 @@ and the Lovelace card (`cards/enhanced-climate-card.js`). Spec:
 own file, `overshoot.md`. Global decisions live in `../AI.state`.
 
 Status: **COMPLETE and live** — it is the controller that actually runs the
-user's heating. Card VERSION **0.3.43** (v4.16.0).
+user's heating. Card VERSION **0.3.44** (v5.5.2).
 
 ## How it reaches a user
 - The card is embedded and Materialized to
@@ -51,7 +51,12 @@ user's heating. Card VERSION **0.3.43** (v4.16.0).
   check, which tore down the whole frontend websocket. The card makes zero REST
   calls.
 - `set hass` re-renders only when the climate, its companion, the radiator
-  sensor or the language changed (reference compare; HA replaces state objects).
+  sensor, the language or `hass.formatEntityName` changed (reference compare;
+  HA replaces state objects, and rebuilds the formatter only on a registry,
+  locale or config change).
+- The title is `hass.formatEntityName(climate, config.name)`, the name HA's
+  own cards show (2026.11 composes it from the registries); `friendly_name`
+  only before HA 2026.4.
 - The steppers echo taps locally and debounce writes (see the
   `local-echo-for-controls` memory).
 - HA removed `ha-entities-picker`; the editor uses the singular
@@ -72,3 +77,21 @@ user's heating. Card VERSION **0.3.43** (v4.16.0).
   any harness. Not a card bug.
 - Preset pill corners use `:first/last-of-type`, not `-child`: the pending
   spinner rides inside `.presets`.
+
+## HA 2026.11 naming (2026-11-05, v5.5.2)
+- The four zones are ESPHome sub-devices of the Konyha board (esphome repo
+  `33e7d34`): "Háló fűtés", "Nappali fűtés", "Gyerekszoba fűtés", "Fürdő
+  fűtés", each in its own HA area, climate marked main entity (registry name
+  `""`). Entity ids unchanged (`climate.konyha_*`).
+- **Moving an ESPHome entity between devices resets its saved state**: the
+  preference key is `object_id_hash ^ device_id`. The first boot after the move
+  came up with every zone OFF at its preset default. A second reboot restored
+  correctly, so it is once per move.
+- **Restoring a zone takes mode AND target in ONE `climate.set_temperature`**
+  (`hvac_mode` + `temperature`), with the target the device last had. Heat
+  alone enters heat at the boot default, and the controller reads a heat entry
+  whose target differs from `written` as the user at the dial: a permanent hold
+  on a schedule-less zone.
+- **Keep the ESPHome entity name when moving it.** HA follows a moved entity by
+  name (unique_id `mac/<device_hash>/climate/<name>` is migrated, entity_id
+  kept); a renamed or unnamed one comes back as a new entity.
