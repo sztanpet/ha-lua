@@ -189,6 +189,7 @@ temporarily — it exposes an unauthenticated debug server.
 | `ha.immediate_events()` | Opt out of the default 100 ms event batching — use for latency-sensitive automations |
 | `ha.get_state(entity_id)` | Current state of one entity |
 | `ha.get_entities(pattern)` / `ha.get_entity_ids(pattern)` | Bulk lookup by glob |
+| `ha.entity_name(id)` / `ha.device_name(id)` / `ha.area_name(id)` | The parts HA 2026.11 composes a name from — what `friendly_name` leaves out (the area) |
 | `ha.get_history(entity_id, since, limit)` | History from the local mirror |
 | `ha.duration_in_state(entity_id, state, since)` | Seconds spent in a state, plus whether history reaches back that far |
 | `ha.count_changes(entity_id, since, state)` | Transitions in a window (into `state` if given), plus the same flag |

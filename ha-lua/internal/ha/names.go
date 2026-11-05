@@ -207,8 +207,12 @@ func (n *Names) applyAreas(raw jsontext.Value) error {
 
 // EntityName is the entity's own name, without its device's: "" for a
 // device's main entity. ok is false for an entity the registry does not list
-// (disabled, or without a unique_id).
+// (disabled, or without a unique_id). The lookups are safe on a nil mirror,
+// which lists nothing.
 func (n *Names) EntityName(entityID string) (name string, ok bool) {
+	if n == nil {
+		return "", false
+	}
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	e, ok := n.entities[entityID]
@@ -217,6 +221,9 @@ func (n *Names) EntityName(entityID string) (name string, ok bool) {
 
 // DeviceName names the device behind a device id or one of its entities' ids.
 func (n *Names) DeviceName(lookup string) (string, bool) {
+	if n == nil {
+		return "", false
+	}
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	if d, ok := n.devices[lookup]; ok {
@@ -233,6 +240,9 @@ func (n *Names) DeviceName(lookup string) (string, bool) {
 // AreaName resolves an area id, an entity id or a device id, in that order, to
 // an area name. An entity's own area wins over its device's.
 func (n *Names) AreaName(lookup string) (string, bool) {
+	if n == nil {
+		return "", false
+	}
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	if name, ok := n.areas[lookup]; ok {

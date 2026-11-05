@@ -120,6 +120,7 @@ type Runner struct {
 	scheduler *scheduler.Scheduler
 	kv        *store.Store
 	global    *store.GlobalStore
+	names     *ha.Names
 
 	// Wired by caller after construction; nil = not yet connected.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
@@ -160,6 +161,10 @@ func NewRunner(scriptID, scriptDir string, root, logsRoot *os.Root, tracker *sta
 		global:    global,
 	}
 }
+
+// SetNames wires the shared registry mirror behind ha.entity_name and friends.
+// Unwired, every lookup misses.
+func (r *Runner) SetNames(names *ha.Names) { r.names = names }
 
 // ScriptID returns the script ID.
 func (r *Runner) ScriptID() string { return r.scriptID }
@@ -293,6 +298,7 @@ func (r *Runner) Start(ctx context.Context, scriptPath string) {
 		scriptID:         r.scriptID,
 		tracker:          r.tracker,
 		scheduler:        r.scheduler,
+		names:            r.names,
 		callService:      r.callService,
 		callServiceAsync: r.callServiceAsync,
 		asyncErrCh:       r.asyncErrCh,

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sztanpet/ha-lua/internal/ha"
 	"github.com/sztanpet/ha-lua/internal/scheduler"
 	"github.com/sztanpet/ha-lua/internal/state"
 	"github.com/sztanpet/ha-lua/internal/store"
@@ -52,6 +53,9 @@ type Deps struct {
 	MQTTSubscribe func(filter string) error
 	MQTTPublish   func(topic string, payload []byte, qos byte, retain bool) error
 	SyslogEnabled bool
+	// Names is the registry mirror behind ha.entity_name and friends. May be
+	// nil (every lookup then misses).
+	Names *ha.Names
 	// OnLoaded is called (on its own goroutine) once a started script has
 	// finished loading — the hook for subscribing newly required event
 	// types. May be nil.
@@ -127,6 +131,7 @@ func (s *Supervisor) StartScript(ctx context.Context, id string) {
 	}
 	r.SetRemoveState(s.deps.RemoveState)
 	r.SetSyslog(s.deps.SyslogEnabled)
+	r.SetNames(s.deps.Names)
 
 	sctx, cancel := context.WithCancel(ctx)
 	h := &scriptHandle{runner: r, cancel: cancel, done: make(chan struct{})}

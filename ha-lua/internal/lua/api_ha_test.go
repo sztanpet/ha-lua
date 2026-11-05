@@ -264,6 +264,75 @@ func TestGetState(t *testing.T) {
 	}
 }
 
+// The name parts answer what HA's templates answer, including the fallback to
+// the state's name for an entity the registry does not list.
+func TestNameBindings(t *testing.T) {
+	L, api, tracker, _ := newHALState(t)
+	ctx := context.Background()
+
+	lists := map[string]string{
+		"config/entity_registry/list_for_display": `{"entities":[
+			{"ei":"binary_sensor.halo_ablak","di":"dev-window"},
+			{"ei":"sensor.halo_ablak_battery","di":"dev-window","en":"Battery"}]}`,
+		"config/device_registry/list": `[{"id":"dev-window","name":"sonoff-door-1","name_by_user":"Ablak","area_id":"halo"}]`,
+		"config/area_registry/list":   `[{"area_id":"halo","name":"Háló"}]`,
+	}
+	api.names = ha.NewNames()
+	if err := api.names.Refresh(ctx, func(_ context.Context, msgType string) (jsontext.Value, error) {
+		return jsontext.Value(lists[msgType]), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = tracker.Seed(ctx, []ha.StateData{
+		{EntityID: "sensor.ha_lua_zone", State: "21", Attributes: jsontext.Value(`{"friendly_name":"Háló fűtés"}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+		{EntityID: "sensor.unnamed_thing", State: "1", Attributes: jsontext.Value(`{}`),
+			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},
+	})
+
+	if err := L.DoString(`
+		_got = {
+			main = ha.entity_name("binary_sensor.halo_ablak"),
+			battery = ha.entity_name("sensor.halo_ablak_battery"),
+			published = ha.entity_name("sensor.ha_lua_zone"),
+			unnamed = ha.entity_name("sensor.unnamed_thing"),
+			unknown = ha.entity_name("sensor.nope"),
+			device = ha.device_name("sensor.halo_ablak_battery"),
+			area = ha.area_name("binary_sensor.halo_ablak"),
+			no_device = ha.device_name("sensor.ha_lua_zone"),
+			no_area = ha.area_name("sensor.ha_lua_zone"),
+		}`); err != nil {
+		t.Fatal(err)
+	}
+	got := L.GetGlobal("_got").(*lua.LTable)
+	for key, want := range map[string]lua.LValue{
+		"main":      lua.LString(""),
+		"battery":   lua.LString("Battery"),
+		"published": lua.LString("Háló fűtés"),
+		"unnamed":   lua.LString("unnamed thing"),
+		"unknown":   lua.LNil,
+		"device":    lua.LString("Ablak"),
+		"area":      lua.LString("Háló"),
+		"no_device": lua.LNil,
+		"no_area":   lua.LNil,
+	} {
+		if v := got.RawGetString(key); v != want {
+			t.Errorf("%s = %v, want %v", key, v, want)
+		}
+	}
+}
+
+// An unwired mirror lists nothing; the bindings must not fall over on it.
+func TestNameBindingsWithoutMirror(t *testing.T) {
+	L, _, _, _ := newHALState(t)
+	if err := L.DoString(`_d, _a = ha.device_name("light.x"), ha.area_name("light.x")`); err != nil {
+		t.Fatal(err)
+	}
+	if L.GetGlobal("_d") != lua.LNil || L.GetGlobal("_a") != lua.LNil {
+		t.Errorf("got %v, %v; want nil, nil", L.GetGlobal("_d"), L.GetGlobal("_a"))
+	}
+}
+
 // The change context is what answers "who turned this on"; it must survive
 // the trip from the wire through the mirror into Lua.
 func TestGetStateExposesContext(t *testing.T) {

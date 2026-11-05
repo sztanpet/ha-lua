@@ -14,6 +14,7 @@ without its extension (`lights.lua` → `lights`).
 - [Conventions](#conventions)
 - [`ha` — core](#ha--core)
   - [Entity state](#entity-state)
+  - [Names](#names)
   - [Services and events](#services-and-events)
   - [Callbacks (load-time registration)](#callbacks-load-time-registration)
   - [Timers](#timers)
@@ -199,6 +200,46 @@ local who = ha.who_changed("light.hallway", time.now():add(-6 * time.hour))
 
 The answer is only as good as what is still stored: attribution needs both the
 change and the causing entity's own row inside the retention window.
+
+### Names
+
+Since 2026.11, Home Assistant names a thing once: the area says where, the
+device says what, the entity says which part of it. `friendly_name` is only the
+device and the entity, never the area, and HA plans to drop it. These three
+answer what HA's `entity_name()`, `device_name()` and `area_name()` templates
+answer, from a mirror of HA's registries that follows every change within a
+second or so. None of them raise.
+
+```lua
+-- "Háló Ablak Battery": every part that exists, room first.
+local function display_name(entity_id)
+  local parts = {}
+  for _, part in ipairs({ ha.area_name(entity_id) or "", ha.device_name(entity_id) or "",
+                          ha.entity_name(entity_id) or "" }) do
+    if part ~= "" then parts[#parts + 1] = part end
+  end
+  return #parts > 0 and table.concat(parts, " ") or entity_id
+end
+```
+
+#### `ha.entity_name(entity_id)`
+
+The entity's own name, without its device's: `"Battery"`, or `""` for a
+device's main entity. An entity the registry does not list (one without a
+unique_id, or published with `ha.set_state`) goes by its state's
+`friendly_name`, else its object id with the underscores spelled out. `nil`
+for an entity HA does not know.
+
+#### `ha.device_name(device_or_entity_id)`
+
+The device's name (yours if you renamed it), given its id or the id of one of
+its entities. `nil` when there is no device.
+
+#### `ha.area_name(area_device_or_entity_id)`
+
+The area's name, given an area id, an entity id or a device id. An entity's own
+area wins over its device's; a child device without an area inherits its
+parent's. `nil` when there is no area.
 
 ### Services and events
 

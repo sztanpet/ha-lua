@@ -3,6 +3,7 @@ package lua
 import (
 	"context"
 	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,7 @@ type haAPI struct {
 	scriptID  string
 	tracker   *state.Tracker
 	scheduler *scheduler.Scheduler
+	names     *ha.Names
 	// callService sends a service call to HA; set by runner wiring.
 	callService func(ctx context.Context, domain, service string, data jsontext.Value) error
 	// callServiceAsync backs { wait = false }: synchronous ordered send,
@@ -222,6 +224,53 @@ func registerStateQueries(L *lua.LState, haTable *lua.LTable, api *haAPI) {
 		}
 		return pushStringTable(L, ids)
 	}))
+
+	// The three name parts HA's templates expose, from the registry mirror.
+	L.SetField(haTable, "entity_name", L.NewFunction(func(L *lua.LState) int {
+		entityID := L.CheckString(1)
+		if name, ok := api.names.EntityName(entityID); ok {
+			L.Push(lua.LString(name))
+			return 1
+		}
+		// As in HA, an entity the registry does not list goes by its state's name.
+		s, err := api.tracker.GetState(L.Context(), entityID)
+		if err != nil || s == nil {
+			L.Push(lua.LNil)
+			return 1
+		}
+		L.Push(lua.LString(stateName(s)))
+		return 1
+	}))
+	L.SetField(haTable, "device_name", L.NewFunction(func(L *lua.LState) int {
+		name, ok := api.names.DeviceName(L.CheckString(1))
+		return pushName(L, name, ok)
+	}))
+	L.SetField(haTable, "area_name", L.NewFunction(func(L *lua.LState) int {
+		name, ok := api.names.AreaName(L.CheckString(1))
+		return pushName(L, name, ok)
+	}))
+}
+
+func pushName(L *lua.LState, name string, ok bool) int {
+	if ok {
+		L.Push(lua.LString(name))
+	} else {
+		L.Push(lua.LNil)
+	}
+	return 1
+}
+
+// stateName is HA's State.name: the friendly_name, else the object id spelled
+// out.
+func stateName(s *ha.StateData) string {
+	var attrs struct {
+		FriendlyName string `json:"friendly_name"`
+	}
+	if json.Unmarshal(s.Attributes, &attrs) == nil && attrs.FriendlyName != "" {
+		return attrs.FriendlyName
+	}
+	_, objectID, _ := strings.Cut(s.EntityID, ".")
+	return strings.ReplaceAll(objectID, "_", " ")
 }
 
 // registerHistoryQueries installs the reads that go to SQLite.
