@@ -4,6 +4,26 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.5.2 - 2026-11-05
+
+### Changed
+- **Card 0.3.44: a climate card without a `name:` shows the name Home
+  Assistant's own cards show.** HA 2026.11 composes card names from the
+  device and entity registries, and `friendly_name` (which the card read)
+  keeps a renamed entity's old name and is being deprecated, so a nameless
+  card could disagree with every built-in card next to it. The title now
+  comes from `hass.formatEntityName`, follows a device rename without
+  waiting for a state change, and falls back to `friendly_name` before HA
+  2026.4. A configured `name:` still wins.
+- **`nappali_switches.lua`: switch2's rocker toggles the kitchen LED** on a
+  single click, and the chandelier alone on a double click or a hold.
+  `BUTTONS` is now a per-button gesture → lights map.
+
+### Fixed
+- **`halo_pc_tv.lua` probes the bedroom PC at its new address.** The PC's
+  lease moved and the TV took the old one, so every wake on a router link
+  line was reverted as "the PC never answered".
+
 ## 5.5.1 - 2026-10-19
 
 ### Fixed
