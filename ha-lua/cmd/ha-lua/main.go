@@ -142,6 +142,10 @@ func main() {
 	materialize("cards", cfg.CardsDir, cards.Materialize)
 
 	client := ha.New(cfg.HomeAssistant.URL, cfg.HomeAssistant.Token)
+	names := ha.NewNames()
+	for _, et := range ha.NameEvents {
+		client.AddEventType(et)
+	}
 	client.Start(ctx)
 
 	// Block until the first seed so scripts start against a populated mirror.
@@ -153,6 +157,14 @@ func main() {
 	case <-ctx.Done():
 		return
 	}
+	// Not fatal: names fall back to the state's, and the next registry change
+	// or reconnect refetches.
+	if err := names.Refresh(ctx, client.Query); err != nil {
+		slog.Warn("registry fetch failed", "err", err)
+	}
+	go pprof.Do(ctx, pprof.Labels("goroutine", "names"), func(ctx context.Context) {
+		names.Run(ctx, client.Query)
+	})
 
 	// Every reconnect delivers a fresh batch; Seed dedups history rows.
 	go pprof.Do(ctx, pprof.Labels("goroutine", "state-seed"), func(ctx context.Context) {
@@ -164,6 +176,7 @@ func main() {
 				if err := tracker.Seed(ctx, states); err != nil {
 					slog.Warn("state re-seed failed", "err", err)
 				}
+				names.ChangedAll()
 			}
 		}
 	})
@@ -254,6 +267,7 @@ func main() {
 		MQTTSubscribe: mqttClient.Subscribe,
 		MQTTPublish:   mqttClient.Publish,
 		SyslogEnabled: syslogListener != nil,
+		Names:         names,
 		// AddEventType dedups and subscribes on the live connection, so
 		// scripts loaded or reloaded at any time get their events.
 		OnLoaded: func(r *luapkg.Runner) {
@@ -321,6 +335,8 @@ func main() {
 				if err := tracker.HandleStateChanged(ctx, ev.Data); err != nil {
 					slog.Warn("state tracker error", "err", err)
 				}
+			} else {
+				names.Changed(ev.Type)
 			}
 			reg.Dispatch(ev)
 		}
