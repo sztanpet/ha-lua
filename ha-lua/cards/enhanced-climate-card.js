@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.43";
+const VERSION = "0.3.44";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -594,6 +594,8 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
   _relevantChanged(prev, next) {
     if (!prev || !prev.states || !this._config) return true;
     if (prev.language !== next.language) return true;
+    // HA rebuilds the formatter only when the registries change: a device rename.
+    if (prev.formatEntityName !== next.formatEntityName) return true;
     const entity = this._config.climate_entity;
     const radiatorEntity = this._config.radiator_entity;
     return prev.states[entity] !== next.states[entity]
@@ -798,7 +800,9 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const companionAttrs = companion ? companion.attributes || {} : null;
     const mode = climate.state;
     const hvacAction = attrs.hvac_action;
-    const name = this._config.name || attrs.friendly_name || entity;
+    // The name HA's own cards show (2026.4+); friendly_name is being deprecated.
+    const name = (hass.formatEntityName && hass.formatEntityName(climate, this._config.name || undefined))
+      || this._config.name || attrs.friendly_name || entity;
 
     // Title = name, with a subtitle that pairs the current temperature and the
     // current mode/status side by side, split by a thin divider.

@@ -465,7 +465,7 @@ window_sensors: [binary_sensor.living_window] # optional, one or more
 radiator_entity: sensor.living_radiator_temp  # optional; display-only, shows
                                               # "rad. X°" on the status line
 presets: [15, 30, 60]                         # optional override minutes
-name: Living room                             # optional; else friendly_name
+name: Living room                             # optional; else the name HA's own cards show
 ```
 
 A GUI editor (the visual card editor, with entity pickers) is also provided, so

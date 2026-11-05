@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
@@ -853,5 +854,45 @@ func TestEnhancedClimateCardPendingSpinner(t *testing.T) {
 	}
 	if !cleared {
 		t.Error("spinner did not clear after the companion confirmed the command")
+	}
+}
+
+// TestEnhancedClimateCardName: an unnamed card titles itself with the name HA's
+// own cards show (hass.formatEntityName) and follows a registry rename even when
+// no state changed; a frontend without the formatter falls back to
+// friendly_name, and a configured name wins over both.
+func TestEnhancedClimateCardName(t *testing.T) {
+	ctx := newBrowserCtx(t)
+	srv := serveEnhancedCard(t)
+
+	// HA's formatter returns a string name as is and composes one otherwise.
+	withFormatter := func(states, composed string) string {
+		return `(window.__card.hass = Object.assign(window.__mkHass("en", ` + states + `), {
+			formatEntityName: (stateObj, name) => typeof name === "string" ? name : ` + strconv.Quote(composed) + `,
+		}), true)`
+	}
+	steps := []struct {
+		name, set, want string
+	}{
+		{"no formatter", `window.__apply("en", ` + cardStates + `)`, "Living Room"},
+		{"formatter", withFormatter(cardStates, "Nappali fűtés"), "Nappali fűtés"},
+		// Same state objects, new formatter: only the registries changed.
+		{"device rename", withFormatter("window.__card._hass.states", "Nappali radiátor"), "Nappali radiátor"},
+		{"configured name", `(window.__card.setConfig({ climate_entity: "climate.lr", name: "Fűtés" }), true)`, "Fűtés"},
+	}
+	var ok bool
+	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/")); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(step.set, &ok),
+			chromedp.Poll(`(() => { window.__title = window.__text(".title"); return window.__title === `+strconv.Quote(step.want)+`; })()`,
+				nil, chromedp.WithPollingTimeout(5*time.Second)),
+		); err != nil {
+			var got string
+			_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__title`, &got))
+			t.Fatalf("%s: title = %q, want %q (%v)", step.name, got, step.want, err)
+		}
 	}
 }
