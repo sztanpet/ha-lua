@@ -12,8 +12,8 @@ and only that one.
 **HA 2026.11 entity naming** (detail in `state/enhanced-climate.md`): card
 0.3.44 titles itself with `hass.formatEntityName`, released as v5.5.2. On the
 box, 18 devices were renamed and 36 entity names fixed over the WebSocket API,
-`customize.yaml` emptied, and the four heating zones moved to ESPHome
-sub-devices (esphome repo `33e7d34`).
+`customize.yaml` emptied, voice aliases restored, and the four heating zones
+moved to ESPHome sub-devices (esphome repo `33e7d34`). Deployed.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.

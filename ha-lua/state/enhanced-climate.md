@@ -95,3 +95,9 @@ user's heating. Card VERSION **0.3.44** (v5.5.2).
 - **Keep the ESPHome entity name when moving it.** HA follows a moved entity by
   name (unique_id `mac/<device_hash>/climate/<name>` is migrated, entity_id
   kept); a renamed or unnamed one comes back as a new entity.
+- Deployed 2026-11-05 19:50 (add-on 5.5.2, card file on the box is 0.3.44);
+  the dashboard resource moved to `?v=2026-11-05` so browsers refetch it.
+- The migration had made the OLD name the only voice alias of 25 entities
+  exposed to Assist (`aliases_v2` `[old]`, no computed name). Each is now
+  `[null, old]` (computed name first, old kept where it differs), so voice
+  answers to the new names too.
