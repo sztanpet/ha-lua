@@ -9,11 +9,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**HA 2026.11 entity naming** (detail in `state/enhanced-climate.md`): card
-0.3.44 titles itself with `hass.formatEntityName`, released as v5.5.2. On the
-box, 18 devices were renamed and 36 entity names fixed over the WebSocket API,
-`customize.yaml` emptied, voice aliases restored, and the four heating zones
-moved to ESPHome sub-devices (esphome repo `33e7d34`). Deployed.
+**HA 2026.11 naming model** (detail in `state/naming.md`): daemon registry
+mirror and `ha.entity_name/device_name/area_name` committed locally
+(`aaea9b7`..`25903d5`), unreleased. Nothing on the box changed yet. Next:
+rename-following in battery_levels/enhanced_climate, card name picker,
+release, then the box renames.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -31,6 +31,7 @@ moved to ESPHome sub-devices (esphome repo `33e7d34`). Deployed.
   retention overrides, the reminders lib. COMPLETE.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module. COMPLETE.
 - `state/syslog.md` — UDP syslog input, halo_pc_tv off the router poll.
+- `state/naming.md` — HA 2026.11 naming model adoption. IN PROGRESS.
 - `state/code-review.md` — rounds 1–5 CLOSED (v4.15.0 deployed); D1 pending.
 - (sse-spec.md has no implementation and no state file.)
 
