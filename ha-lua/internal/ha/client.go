@@ -4,6 +4,7 @@ package ha
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"log/slog"
@@ -70,10 +71,11 @@ type Client struct {
 }
 
 // cmdResult carries HA's outcome for a correlated command back to the waiting
-// caller of SendCommandWaitResult.
+// caller of SendCommandWaitResult or Query.
 type cmdResult struct {
 	success bool
 	errMsg  string
+	result  jsontext.Value
 }
 
 // New creates a Client for the WebSocket endpoint url. The core REST API base
@@ -150,20 +152,8 @@ const commandTimeout = 10 * time.Second
 // returned here, in the caller's send order, and never on the channel. The id
 // must be the one embedded in data (allocate it with NextID).
 func (c *Client) SendCommandAsync(ctx context.Context, id int, data []byte) (<-chan error, error) {
-	ch := make(chan cmdResult, 1)
-	c.mu.Lock()
-	conn := c.conn
-	if conn == nil {
-		c.mu.Unlock()
-		return nil, fmt.Errorf("ha: not connected")
-	}
-	c.pending[id] = ch
-	c.mu.Unlock()
-
-	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-		c.mu.Lock()
-		delete(c.pending, id)
-		c.mu.Unlock()
+	ch, err := c.send(ctx, id, data)
+	if err != nil {
 		return nil, err
 	}
 
@@ -171,11 +161,7 @@ func (c *Client) SendCommandAsync(ctx context.Context, id int, data []byte) (<-c
 	// Labelled: a waiter that outlives its command shows up in a goroutine
 	// dump as ha-command, next to the script that issued it.
 	go pprof.Do(ctx, pprof.Labels("goroutine", "ha-command"), func(ctx context.Context) {
-		defer func() {
-			c.mu.Lock()
-			delete(c.pending, id)
-			c.mu.Unlock()
-		}()
+		defer c.forget(id)
 		select {
 		case res := <-ch:
 			if !res.success {
@@ -207,6 +193,58 @@ func (c *Client) SendCommandWaitResult(ctx context.Context, id int, data []byte)
 	return <-out
 }
 
+// Query sends an argument-less command, such as config/area_registry/list, and
+// returns its result payload. It fails like SendCommandWaitResult does.
+func (c *Client) Query(ctx context.Context, msgType string) (jsontext.Value, error) {
+	id := c.NextID()
+	data, err := json.Marshal(commandMsg{ID: id, Type: msgType})
+	if err != nil {
+		return nil, err
+	}
+	ch, err := c.send(ctx, id, data)
+	if err != nil {
+		return nil, err
+	}
+	defer c.forget(id)
+	select {
+	case res := <-ch:
+		if !res.success {
+			return nil, fmt.Errorf("ha: %s rejected: %s", msgType, res.errMsg)
+		}
+		return res.result, nil
+	case <-time.After(commandTimeout):
+		return nil, fmt.Errorf("ha: no result for %s after %v", msgType, commandTimeout)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// send registers a waiter for id, then writes data. The caller must forget id
+// once it stops waiting.
+func (c *Client) send(ctx context.Context, id int, data []byte) (chan cmdResult, error) {
+	ch := make(chan cmdResult, 1)
+	c.mu.Lock()
+	conn := c.conn
+	if conn == nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("ha: not connected")
+	}
+	c.pending[id] = ch
+	c.mu.Unlock()
+
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		c.forget(id)
+		return nil, err
+	}
+	return ch, nil
+}
+
+func (c *Client) forget(id int) {
+	c.mu.Lock()
+	delete(c.pending, id)
+	c.mu.Unlock()
+}
+
 // deliverResult routes a "result" frame to the goroutine waiting on its id.
 // Frames with no waiter (subscribe acks, the inline get_states result) are
 // dropped. The waiter's channel is buffered (cap 1) with a single reader, so
@@ -234,7 +272,7 @@ func (c *Client) deliverResult(raw []byte) {
 		}
 	}
 	select {
-	case ch <- cmdResult{success: res.Success, errMsg: msg}:
+	case ch <- cmdResult{success: res.Success, errMsg: msg, result: res.Result}:
 	default:
 	}
 }

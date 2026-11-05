@@ -364,6 +364,60 @@ func TestSendCommandWaitResult(t *testing.T) {
 	}
 }
 
+// Query hands back the result payload, and a rejection as an error carrying
+// HA's message.
+func TestQuery(t *testing.T) {
+	srv := mockServer(t, func(ctx context.Context, conn *websocket.Conn) {
+		if _, err := serveAuth(ctx, conn); err != nil {
+			return
+		}
+		for {
+			var cmd map[string]any
+			if err := wsjson.Read(ctx, conn, &cmd); err != nil {
+				return
+			}
+			switch cmd["type"] {
+			case "get_states":
+				_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "result": []any{}})
+			case "subscribe_events":
+				_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "success": true})
+			case "config/area_registry/list":
+				_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "success": true,
+					"result": []any{map[string]any{"area_id": "kitchen", "name": "Konyha"}}})
+			default:
+				_ = wsjson.Write(ctx, conn, map[string]any{"id": cmd["id"], "type": "result", "success": false,
+					"error": map[string]any{"code": "unknown_command", "message": "Unknown command."}})
+			}
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c := New(wsURL(srv), "tok")
+	c.Start(ctx)
+	<-c.States
+
+	raw, err := c.Query(ctx, "config/area_registry/list")
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	var areas []struct {
+		AreaID string `json:"area_id"`
+		Name   string `json:"name"`
+	}
+	if err := json.Unmarshal(raw, &areas); err != nil {
+		t.Fatalf("result %s: %v", raw, err)
+	}
+	if len(areas) != 1 || areas[0].AreaID != "kitchen" || areas[0].Name != "Konyha" {
+		t.Errorf("result = %+v", areas)
+	}
+
+	if _, err := c.Query(ctx, "config/nope"); err == nil || !strings.Contains(err.Error(), "Unknown command") {
+		t.Errorf("rejected Query: err = %v, want HA's message", err)
+	}
+}
+
 // The REST base is derived from the WS URL: ws→http / wss→https, the trailing
 // /websocket dropped, and the result normalised to end in /api so both the
 // Supervisor and a direct-HA URL resolve to the right place.

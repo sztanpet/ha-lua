@@ -31,8 +31,9 @@ type incomingMsg struct {
 // resultMsg is HA's response frame to a command (call_service, subscribe, …):
 // success plus, on failure, an error code/message.
 type resultMsg struct {
-	ID      int  `json:"id"`
-	Success bool `json:"success"`
+	ID      int            `json:"id"`
+	Success bool           `json:"success"`
+	Result  jsontext.Value `json:"result"`
 	Error   struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
