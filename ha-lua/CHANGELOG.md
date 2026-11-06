@@ -4,6 +4,37 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.6.0 - 2026-11-06
+
+### Added
+- **`ha.entity_name(id)`, `ha.device_name(id)` and `ha.area_name(id)`**: the
+  parts Home Assistant 2026.11 composes a name from, answering what HA's
+  templates of the same names answer. `friendly_name` is only the device and
+  the entity, never the area, and HA plans to drop it. The daemon mirrors
+  HA's entity, device and area registries for these and follows every change
+  within a second or so.
+
+### Changed
+- **The Batteries and Climate pages name things by room**: area, device and
+  entity, the way HA's cards name them when they add the room. Once the room
+  is out of device names, as HA now asks, `friendly_name` reads "Window
+  Battery" in every room. The enhanced-climate companion sensor's
+  `friendly_name` carries the room too.
+- **Card 0.3.45: the editor's name field is HA's own name picker**, which can
+  compose area, device and entity so the title follows a rename. Plain text
+  still works.
+
+### Fixed
+- **Renaming an entity id in Home Assistant no longer strands a script's
+  state.** `battery_levels.lua` moves a battery's samples, trail and ignore,
+  and `enhanced_climate.lua` a climate's registration, schedule, holds and
+  learned overshoot coefficient, plus its window, radiator and outdoor
+  sensor references. Before, a renamed battery lost its samples on the next
+  scan and a renamed climate came back unregistered.
+- **The card no longer titles itself "[object Object]"** when given a
+  composed name on a frontend without HA's formatter, or while its climate
+  is unavailable.
+
 ## 5.5.2 - 2026-11-05
 
 ### Changed
