@@ -26,20 +26,20 @@ import (
 // halo_ajtokapcsolo is a pure input.
 var (
 	groupSwitches = []string{
-		"switch.halo_ajtokapcsolo",
-		"switch.halo_ajtoszekrenykapcsolo",
-		"switch.galeria_lepcsokapcsolo",
+		"switch.halo_ajto_kapcsolo",
+		"switch.halo_ajtoszekreny_kapcsolo",
+		"switch.galeria_lepcso_kapcsolo",
 	}
 	groupLamps = []string{
-		"light.bedroom_galeria_halo_led",
-		"switch.galeria_lepcsokapcsolo",
-		"switch.halo_ajtoszekrenykapcsolo",
+		"light.halo_led",
+		"switch.galeria_lepcso_kapcsolo",
+		"switch.halo_ajtoszekreny_kapcsolo",
 	}
 	// The relays that are both a trigger and a lamp.
-	groupRelay    = "switch.galeria_lepcsokapcsolo"
-	groupWardrobe = "switch.halo_ajtoszekrenykapcsolo"
+	groupRelay    = "switch.galeria_lepcso_kapcsolo"
+	groupWardrobe = "switch.halo_ajtoszekreny_kapcsolo"
 	// The one switch that is not also a lamp.
-	groupHall = "switch.halo_ajtokapcsolo"
+	groupHall = "switch.halo_ajto_kapcsolo"
 	// The whole group, in the order the example builds it: the lamps, then the
 	// switches not already among them. Everything here is commanded together
 	// and everything counts towards the group's state.

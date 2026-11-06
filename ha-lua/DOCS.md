@@ -691,7 +691,7 @@ can see it. The broker is the only place that press exists — which is why this
 script subscribes to it directly:
 
 ```lua
-mqtt.subscribe("zigbee2mqtt/ikea dimmer 1/action", function(_, action) … end)
+mqtt.subscribe("zigbee2mqtt/Konyha dimmer/action", function(_, action) … end)
 ```
 
 **The topic carries the friendly name verbatim, spaces and all** — it is not
@@ -739,10 +739,10 @@ after the fact, since one press turns into a burst of service calls.
 
 | Gesture | Effect |
 |---------|--------|
-| `switch1` single | toggle `light.zbminir2_nappaliablak` |
-| `switch1` double or hold | both living-room lights, as a group |
-| `switch2` single | toggle `light.konyha_konyha_led` |
-| `switch2` double or hold | toggle `light.zbminir2_nappalicsillar` |
+| window-lamp rocker, single | toggle `light.nappali_ablaklampa` |
+| window-lamp rocker, double or hold | both living-room lights, as a group |
+| chandelier rocker, single | toggle `light.konyha_led_szalag` |
+| chandelier rocker, double or hold | toggle `light.nappali_csillar` |
 
 A gesture naming several lights is a group toggle, not independent toggles: if
 any of them is on they all go off, otherwise they all come on. Toggled independently, a half-lit room

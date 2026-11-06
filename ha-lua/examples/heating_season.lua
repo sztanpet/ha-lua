@@ -10,16 +10,16 @@
 --
 -- Off only at OFF_AT, never going into a cold night.
 
-local AVERAGE = "sensor.kinti_3_napos_atlag"
+local AVERAGE = "sensor.kint_homero_3_napos_atlag"
 local ON_BELOW = 14
 local OFF_ABOVE = 17
 local OFF_AT = "10:00"
 
 local CLIMATES = {
-  "climate.konyha_furdo_futes",
-  "climate.konyha_nappali_futes",
-  "climate.konyha_halo_futes",
-  "climate.konyha_gyerekszoba_futes",
+  "climate.furdo_futes",
+  "climate.nappali_futes",
+  "climate.halo_futes",
+  "climate.gyerekszoba_futes",
 }
 
 -- Persisted so a restart neither re-sends heat nor forgets an armed off.

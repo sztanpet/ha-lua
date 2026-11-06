@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	seasonAverage = "sensor.kinti_3_napos_atlag"
+	seasonAverage = "sensor.kint_homero_3_napos_atlag"
 	seasonOffAt   = "heating_season|at|10:00|1"
-	seasonHeat    = "heat climate.konyha_furdo_futes,climate.konyha_nappali_futes," +
-		"climate.konyha_halo_futes,climate.konyha_gyerekszoba_futes"
-	seasonOff = "off climate.konyha_furdo_futes,climate.konyha_nappali_futes," +
-		"climate.konyha_halo_futes,climate.konyha_gyerekszoba_futes"
+	seasonHeat    = "heat climate.furdo_futes,climate.nappali_futes," +
+		"climate.halo_futes,climate.gyerekszoba_futes"
+	seasonOff = "off climate.furdo_futes,climate.nappali_futes," +
+		"climate.halo_futes,climate.gyerekszoba_futes"
 )
 
 // seasonHarness runs the real examples/heating_season.lua against a spy call

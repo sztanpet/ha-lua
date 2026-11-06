@@ -27,8 +27,8 @@
 ha.immediate_events()
 
 local SWITCHES = {
-  "switch.zbminir2_bejaratiajtokapcsolo",
-  "switch.zbminir2_folyoso",
+  "switch.eloszoba_bejarati_ajto_kapcsolo",
+  "switch.eloszoba_folyoso_kapcsolo",
 }
 
 -- Per-entity FIFO of states we commanded and expect back, with a deadline

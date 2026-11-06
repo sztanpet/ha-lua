@@ -17,8 +17,8 @@ import (
 
 // The entity ids hardcoded in the shipped example.
 const (
-	mirrorSwitchA = "switch.zbminir2_bejaratiajtokapcsolo"
-	mirrorSwitchB = "switch.zbminir2_folyoso"
+	mirrorSwitchA = "switch.eloszoba_bejarati_ajto_kapcsolo"
+	mirrorSwitchB = "switch.eloszoba_folyoso_kapcsolo"
 )
 
 // mirrorHarness runs the real examples/mirrored_switches.lua against a spy

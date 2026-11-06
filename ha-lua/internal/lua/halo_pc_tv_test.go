@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	pcTvTV = "media_player.bedroom_tv"
+	pcTvTV = "media_player.halo_tv"
 	// The shipped intervals are seconds; the copy under test uses these.
 	pcTvProbe    = 20 * time.Millisecond
 	pcTvRetry    = 150 * time.Millisecond

@@ -21,8 +21,8 @@
 -- Zigbee2MQTT publishes each press twice, as a bare word on
 -- "<base>/<device>/action" and inside the JSON state object on "<base>/<device>".
 -- Only the action topic is subscribed, so there is nothing to de-duplicate. The
--- topic carries the friendly name VERBATIM, spaces and all ("zigbee2mqtt/ikea
--- dimmer 1/action"), not the underscored entity id.
+-- topic carries the friendly name VERBATIM, spaces and all ("zigbee2mqtt/Konyha
+-- dimmer/action"), not the underscored entity id.
 --
 -- The light is driven through HA because it is not a Zigbee2MQTT device. If
 -- yours is, publishing {"brightness_move": ±rate} to "<base>/<light>/set" (and
@@ -35,9 +35,9 @@
 
 -- The Zigbee2MQTT friendly name, exactly as it appears in the topic —
 -- spaces included. Check yours with: mosquitto_sub -t 'zigbee2mqtt/#' -v
-local DIMMER = "ikea dimmer 1"
+local DIMMER = "Konyha dimmer"
 local ACTION_TOPIC = "zigbee2mqtt/" .. DIMMER .. "/action"
-local LIGHT = "light.konyha_konyha_led"
+local LIGHT = "light.konyha_led_szalag"
 
 local ON_BRIGHTNESS = 255 -- what a click on the on button sets; nil = the bulb's own last level
 local RAMP_STEP_SECS = 0.15

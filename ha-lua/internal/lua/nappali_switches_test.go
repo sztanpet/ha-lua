@@ -21,11 +21,11 @@ import (
 // Zigbee2MQTT friendly name, not the underscored entity id, and getting that
 // wrong means watching a topic that never publishes — so pin them here.
 const (
-	nappaliSwitch1 = "zigbee2mqtt/switch1/action"
-	nappaliSwitch2 = "zigbee2mqtt/switch2/action"
-	nappaliAblak   = "light.zbminir2_nappaliablak"
-	nappaliCsillar = "light.zbminir2_nappalicsillar"
-	nappaliKonyha  = "light.konyha_konyha_led"
+	nappaliSwitch1 = "zigbee2mqtt/Nappali ablaklámpa kapcsoló/action"
+	nappaliSwitch2 = "zigbee2mqtt/Nappali csillár kapcsoló/action"
+	nappaliAblak   = "light.nappali_ablaklampa"
+	nappaliCsillar = "light.nappali_csillar"
+	nappaliKonyha  = "light.konyha_led_szalag"
 )
 
 // nappaliHarness runs the real examples/nappali_switches.lua against a spy
@@ -33,7 +33,7 @@ const (
 type nappaliHarness struct {
 	t    *testing.T
 	reg  *Registry
-	cmds chan string // "toggle light.zbminir2_nappaliablak" / "turn_on light.a,light.b"
+	cmds chan string // "toggle light.nappali_ablaklampa" / "turn_on light.a,light.b"
 }
 
 func newNappaliHarness(t *testing.T, ablak, csillar string) *nappaliHarness {
@@ -136,7 +136,7 @@ func (h *nappaliHarness) expectSilence() {
 }
 
 // TestNappaliSingleClickTogglesOneLight: a single click touches only the
-// button's own light — switch2's is the kitchen LED, not a living-room lamp.
+// button's own light — the chandelier rocker's is the kitchen LED, not a living-room lamp.
 func TestNappaliSingleClickTogglesOneLight(t *testing.T) {
 	h := newNappaliHarness(t, "off", "off")
 
@@ -146,7 +146,7 @@ func TestNappaliSingleClickTogglesOneLight(t *testing.T) {
 	h.expectCmd("toggle " + nappaliKonyha)
 }
 
-// TestNappaliSwitch1DoubleAndHoldTakeTheRoom: switch1's double and hold act
+// TestNappaliSwitch1DoubleAndHoldTakeTheRoom: the window-lamp rocker's double and hold act
 // on both living-room lights as a group.
 func TestNappaliSwitch1DoubleAndHoldTakeTheRoom(t *testing.T) {
 	h := newNappaliHarness(t, "off", "off")
@@ -157,7 +157,7 @@ func TestNappaliSwitch1DoubleAndHoldTakeTheRoom(t *testing.T) {
 	h.expectCmd("turn_on " + nappaliAblak + "," + nappaliCsillar)
 }
 
-// TestNappaliSwitch2DoubleAndHoldToggleChandelier: switch2's double and hold
+// TestNappaliSwitch2DoubleAndHoldToggleChandelier: the chandelier rocker's double and hold
 // reach the chandelier alone, leaving the window light be.
 func TestNappaliSwitch2DoubleAndHoldToggleChandelier(t *testing.T) {
 	h := newNappaliHarness(t, "on", "off")

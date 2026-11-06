@@ -19,8 +19,8 @@ import (
 
 // The topic, ids and step size hardcoded in the shipped example.
 const (
-	dimmerActionTopic  = "zigbee2mqtt/ikea dimmer 1/action"
-	dimmerLight        = "light.konyha_konyha_led"
+	dimmerActionTopic  = "zigbee2mqtt/Konyha dimmer/action"
+	dimmerLight        = "light.konyha_led_szalag"
 	dimmerMin          = 3
 	dimmerOnBrightness = 255
 )

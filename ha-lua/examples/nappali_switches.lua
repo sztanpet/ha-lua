@@ -2,10 +2,10 @@
 --
 -- Two Aqara WXKG03LM rockers driving lights straight off the MQTT broker:
 --
---   switch1 single         -> toggle light.zbminir2_nappaliablak
---   switch1 double or hold -> both living-room lights, as a group
---   switch2 single         -> toggle light.konyha_konyha_led
---   switch2 double or hold -> toggle light.zbminir2_nappalicsillar
+--   window-lamp rocker, single         -> toggle light.nappali_ablaklampa
+--   window-lamp rocker, double or hold -> both living-room lights, as a group
+--   chandelier rocker, single          -> toggle light.konyha_led_szalag
+--   chandelier rocker, double or hold  -> toggle light.nappali_csillar
 --
 -- WHY MQTT AND NOT AN ENTITY. Zigbee2MQTT 2.x publishes a button as an MQTT
 -- device trigger: it creates no entity, and Home Assistant consumes the press
@@ -26,15 +26,15 @@
 -- Topics carry the Zigbee2MQTT friendly name verbatim, spaces included, not the
 -- underscored entity id. Confirm yours against the broker before editing:
 --
---   mosquitto_sub -h <broker> -t 'zigbee2mqtt/switch+/#' -v
+--   mosquitto_sub -h <broker> -t 'zigbee2mqtt/+/action' -v
 
-local ABLAK = "light.zbminir2_nappaliablak"
-local CSILLAR = "light.zbminir2_nappalicsillar"
-local KONYHA_LED = "light.konyha_konyha_led"
+local ABLAK = "light.nappali_ablaklampa"
+local CSILLAR = "light.nappali_csillar"
+local KONYHA_LED = "light.konyha_led_szalag"
 
 local BUTTONS = {
   {
-    topic = "zigbee2mqtt/switch1/action",
+    topic = "zigbee2mqtt/Nappali ablaklámpa kapcsoló/action",
     actions = {
       single = { ABLAK },
       double = { ABLAK, CSILLAR },
@@ -42,7 +42,7 @@ local BUTTONS = {
     },
   },
   {
-    topic = "zigbee2mqtt/switch2/action",
+    topic = "zigbee2mqtt/Nappali csillár kapcsoló/action",
     actions = {
       single = { KONYHA_LED },
       double = { CSILLAR },

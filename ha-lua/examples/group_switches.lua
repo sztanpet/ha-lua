@@ -38,15 +38,15 @@
 ha.immediate_events()
 
 local SWITCHES = {
-  "switch.halo_ajtokapcsolo",
-  "switch.halo_ajtoszekrenykapcsolo",
-  "switch.galeria_lepcsokapcsolo",
+  "switch.halo_ajto_kapcsolo",
+  "switch.halo_ajtoszekreny_kapcsolo",
+  "switch.galeria_lepcso_kapcsolo",
 }
 
 local LAMPS = {
-  "light.bedroom_galeria_halo_led",
-  "switch.galeria_lepcsokapcsolo",
-  "switch.halo_ajtoszekrenykapcsolo",
+  "light.halo_led",
+  "switch.galeria_lepcso_kapcsolo",
+  "switch.halo_ajtoszekreny_kapcsolo",
 }
 
 -- Whether an entity moved with no switch involved drags the group with it.
