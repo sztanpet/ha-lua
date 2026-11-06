@@ -1,5 +1,5 @@
 # AI Working State
-Last updated: 2026-11-05
+Last updated: 2026-11-06
 
 Small on purpose: where the work stopped, where the detail lives, and the
 cross-cutting decisions that must not be re-litigated. Anything readable off
@@ -9,11 +9,11 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**HA 2026.11 naming model** (detail in `state/naming.md`): daemon registry
-mirror and `ha.entity_name/device_name/area_name` committed locally
-(`aaea9b7`..`25903d5`), unreleased. Nothing on the box changed yet. Next:
-rename-following in battery_levels/enhanced_climate, card name picker,
-release, then the box renames.
+**HA 2026.11 naming model** (detail in `state/naming.md`): registry mirror,
+`ha.entity_name/device_name/area_name`, room-first names and rename-following
+in the battery and climate scripts, card 0.3.45 name picker — released as
+v5.6.0. Next: deploy, then the box's areas, names, Zigbee2MQTT names and
+entity ids with every dependant.
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -108,16 +108,21 @@ Add-on and UI
   tablets; anything hidden behind discovery must be a tap target.
 - **The Lovelace card is one vanilla file**: plain HTML + HA CSS variables,
   never HA's undocumented primitives (`ha-button`, `ha-switch`, …).
-  `<ha-card>`, `<ha-icon>` and the editor's entity pickers are the exceptions.
+  `<ha-card>`, `<ha-icon>`, the editor's entity pickers and its `ha-selector`
+  name picker (`entity_name`, documented for custom cards) are the exceptions.
   Card assets are Materialized on boot, so a card fix needs a new image AND a
   restart.
-- **Scripts keep reading `friendly_name`; only the card uses
-  `hass.formatEntityName`.** HA 2026.11 composes names from the registries
-  and plans to deprecate `friendly_name`, with no date, promising notice.
-  It is still set, and with the box's names now in the registries and
-  `customize.yaml` empty, it matches the cards for every entity without an
-  area of its own. Mirror the registries in the daemon only once HA
-  schedules the removal.
+- **A script that names entities across rooms composes area + device +
+  entity from `ha.area_name/device_name/entity_name`, never
+  `friendly_name`.** In HA 2026.11's model the room lives only in the area,
+  and `friendly_name` (device + entity) never carries it; HA also plans to
+  drop it. The registry mirror refetches a whole list after a 1 s lull, as
+  HA's frontend does — don't patch it from event payloads, which carry the
+  OLD values.
+- **Scripts that key stored state by entity id must follow
+  `entity_registry_updated` (`old_entity_id` → `entity_id`).** HA renames
+  ids in place and tells nobody else; battery_levels lost a renamed
+  battery's samples on the next scan, enhanced_climate a zone's schedule.
 
 Home automation examples
 - **A dimming ramp must be geometric, not linear**, stepped with `transition` =

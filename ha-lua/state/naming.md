@@ -4,32 +4,34 @@ Goal (user, 2026-11-05: "do it all"): adopt HA's model — area = room, device =
 what it is, entity = which part — plus Zigbee2MQTT names that match and
 regenerated entity IDs with EVERY dependant updated.
 
-## Done (local commits, not released)
+## Released: v5.6.0 (2026-11-06)
 - `aaea9b7` ha: Client.Query returns a command's result payload.
 - `aea4b0b` ha: Names mirrors list_for_display / device list / area list;
   refetch 1 s after the last registry event. Verified parsing on the live box.
 - `e0128a7` lua: ha.entity_name / device_name / area_name (HA template semantics).
 - `25903d5` daemon wiring: subscribe, fetch after first seed, ChangedAll on reconnect.
+- `40f6619` battery_levels: room-first names; moves series/events/tracked/
+  ignored on a rename (the next scan would otherwise drop the old id's series).
+- `95e163d` enhanced_climate: room-first names (page + companion friendly_name);
+  moves the registry entry and all 12 per-climate store keys on a climate
+  rename, rewires window/radiator/outdoor refs, removes the old companion.
+- `965df15` card 0.3.45: ha-selector entity_name picker (text-field fallback);
+  a composed name never prints "[object Object]".
+- Tag `v5.6.0` on `41236aa`.
 
 ## Next, in order
-1. battery_levels: name = area + device + entity; follow renames via
-   `ha.on_event("entity_registry_updated")` (data.old_entity_id → entity_id):
-   move `series:`/`events:` keys, `tracked`, `ignored`. Without it the next
-   scan deletes a renamed entity's series (state of old id is nil).
-2. enhanced_climate: same naming for page + companion friendly_name; follow
-   renames of climates (registry entry + ~12 per-climate store keys, remove the
-   old companion state) and of window/radiator/outdoor sensors in entries.
-3. Card 0.3.45: name field → `ha-selector` with `{entity_name: {}}`, context
-   `{entity: climate}`; unavailable notice must not print an array name.
-4. Release v5.6.0, deploy image + scripts (rename-following BEFORE any rename).
-5. Box: areas → Hungarian (Háló, Nappali, Fürdő, Gyerekszoba, Konyha; add
+1. Deploy: add-on update + restart; copy battery_levels.lua and
+   enhanced_climate.lua to the box (no lib/html change); bump the card's
+   lovelace resource cache-buster. Rename-following must be live BEFORE any
+   entity id changes.
+2. Box: areas → Hungarian (Háló, Nappali, Fürdő, Gyerekszoba, Konyha; add
    Galéria, Előszoba, Folyosó, Kint; English names as area aliases); assign
    ~55 devices; rename devices/entities (room out of names); voice aliases.
-6. Z2M (runs in ~/services/zigbee2mqtt, NOT the HA add-on, which is stopped):
+3. Z2M (runs in ~/services/zigbee2mqtt, NOT the HA add-on, which is stopped):
    names must be unique → "<area> <device>"; rename via bridge/request/device/
    rename, homeassistant_rename false. Update topics in ikea_dimmer.lua and
    nappali_switches.lua (+ tests, DOCS).
-7. Entity IDs via config/entity_registry/get_automatic_entity_ids + update
+4. Entity IDs via config/entity_registry/get_automatic_entity_ids + update
    new_entity_id. Dependants found: dashboards (lovelace_lights,
    dashboard_tablet), scripts (group_switches, halo_pc_tv, heating_season,
    ikea_dimmer, mirrored_switches, nappali_switches = repo examples + tests),
