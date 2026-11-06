@@ -9,11 +9,10 @@ Read this first. Then read `state/<track>.md` for the track you are touching —
 and only that one.
 
 ## Latest
-**HA 2026.11 naming model** (detail in `state/naming.md`): registry mirror,
-`ha.entity_name/device_name/area_name`, room-first names and rename-following
-in the battery and climate scripts, card 0.3.45 name picker — released as
-v5.6.0. Next: deploy, then the box's areas, names, Zigbee2MQTT names and
-entity ids with every dependant.
+**HA 2026.11 naming model** (detail in `state/naming.md`): done and deployed
+(v5.6.0, examples v5.6.1). The box names rooms as areas, devices for what
+they are; Zigbee2MQTT names are "<room> <device>"; 403 entity ids regenerated
+with every dependant rewritten, including the heating board (reflashed).
 
 ## State files (per spec)
 - `state/core-daemon.md` — the daemon itself (plan.md). COMPLETE.
@@ -31,7 +30,7 @@ entity ids with every dependant.
   retention overrides, the reminders lib. COMPLETE.
 - `state/mqtt.md` — MQTT client + Lua `mqtt` module. COMPLETE.
 - `state/syslog.md` — UDP syslog input, halo_pc_tv off the router poll.
-- `state/naming.md` — HA 2026.11 naming model adoption. IN PROGRESS.
+- `state/naming.md` — HA 2026.11 naming model adoption. COMPLETE.
 - `state/code-review.md` — rounds 1–5 CLOSED (v4.15.0 deployed); D1 pending.
 - (sse-spec.md has no implementation and no state file.)
 
