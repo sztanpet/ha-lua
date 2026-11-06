@@ -45,8 +45,10 @@ type enhancedFixture struct {
 	global  *store.GlobalStore
 	kv      *store.Store
 	tracker *state.Tracker
-	ctx     context.Context
-	t       *testing.T
+	// names starts empty; a test fills it with Refresh to give entities a room.
+	names *ha.Names
+	ctx   context.Context
+	t     *testing.T
 
 	mu      sync.Mutex
 	calls   []svcCall
@@ -85,6 +87,7 @@ func newEnhancedFixture(t *testing.T, prepare ...func(context.Context, *store.St
 		global:  global,
 		kv:      store.New(writeDB, readDB, "enhanced_climate"),
 		tracker: tracker,
+		names:   ha.NewNames(),
 		t:       t,
 	}
 	callService := func(_ context.Context, domain, service string, data jsontext.Value) error {
@@ -96,6 +99,7 @@ func newEnhancedFixture(t *testing.T, prepare ...func(context.Context, *store.St
 
 	sup := NewSupervisor(reg, dir, Deps{
 		Tracker:     tracker,
+		Names:       f.names,
 		Scheduler:   sched,
 		Global:      global,
 		Root:        openTestRoot(t, dir),
@@ -1285,6 +1289,77 @@ func TestEnhancedClimatePageResetAsks(t *testing.T) {
 	}
 	if declined != 0 || accepted != 1 {
 		t.Fatalf("resets sent: %d after declining, %d after confirming; want 0 and 1", declined, accepted)
+	}
+}
+
+// A zone is named with its room: with the room out of device names, every
+// zone's device is "Fűtés", and friendly_name never says which room it heats.
+func TestEnhancedClimateNamesTheRoom(t *testing.T) {
+	f := newEnhancedFixture(t)
+	waitRouteID(t, f.router, "enhanced_climate", "GET", "/api/list")
+	refreshTestNames(t, f.names,
+		`{"entities":[{"ei":"climate.halo_futes","di":"dev-zone"}]}`,
+		`[{"id":"dev-zone","name":"Fűtés","area_id":"halo"}]`,
+		`[{"area_id":"halo","name":"Háló"}]`)
+
+	f.seedClimate("climate.halo_futes", `{"friendly_name":"Fűtés","current_temperature":20,"temperature":20,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"climate.halo_futes"}`)
+	f.waitCompanion("sensor.ha_lua_enhanced_climate_halo_futes", func(_ string, attrs map[string]any) bool {
+		return attrs["friendly_name"] == "Háló Fűtés"
+	}, "the companion named with the room")
+
+	rec := doReqID(f.router, "enhanced_climate", "GET", "/api/list", "")
+	var listed struct {
+		Climates []struct {
+			Name string `json:"name"`
+		} `json:"climates"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode /api/list %q: %v", rec.Body.String(), err)
+	}
+	if len(listed.Climates) != 1 || listed.Climates[0].Name != "Háló Fűtés" {
+		t.Errorf("listed %+v, want one climate named Háló Fűtés", listed.Climates)
+	}
+}
+
+// HA renaming a climate and its window sensor must carry the schedule and the
+// learned c along, rewire the window, and leave no companion behind under the
+// old id.
+func TestEnhancedClimateFollowsRename(t *testing.T) {
+	const (
+		oldClimate, newClimate = "climate.konyha_halo_futes", "climate.halo_futes"
+		oldWindow, newWindow   = "binary_sensor.sonoff_door_1_contact", "binary_sensor.halo_ablak"
+	)
+	f := newEnhancedFixture(t)
+	waitRouteID(t, f.router, "enhanced_climate", "GET", "/api/list")
+	f.seedClimate(oldClimate, `{"current_temperature":20,"temperature":20,"min_temp":7,"max_temp":35}`)
+	f.fireCommand("configure", `{"climate_entity":"`+oldClimate+`","window_sensors":["`+oldWindow+`"],"radiator_entity":"sensor.halo_radiator_temp"}`)
+	f.waitRegistry(func(m map[string]any) bool { return m != nil && m[oldClimate] != nil }, "the climate configured")
+	f.setStore("schedule:"+oldClimate, map[string]any{"0": []any{map[string]any{"time": "06:00", "temp": 21.5}}})
+	f.setStoreNumber("overshoot_c:"+oldClimate, 0.4)
+
+	for old, renamed := range map[string]string{oldClimate: newClimate, oldWindow: newWindow} {
+		f.reg.Dispatch(ha.Event{Type: "entity_registry_updated", Data: jsontext.Value(fmt.Sprintf(
+			`{"action":"update","entity_id":%q,"old_entity_id":%q,"changes":{"entity_id":%q}}`, renamed, old, old))})
+	}
+	reg := f.waitRegistry(func(m map[string]any) bool {
+		entry, _ := m[newClimate].(map[string]any)
+		windows, _ := entry["window_sensors"].([]any)
+		return m[oldClimate] == nil && len(windows) == 1 && windows[0] == newWindow
+	}, "the registry following both renames")
+
+	entry := reg[newClimate].(map[string]any)
+	if entry["climate_entity"] != newClimate || entry["radiator_entity"] != "sensor.halo_radiator_temp" {
+		t.Errorf("moved entry = %+v", entry)
+	}
+	if f.storeMap("schedule:"+newClimate) == nil || f.storeMap("schedule:"+oldClimate) != nil {
+		t.Errorf("schedule not moved: new %v, old %v", f.storeMap("schedule:"+newClimate), f.storeMap("schedule:"+oldClimate))
+	}
+	if c := f.storeNumber("overshoot_c:" + newClimate); c != 0.4 {
+		t.Errorf("learned c = %v after the rename, want 0.4", c)
+	}
+	if !f.removedCompanion("sensor.ha_lua_enhanced_climate_konyha_halo_futes") {
+		t.Error("the old id's companion was left behind")
 	}
 }
 

@@ -109,13 +109,16 @@ local mode, current_target = climate_lib.mode, climate_lib.target
 local current_temp = climate_lib.current_temp
 local temp_bounds = climate_lib.bounds
 
--- The entity's friendly_name, falling back to the id while it has none.
-local function friendly_name(climate)
-  local state = ha.get_state(climate)
-  if state and state.attributes and type(state.attributes.friendly_name) == "string" then
-    return state.attributes.friendly_name
+-- Room, device and entity, as HA's cards name a climate when they add the
+-- room: with the room out of device names, every zone's device is "Fűtés".
+local function display_name(climate)
+  local parts = {}
+  for _, part in ipairs({ ha.area_name(climate) or "", ha.device_name(climate) or "",
+                          ha.entity_name(climate) or "" }) do
+    if part ~= "" then parts[#parts + 1] = part end
   end
-  return climate
+  if #parts == 0 then return climate end
+  return table.concat(parts, " ")
 end
 
 local function load_schedule(climate)
@@ -453,7 +456,7 @@ local function publish_companion(climate, now, desired_temp)
   local cfg = load_registry()[climate]
   if cfg == nil then return end
   local lo, hi = temp_bounds(climate)
-  local friendly = friendly_name(climate)
+  local friendly = display_name(climate)
 
   local override_tbl = { active = false }
   local override = active_override(climate, now)
@@ -782,6 +785,64 @@ card.on("remove", function(data)
   remove_climate(data.climate_entity)
 end)
 
+local PER_CLIMATE_KEYS = {
+  sched_key, override_key, manual_key, override_temp_key, desired_key, written_key, restore_key,
+  c_key, samples_key, episode_key, journal_key, observe_key,
+}
+
+-- HA renaming an entity id moves nothing here on its own: a renamed climate
+-- would come back unregistered, its schedule, holds and learned c stranded
+-- under the old id, and a renamed sensor would quietly stop feeding its climate.
+ha.on_event("entity_registry_updated", function(data)
+  local old, new = data.old_entity_id, data.entity_id
+  if data.action ~= "update" or type(old) ~= "string" or type(new) ~= "string" or old == new then
+    return
+  end
+  local reg = load_registry()
+  local changed = false
+
+  local cfg = reg[old]
+  if cfg ~= nil then
+    reg[old], reg[new] = nil, cfg
+    cfg.climate_entity = new
+    for _, key in ipairs(PER_CLIMATE_KEYS) do
+      local value = store.get(key(old))
+      if value ~= nil then
+        store.set(key(new), value)
+        store.delete(key(old))
+      end
+    end
+    published[old] = nil
+    local _, err = card.remove(slug_of(old))
+    if err then
+      ha.log("warn", "remove companion for " .. old .. " failed: " .. err)
+    end
+    changed = true
+  end
+
+  for _, entry in pairs(reg) do
+    for i, sensor in ipairs(entry.window_sensors or {}) do
+      if sensor == old then
+        entry.window_sensors[i] = new
+        changed = true
+      end
+    end
+    if entry.radiator_entity == old then
+      entry.radiator_entity = new
+      changed = true
+    end
+    if entry.outdoor_entity == old then
+      entry.outdoor_entity = new
+      changed = true
+    end
+  end
+
+  if changed then
+    save_registry(reg)
+    ha.log("info", "followed the rename " .. old .. " -> " .. new)
+  end
+end)
+
 -- Replaces the 7-day schedule, bounded by the device's range.
 card.on("schedule", function(data)
   local climate = data.climate_entity
@@ -890,7 +951,7 @@ local function list_climates()
   for climate, cfg in pairs(load_registry()) do
     out[#out + 1] = {
       climate_entity = climate,
-      name = friendly_name(climate),
+      name = display_name(climate),
       window_sensors = cfg.window_sensors or {},
       presets = cfg.presets or {},
       radiator_entity = cfg.radiator_entity or "",
@@ -927,7 +988,7 @@ end)
 local function overshoot_report(climate)
   local status = overshoot_status(climate)
   status.climate_entity = climate
-  status.name = friendly_name(climate)
+  status.name = display_name(climate)
   status.episode = live_episode(climate)
   status.journal = store.get(journal_key(climate)) or {}
   return status

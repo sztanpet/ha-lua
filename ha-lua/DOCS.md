@@ -486,6 +486,11 @@ the **Enhanced climate** Ingress page (the add-on's sidebar panel), which lists
 every provisioned climate with a Remove button. This also cleans up climates
 left behind by a card you deleted.
 
+**Renaming one.** Changing the climate's entity id in Home Assistant, or the id
+of one of its window, radiator or outdoor sensors, carries its schedule, holds
+and learned overshoot coefficient over to the new id; the companion sensor
+follows on the next tick. Point the card at the new id too.
+
 Caveats:
 
 - **Admin user required.** The card provisions and edits by firing a

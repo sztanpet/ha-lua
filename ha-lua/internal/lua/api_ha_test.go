@@ -269,18 +269,24 @@ func TestGetState(t *testing.T) {
 // newTestNames fills a registry mirror from HA-shaped list results.
 func newTestNames(t testing.TB, entities, devices, areas string) *ha.Names {
 	t.Helper()
+	names := ha.NewNames()
+	refreshTestNames(t, names, entities, devices, areas)
+	return names
+}
+
+// refreshTestNames refills a mirror a runner already holds.
+func refreshTestNames(t testing.TB, names *ha.Names, entities, devices, areas string) {
+	t.Helper()
 	lists := map[string]string{
 		"config/entity_registry/list_for_display": entities,
 		"config/device_registry/list":             devices,
 		"config/area_registry/list":               areas,
 	}
-	names := ha.NewNames()
 	if err := names.Refresh(context.Background(), func(_ context.Context, msgType string) (jsontext.Value, error) {
 		return jsontext.Value(lists[msgType]), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return names
 }
 
 func TestNameBindings(t *testing.T) {
