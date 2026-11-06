@@ -4,6 +4,17 @@ All notable changes to this add-on are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 5.6.1 - 2026-11-06
+
+### Changed
+- **The examples use the box's new names.** Home Assistant entity ids are now
+  area, device and entity (`light.nappali_csillar`, `climate.halo_futes`), and
+  Zigbee2MQTT names are the room plus the device (`Konyha dimmer`), so
+  `ikea_dimmer.lua` and `nappali_switches.lua` subscribe to the new topics and
+  `group_switches.lua`, `mirrored_switches.lua`, `heating_season.lua` and
+  `halo_pc_tv.lua` drive the renamed entities. Edit them for your own ids as
+  before.
+
 ## 5.6.0 - 2026-11-06
 
 ### Added
