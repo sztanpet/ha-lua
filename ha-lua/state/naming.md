@@ -42,6 +42,17 @@ regenerated entity ids with every dependant updated. DONE 2026-11-06.
 - The two outdoor statistics helpers (daily mean, 3-day average) lost their
   window at the rename and averaged only new readings (2.4 instead of 6.3)
   until reloaded at 05:49; the dip stays in their history.
+- The daily mean was renamed "napi átlag" (`sensor.kint_homero_napi_atlag`)
+  to match "3-napos átlag". Dependants: the Fürdő morning automation's
+  condition, and `outdoor_entity` on all four enhanced-climate cards (the
+  script's own registry followed by itself).
+- Fürdő, Háló and Nappali heating history merged live at 06:01 (user OK'd;
+  restart offered and judged unnecessary): rows swapped between
+  `states_meta` ids so the recorder's cached ids (180–182) now hold June →
+  now, and the dead generic thermostats' 190 "unavailable" rows each went to
+  449–451, renamed `climate.<zone>_futes_old_generic`. Undo: swap back
+  (rows of 180–182 below `last_updated_ts` 1793932860 ↔ all of 449–451)
+  and rename 449–451 to `climate.konyha_<zone>_futes`.
 - The three commented-out generic_thermostat entries were removed: they held
   climate.halo_futes etc.
 - The kitchen LED is its own ESPHome device ("LED szalag", Konyha).
@@ -66,10 +77,8 @@ regenerated entity ids with every dependant updated. DONE 2026-11-06.
 - **The recorder will not move history onto an id that already has a
   states_meta row** ("Cannot migrate history … already in use"), even one
   left by a long-deleted entity. Check states_meta for the target ids first.
-  It hit Fürdő, Háló and Nappali heating: their history from 2026-06-07 to
-  03:41 is still under `climate.konyha_*_futes` (retention is 730 days).
-  Merging it into the new ids needs a write to the live recorder DB; offered
-  to the user, not done.
+  It hit Fürdő, Háló and Nappali heating (merged by hand, see above);
+  retention is 730 days, so such a split does not age out.
 
 ## Found broken before this work (not touched)
 - Offline in Zigbee2MQTT since 2026-11-05 07:55: Ventilátor, Konyha hűtő,
