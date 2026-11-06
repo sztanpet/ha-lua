@@ -27,6 +27,14 @@ import (
 // waiting days for one.
 func serveBatteryLevels(t *testing.T, seed []ha.StateData, series map[string]any) *Router {
 	t.Helper()
+	router, _, _ := startBatteryLevels(t, seed, series, nil)
+	return router
+}
+
+// startBatteryLevels is serveBatteryLevels with a registry mirror wired in,
+// handing back the runner (to deliver HA events to) and the script's store.
+func startBatteryLevels(t *testing.T, seed []ha.StateData, series map[string]any, names *ha.Names) (*Router, *Runner, *store.Store) {
+	t.Helper()
 	dir := t.TempDir()
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "battery_levels.lua"), filepath.Join(dir, "battery_levels.lua"))
 	copyRepoFile(t, filepath.Join(repoScriptsDir, "battery_levels.html"), filepath.Join(dir, "battery_levels.html"))
@@ -52,6 +60,7 @@ func serveBatteryLevels(t *testing.T, seed []ha.StateData, series map[string]any
 	}
 
 	r := NewRunner("battery_levels", dir, openTestRoot(t, dir), openTestRoot(t, t.TempDir()), tracker, sched, kv, global)
+	r.SetNames(names)
 	reg.Add(r)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -64,7 +73,7 @@ func serveBatteryLevels(t *testing.T, seed []ha.StateData, series map[string]any
 		t.Fatal("battery_levels.lua did not finish loading")
 	}
 	router.Register("battery_levels", r.Routes())
-	return router
+	return router, r, kv
 }
 
 // sample builds one stored series entry as the script writes it.
@@ -741,6 +750,100 @@ func TestBatteryLevelsIgnore(t *testing.T) {
 	postIgnore(t, router, "sensor.nonexistent_battery", true, 404)
 	if rec := doReqID(router, "battery_levels", "POST", "/api/ignore", `{"ignored":true}`); rec.Code != 400 {
 		t.Errorf("POST without an entity_id = %d, want 400", rec.Code)
+	}
+}
+
+// A row names its battery the way HA's cards do when they add the room;
+// friendly_name alone is "Ablak Battery" in every room.
+func TestBatteryLevelsNamesTheRoom(t *testing.T) {
+	seed := []ha.StateData{
+		{EntityID: "sensor.halo_ablak_battery", State: "80",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Ablak Battery"}`),
+			LastChanged: time.Now().UTC().Format(time.RFC3339)},
+		{EntityID: "sensor.phone_battery", State: "60",
+			Attributes:  jsontext.Value(`{"device_class":"battery","friendly_name":"Phone"}`),
+			LastChanged: time.Now().UTC().Format(time.RFC3339)},
+	}
+	names := newTestNames(t,
+		`{"entities":[{"ei":"sensor.halo_ablak_battery","di":"dev-window","en":"Battery"}]}`,
+		`[{"id":"dev-window","name":"sonoff-door-1","name_by_user":"Ablak","area_id":"halo"}]`,
+		`[{"area_id":"halo","name":"Háló"}]`)
+	router, _, _ := startBatteryLevels(t, seed, nil, names)
+
+	got := map[string]string{}
+	for _, row := range getBatteries(t, router) {
+		got[row.EntityID] = row.Name
+	}
+	if got["sensor.halo_ablak_battery"] != "Háló Ablak Battery" {
+		t.Errorf("registry battery named %q, want %q", got["sensor.halo_ablak_battery"], "Háló Ablak Battery")
+	}
+	if got["sensor.phone_battery"] != "Phone" {
+		t.Errorf("unregistered battery named %q, want its friendly_name", got["sensor.phone_battery"])
+	}
+}
+
+// HA renaming an entity id must not cost the battery its samples or its
+// ignore: left alone, the next scan finds the old id gone and drops them.
+func TestBatteryLevelsFollowsRename(t *testing.T) {
+	now := time.Now()
+	seed := []ha.StateData{
+		{EntityID: "sensor.halo_ablak_battery", State: "80",
+			Attributes:  jsontext.Value(`{"device_class":"battery"}`),
+			LastChanged: now.Add(-6 * time.Hour).UTC().Format(time.RFC3339)},
+		{EntityID: "sensor.konyha_mozgas_battery", State: "50",
+			Attributes:  jsontext.Value(`{"device_class":"battery"}`),
+			LastChanged: now.Add(-6 * time.Hour).UTC().Format(time.RFC3339)},
+	}
+	series := map[string]any{
+		"series:sensor.sonoff_door_1_battery": []any{
+			sample(now.Add(-10*24*time.Hour), 100),
+			sample(now.Add(-5*24*time.Hour), 90),
+		},
+		"tracked": []any{"sensor.sonoff_door_1_battery"},
+		"ignored": []any{"sensor.motion1_battery"},
+	}
+	router, runner, kv := startBatteryLevels(t, seed, series, nil)
+
+	for old, renamed := range map[string]string{
+		"sensor.sonoff_door_1_battery": "sensor.halo_ablak_battery",
+		"sensor.motion1_battery":       "sensor.konyha_mozgas_battery",
+	} {
+		runner.SendHAEvent(ha.Event{Type: "entity_registry_updated", Data: jsontext.Value(fmt.Sprintf(
+			`{"action":"update","entity_id":%q,"old_entity_id":%q,"changes":{"entity_id":%q}}`, renamed, old, old))})
+	}
+	// A scan before the events land would itself drop the old series, so wait
+	// for the handler to have run before asking for one.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		moved, err := kv.Get(context.Background(), "series:sensor.halo_ablak_battery")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ignored, err := kv.Get(context.Background(), "ignored")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if moved != nil && fmt.Sprint(ignored) == "[sensor.konyha_mozgas_battery]" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("rename not followed: series %v, ignored %v", moved, ignored)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	rows := map[string]batteryRow{}
+	for _, row := range getBatteries(t, router) {
+		rows[row.EntityID] = row
+	}
+	if window := rows["sensor.halo_ablak_battery"]; window.Samples != 3 || window.DrainPerDay == nil {
+		t.Errorf("renamed battery = %+v, want the two moved samples plus today's and a drain rate", window)
+	}
+	if motion := rows["sensor.konyha_mozgas_battery"]; !motion.Ignored {
+		t.Errorf("renamed battery = %+v, want it still ignored", motion)
+	}
+	if old, err := kv.Get(context.Background(), "series:sensor.sonoff_door_1_battery"); err != nil || old != nil {
+		t.Errorf("old series left behind: %v, %v", old, err)
 	}
 }
 

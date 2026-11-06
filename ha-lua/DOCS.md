@@ -514,7 +514,10 @@ cp /config/ha-lua/examples/battery_levels.html /config/ha-lua/scripts/
 
 There is nothing to configure: it picks up `device_class: battery` sensors
 (whose state is the percentage) and any entity carrying a numeric
-`battery_level` attribute (device trackers, vacuums, some locks).
+`battery_level` attribute (device trackers, vacuums, some locks). Each row is
+named room first — area, device, entity — because a house of "Window Battery"
+rows is told apart only by where they are. Renaming an entity id in Home
+Assistant keeps its samples and its ignore.
 
 **Ignoring a battery.** The phone you charge nightly is noise, not a forecast.
 Its row's **Ignore** button stops the script sampling it and drops the samples

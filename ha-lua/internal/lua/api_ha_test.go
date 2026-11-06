@@ -266,23 +266,33 @@ func TestGetState(t *testing.T) {
 
 // The name parts answer what HA's templates answer, including the fallback to
 // the state's name for an entity the registry does not list.
-func TestNameBindings(t *testing.T) {
-	L, api, tracker, _ := newHALState(t)
-	ctx := context.Background()
-
+// newTestNames fills a registry mirror from HA-shaped list results.
+func newTestNames(t testing.TB, entities, devices, areas string) *ha.Names {
+	t.Helper()
 	lists := map[string]string{
-		"config/entity_registry/list_for_display": `{"entities":[
-			{"ei":"binary_sensor.halo_ablak","di":"dev-window"},
-			{"ei":"sensor.halo_ablak_battery","di":"dev-window","en":"Battery"}]}`,
-		"config/device_registry/list": `[{"id":"dev-window","name":"sonoff-door-1","name_by_user":"Ablak","area_id":"halo"}]`,
-		"config/area_registry/list":   `[{"area_id":"halo","name":"Háló"}]`,
+		"config/entity_registry/list_for_display": entities,
+		"config/device_registry/list":             devices,
+		"config/area_registry/list":               areas,
 	}
-	api.names = ha.NewNames()
-	if err := api.names.Refresh(ctx, func(_ context.Context, msgType string) (jsontext.Value, error) {
+	names := ha.NewNames()
+	if err := names.Refresh(context.Background(), func(_ context.Context, msgType string) (jsontext.Value, error) {
 		return jsontext.Value(lists[msgType]), nil
 	}); err != nil {
 		t.Fatal(err)
 	}
+	return names
+}
+
+func TestNameBindings(t *testing.T) {
+	L, api, tracker, _ := newHALState(t)
+	ctx := context.Background()
+
+	api.names = newTestNames(t,
+		`{"entities":[
+			{"ei":"binary_sensor.halo_ablak","di":"dev-window"},
+			{"ei":"sensor.halo_ablak_battery","di":"dev-window","en":"Battery"}]}`,
+		`[{"id":"dev-window","name":"sonoff-door-1","name_by_user":"Ablak","area_id":"halo"}]`,
+		`[{"area_id":"halo","name":"Háló"}]`)
 	_ = tracker.Seed(ctx, []ha.StateData{
 		{EntityID: "sensor.ha_lua_zone", State: "21", Attributes: jsontext.Value(`{"friendly_name":"Háló fűtés"}`),
 			LastChanged: "2026-01-01T00:00:00Z", LastUpdated: "2026-01-01T00:00:00Z"},

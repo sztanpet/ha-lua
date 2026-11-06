@@ -98,6 +98,19 @@ local function battery_level(state)
   return nil, false
 end
 
+-- Room, device and entity, as HA's own cards name a battery when they add the
+-- room: forty of them across a house are told apart by where they are, and
+-- friendly_name never says.
+local function display_name(entity_id)
+  local parts = {}
+  for _, part in ipairs({ ha.area_name(entity_id) or "", ha.device_name(entity_id) or "",
+                          ha.entity_name(entity_id) or "" }) do
+    if part ~= "" then parts[#parts + 1] = part end
+  end
+  if #parts == 0 then return entity_id end
+  return table.concat(parts, " ")
+end
+
 -- Every entity currently reporting a plausible percentage. An unavailable one
 -- drops out of this pass with its stored series untouched.
 local function batteries()
@@ -107,7 +120,7 @@ local function batteries()
     if level ~= nil and level >= 0 and level <= 100 then
       found[#found + 1] = {
         entity_id = state.entity_id,
-        name = (state.attributes or {}).friendly_name or state.entity_id,
+        name = display_name(state.entity_id),
         level = level,
         level_is_state = level_is_state,
         last_changed = state.last_changed,
@@ -438,6 +451,38 @@ local function scan()
 end
 
 ha.every(SCAN_INTERVAL, function() scan() end)
+
+-- A renamed entity id is the same battery: carry its samples, trail and ignore
+-- over, or the next scan finds the old id gone and drops weeks of samples.
+ha.on_event("entity_registry_updated", function(data)
+  local old, new = data.old_entity_id, data.entity_id
+  if data.action ~= "update" or type(old) ~= "string" or type(new) ~= "string" or old == new then
+    return
+  end
+  for _, key in ipairs({ series_key, events_key }) do
+    local value = store.get(key(old))
+    if value ~= nil then
+      store.set(key(new), value)
+      store.delete(key(old))
+    end
+  end
+
+  local tracked = store.get(TRACKED_KEY)
+  if type(tracked) == "table" then
+    for i, entity_id in ipairs(tracked) do
+      if entity_id == old then tracked[i] = new end
+    end
+    table.sort(tracked)
+    store.set(TRACKED_KEY, tracked)
+  end
+
+  local ignored = ignored_set()
+  if ignored[old] then
+    ignored[old], ignored[new] = nil, true
+    save_ignored(ignored)
+  end
+  reported[new], reported[old] = reported[old], nil
+end)
 
 local JSON_HDR = { ["Content-Type"] = "application/json" }
 
