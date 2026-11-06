@@ -31,10 +31,17 @@ regenerated entity ids with every dependant updated. DONE 2026-11-06.
   six ha-lua scripts + the box's stale lib/zones.lua, and the ESPHome configs
   (esphome repo `2252973`). Mold indicator, statistics and switch_as_x helpers
   followed on their own. A rescan of every box config finds no old id.
-- Follow-up (user: badges "just say hőmérő hom"): the 6 unnamed thermometer
-  badges on Home and the 4 trend-graph tiles on the Háló/Nappali views now
-  carry name `[area, entity]` ("Háló hőm."), checked in a rendered browser.
-  A reading never shows as device + entity alone, room views included.
+- Follow-up (user: badges "just say hőmérő hom", then "make them match"):
+  every reading on a badge, tile or history-graph row is named by
+  composition, the user's own short names ("Gal hom.") included:
+  thermometer `[area, entity]` ("Háló hőm."), radiator `[area, device,
+  entity]`. The Galéria and Fürdő temperatures were the last "hőmérséklet"
+  readings; renamed "hőm." (`sensor.galeria_homero_hom`,
+  `sensor.furdo_homero_hom`), their history and statistics moved in place.
+  Checked in a rendered browser.
+- The two outdoor statistics helpers (daily mean, 3-day average) lost their
+  window at the rename and averaged only new readings (2.4 instead of 6.3)
+  until reloaded at 05:49; the dip stays in their history.
 - The three commented-out generic_thermostat entries were removed: they held
   climate.halo_futes etc.
 - The kitchen LED is its own ESPHome device ("LED szalag", Konyha).
@@ -53,6 +60,16 @@ regenerated entity ids with every dependant updated. DONE 2026-11-06.
 - Rename a heating zone's entities in a small paced batch and check
   enhanced_climate followed each one before the bulk: a dropped registry event
   would strand a zone's schedule under the old id.
+- **A statistics helper follows a source rename by reloading, before the
+  recorder has moved the source's history**: it comes back with an empty
+  window. Reload it again once the rename has settled.
+- **The recorder will not move history onto an id that already has a
+  states_meta row** ("Cannot migrate history … already in use"), even one
+  left by a long-deleted entity. Check states_meta for the target ids first.
+  It hit Fürdő, Háló and Nappali heating: their history from 2026-06-07 to
+  03:41 is still under `climate.konyha_*_futes` (retention is 730 days).
+  Merging it into the new ids needs a write to the live recorder DB; offered
+  to the user, not done.
 
 ## Found broken before this work (not touched)
 - Offline in Zigbee2MQTT since 2026-11-05 07:55: Ventilátor, Konyha hűtő,
