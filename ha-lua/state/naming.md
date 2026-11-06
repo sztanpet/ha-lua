@@ -31,6 +31,10 @@ regenerated entity ids with every dependant updated. DONE 2026-11-06.
   six ha-lua scripts + the box's stale lib/zones.lua, and the ESPHome configs
   (esphome repo `2252973`). Mold indicator, statistics and switch_as_x helpers
   followed on their own. A rescan of every box config finds no old id.
+- Follow-up (user: badges "just say hőmérő hom"): the 6 unnamed thermometer
+  badges on Home and the 4 trend-graph tiles on the Háló/Nappali views now
+  carry name `[area, entity]` ("Háló hőm."), checked in a rendered browser.
+  A reading never shows as device + entity alone, room views included.
 - The three commented-out generic_thermostat entries were removed: they held
   climate.halo_futes etc.
 - The kitchen LED is its own ESPHome device ("LED szalag", Konyha).
