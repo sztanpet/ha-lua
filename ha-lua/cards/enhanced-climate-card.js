@@ -18,7 +18,7 @@
 
 // Bump on EVERY card change: the browser caches /local/ha-lua/…js aggressively,
 // so this banner is the only reliable signal of which build is actually loaded.
-const VERSION = "0.3.44";
+const VERSION = "0.3.45";
 
 console.info(
   `%c ha-lua-enhanced-climate-card %c v${VERSION} `,
@@ -787,10 +787,17 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const entity = this._config.climate_entity;
     const climate = hass && hass.states ? hass.states[entity] : null;
 
+    // The name HA's own cards show (2026.4+); friendly_name is being deprecated.
+    // A composed name ([{type: "area"}, …]) means something only to HA.
+    const configuredName = this._config.name || undefined;
+    const plainName = typeof configuredName === "string" ? configuredName : "";
+    const formatName = (stateObj) =>
+      (stateObj && hass.formatEntityName && hass.formatEntityName(stateObj, configuredName)) || plainName;
+
     const root = h("ha-card", {});
     if (!climate || climate.state === "unavailable") {
       root.append(h("div", { class: "content" },
-        h("div", { class: "notice" }, translate("unavailable", { name: this._config.name || entity }))));
+        h("div", { class: "notice" }, translate("unavailable", { name: formatName(climate) || entity }))));
       this._replace(root);
       return;
     }
@@ -800,9 +807,7 @@ class HaLuaEnhancedClimateCard extends HTMLElement {
     const companionAttrs = companion ? companion.attributes || {} : null;
     const mode = climate.state;
     const hvacAction = attrs.hvac_action;
-    // The name HA's own cards show (2026.4+); friendly_name is being deprecated.
-    const name = (hass.formatEntityName && hass.formatEntityName(climate, this._config.name || undefined))
-      || this._config.name || attrs.friendly_name || entity;
+    const name = formatName(climate) || attrs.friendly_name || entity;
 
     // Title = name, with a subtitle that pairs the current temperature and the
     // current mode/status side by side, split by a thin divider.
@@ -1301,8 +1306,9 @@ HaLuaEnhancedClimateCard.pure = {
 };
 
 // ---------------------------------------------------------------------------
-// Config editor (§10.6). Uses HA's own ha-entity-picker / ha-entities-picker,
-// which are undocumented frontend internals — this element works only inside a
+// Config editor (§10.6). Uses HA's own ha-entity-picker, and ha-selector for the
+// name (the entity_name selector HA documents for custom cards). The pickers
+// are undocumented frontend internals — this element works only inside a
 // live HA frontend and may need adjusting across HA releases. It is NOT covered
 // by the chromedp harness (which has no HA frontend). The only required field is
 // the climate entity; everything else is optional.
@@ -1357,7 +1363,11 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
     climatePicker.includeDomains = ["climate"];
     climatePicker.label = translate("editor.climate");
     climatePicker.required = true;
-    climatePicker.addEventListener("value-changed", (ev) => this._update({ climate_entity: ev.detail.value }));
+    let namePicker = null;
+    climatePicker.addEventListener("value-changed", (ev) => {
+      this._update({ climate_entity: ev.detail.value });
+      if (namePicker) namePicker.context = { entity: ev.detail.value };
+    });
     form.append(climatePicker);
 
     // A single ha-entity-picker, not the multi-select ha-entities-picker: the
@@ -1424,20 +1434,35 @@ class HaLuaEnhancedClimateCardEditor extends HTMLElement {
     });
     form.append(h("label", {}, translate("editor.presets"), presetsInput));
 
-    const nameInput = h("input", {
-      type: "text",
-      value: this._config.name || "",
-      onchange: (ev) => {
-        const name = ev.target.value.trim();
-        if (name) {
-          this._update({ name });
-        } else {
-          delete this._config.name;
-          this._emit();
-        }
-      },
-    });
-    form.append(h("label", {}, translate("editor.name"), nameInput));
+    const setName = (name) => {
+      if (name === undefined || name === "" || (Array.isArray(name) && name.length === 0)) {
+        delete this._config.name;
+        this._emit();
+      } else {
+        this._update({ name });
+      }
+    };
+    // HA's own name picker, the one its tile card uses: plain text, or area,
+    // device and entity composed so a rename follows. A frontend without it gets
+    // the text field.
+    if (customElements.get("ha-selector")) {
+      namePicker = document.createElement("ha-selector");
+      namePicker.hass = this._hass;
+      namePicker.selector = { entity_name: {} };
+      namePicker.context = { entity: this._config.climate_entity };
+      namePicker.value = this._config.name;
+      namePicker.label = translate("editor.name");
+      namePicker.required = false;
+      namePicker.addEventListener("value-changed", (ev) => setName(ev.detail.value));
+      form.append(namePicker);
+    } else {
+      const nameInput = h("input", {
+        type: "text",
+        value: typeof this._config.name === "string" ? this._config.name : "",
+        onchange: (ev) => setName(ev.target.value.trim()),
+      });
+      form.append(h("label", {}, translate("editor.name"), nameInput));
+    }
 
     this.shadowRoot.innerHTML = "";
     this.shadowRoot.append(style, form);

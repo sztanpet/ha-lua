@@ -469,8 +469,10 @@ presets: [15, 30, 60]                         # optional override minutes
 name: Living room                             # optional; else the name HA's own cards show
 ```
 
-A GUI editor (the visual card editor, with entity pickers) is also provided, so
-the YAML is optional — only the climate entity is required.
+`name` also takes what HA's name picker writes, such as
+`[{type: area}, {type: device}]`, which follows renames. A GUI editor (the
+visual card editor, with entity pickers and that name picker) is also provided,
+so the YAML is optional — only the climate entity is required.
 
 **How it works.** The card mirrors two entities: the climate entity itself (for
 current temperature, target, and HVAC mode, driven through native climate

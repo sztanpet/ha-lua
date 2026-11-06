@@ -879,6 +879,9 @@ func TestEnhancedClimateCardName(t *testing.T) {
 		// Same state objects, new formatter: only the registries changed.
 		{"device rename", withFormatter("window.__card._hass.states", "Nappali radiátor"), "Nappali radiátor"},
 		{"configured name", `(window.__card.setConfig({ climate_entity: "climate.lr", name: "Fűtés" }), true)`, "Fűtés"},
+		// HA's name picker stores a composition, which only HA can resolve.
+		{"composed name, no formatter", `(window.__card.setConfig({ climate_entity: "climate.lr",
+			name: [{ type: "area" }, { type: "device" }] }), window.__apply("en", ` + cardStates + `), true)`, "Living Room"},
 	}
 	var ok bool
 	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/")); err != nil {
@@ -894,5 +897,18 @@ func TestEnhancedClimateCardName(t *testing.T) {
 			_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__title`, &got))
 			t.Fatalf("%s: title = %q, want %q (%v)", step.name, got, step.want, err)
 		}
+	}
+
+	unavailable := `(() => { const states = ` + cardStates + `;
+		states["climate.lr"] = Object.assign({}, states["climate.lr"], { state: "unavailable" });
+		window.__apply("en", states); return true; })()`
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(unavailable, &ok),
+		chromedp.Poll(`(() => { window.__notice = window.__text(".notice") || ""; return window.__notice.includes("climate.lr"); })()`,
+			nil, chromedp.WithPollingTimeout(5*time.Second)),
+	); err != nil {
+		var got string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`window.__notice`, &got))
+		t.Fatalf("unavailable with a composed name: notice = %q, want it to name climate.lr (%v)", got, err)
 	}
 }
